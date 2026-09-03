@@ -18,7 +18,7 @@ jobs:
       - name: Leakage gate (no secrets / proprietary strings)
         run: |
           if grep -rniE 'adobe|astiwari|sensei-fs|AWS_BEARER|\.internal\b|\bcorp\.|firefly|\borion\b' \
-             skills site README.md NORTH_STAR.md; then
+             skills site README.md NORTH_STAR.md .thunderkit; then
             echo "::error::leakage denylist hit"; exit 1
           fi
           echo "leakage gate clean"

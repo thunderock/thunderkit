@@ -20,6 +20,8 @@ renames. Any agent that reads `.thunderkit/` inherits the project's opinion.
 |---|---|---|
 | `NORTH_STAR.md` | This project's specific goals, constraints, and non-negotiables. The "why" every lane serves. | tk-memory (you maintain) |
 | `DECISIONS.md` | Append-only decision log — dated entries: what was decided, why, what was rejected. | tk-memory + tk-plan/tk-execute |
+| `config.json` | **Per-project selections the router reuses**: chosen models per role (short names), min review families, max layers, frozen paths. Read by `thunderkit` before it asks anything. | tk-memory (writes on user choice) |
+| `BRIEF.md` | Intake checklist + harness grill transcript. | tk-grill |
 | `MAP.md` | Code map. | tk-map |
 | `PLAN.md` / `plan.json` | Current decomposition. | tk-plan |
 | `runs/*.json[l]` | Per-lane dispatch records + resume ids. | tk-execute |
@@ -37,6 +39,27 @@ consistent with what actually happened.
 3. Start `DECISIONS.md` with the seed decision (why thunderkit is being used here).
 4. Add `.thunderkit/runs/` to the project's `.gitignore` **only if** the run records contain
    machine-local paths; the north star, decisions, map, plan, and review are meant to be committed.
+
+## Selections — `config.json` (the router's memory)
+
+Whenever the user picks a load-bearing option (a model for a role, min review families, layers,
+frozen paths), write it here **and** log a `DECISIONS.md` entry. Keys are stable; values for models
+are roster short names (`opus48`, `opus5`, `sol`, `fable51`) so a provider rename never breaks a
+project. Schema:
+
+```json
+{
+  "models": { "plan": "opus48", "critical_path": "opus5", "review": ["sol", "opus5"] },
+  "review_families_min": 2,
+  "max_layers": 3,
+  "frozen_paths": [],
+  "decided_at": "YYYY-MM-DD"
+}
+```
+
+Absent key = "not decided yet" → the router asks once and you write it. To change a choice, the
+user says so; you update the value, bump `decided_at`, and append the decision with the old value
+as `Rejected:`.
 
 ## Decision-log entry format
 

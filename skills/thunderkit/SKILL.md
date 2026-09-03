@@ -28,28 +28,59 @@ load-bearing model choices**, commit project context.
 
 1. **Size the work.** If it fits in one context window and is one coherent edit, say so and
    suggest a plain single-agent edit — thunderkit is overhead for small work. Otherwise continue.
-2. **Recon if the repo is large/unfamiliar.** Route to `tk-map` to build/refresh a code map so
+2. **Grill if anything is gray.** Route to `tk-grill` to fill `.thunderkit/BRIEF.md` with closed
+   answers. Skip only when the request already names scope, frozen paths, and a done-command.
+3. **Recon if the repo is large/unfamiliar.** Route to `tk-map` to build/refresh a code map so
    planning works from structure, not guesses.
-3. **Plan.** Route to `tk-plan` to decompose into dependency-layered disjoint lanes, each with
+4. **Plan.** Route to `tk-plan` to decompose into dependency-layered disjoint lanes, each with
    acceptance criteria and a verification command.
-4. **Pick load-bearing models.** Before execution, for the planning model and the critical-path
-   lane, present the preferred model + the "also offer" set from the roster and **ask the user
-   to choose**. Auto-pick the cheap/wide lanes (Fable 5.1) and just report them.
-5. **Execute.** Route to `tk-execute` to run lanes in parallel via portable CLI dispatch, each
+5. **Pick load-bearing models — from config first.** Read `.thunderkit/config.json`. For any
+   model key already present, use it and say so. For any absent key (planning model, critical
+   path), present the preferred model + "also offer" set from the roster, **ask the user**, then
+   have `tk-memory` write the answer. Auto-pick cheap/wide lanes (Fable 5.1) and just report them.
+6. **Execute.** Route to `tk-execute` to run lanes in parallel via portable CLI dispatch, each
    in its own git worktree with a captured resumable id.
-6. **Review + verify.** Route to `tk-review` for cross-family review and per-lane verification.
-7. **Remember.** Route to `tk-memory` to record decisions and keep `.thunderkit/NORTH_STAR.md`
-   current.
+7. **Review + verify.** Route to `tk-review` for cross-family review and per-lane verification.
+8. **Remember.** Route to `tk-memory` to record decisions and keep `.thunderkit/NORTH_STAR.md`
+   and `config.json` current.
+
+## Where selections live (per project) — `.thunderkit/config.json`
+
+The router never asks the same load-bearing question twice on one project. Choices go through
+`tk-memory` into `.thunderkit/config.json` (committed), and the router **reads it first**:
+
+```json
+{
+  "models": { "plan": "opus48", "critical_path": "opus5", "review": ["sol", "opus5"] },
+  "review_families_min": 2,
+  "max_layers": 3,
+  "frozen_paths": ["src/billing"],
+  "decided_at": "2026-09-03"
+}
+```
+
+Rules: a key present → use it and *report* it ("critical path: Opus 5, per project config"); a
+key absent → ask, then write it. The user can override any run with a one-line instruction,
+which also updates the file and logs a `DECISIONS.md` entry. Short names resolve to ids via the
+roster, so a model rename never invalidates a project's config.
+
+## Intake first: `tk-grill` + `tk-ask`
+
+Before `tk-plan`, a request with any gray area goes to `tk-grill`, which fills
+`.thunderkit/BRIEF.md` using `tk-ask`'s closed-answer discipline (yes/no/word/number/path/
+`unknown`). `tk-plan` refuses a BRIEF with open unknowns.
 
 ## The map (which skill owns what)
 
 | Skill | Owns |
 |---|---|
+| `tk-ask` | Answer discipline: yes/no/word/number/path/`unknown`, hard word cap |
+| `tk-grill` | Closed-question intake of user + harness → `.thunderkit/BRIEF.md` |
 | `tk-map` | Big-repo reconnaissance / code map |
 | `tk-plan` | Decompose into parallel dependency-layered lanes |
 | `tk-execute` | Run lanes in parallel (portable CLI dispatch, worktrees) |
 | `tk-review` | Cross-family review **and** evidence/verification gate |
-| `tk-memory` | Project north-star memory + decision log |
+| `tk-memory` | Project north-star memory, decision log, **`config.json` selections** |
 
 ## Asking the user to choose models (required for load-bearing lanes)
 

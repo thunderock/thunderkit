@@ -1,0 +1,53 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-grill — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">skill</span><h2>tk-grill</h2><p class="mut">Use before planning when a request is vague or a plan has gray areas: interrogates the harness and the user with short closed questions (yes/no, one word, a number, a path) until the brief has no unknowns. Never a paragraph.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-grill -g</code></p><hr><h1>tk-grill — interrogate until the brief is complete</h1>
+<p>Big-repo work fails at intake, not at typing. <code>tk-grill</code> turns a fuzzy request into a brief with <strong>no unknowns</strong> by asking short, closed questions — and by making the *harness* answer in the same constrained form so its assumptions become visible before they become code.</p>
+<p>Answer discipline for every question here is <code>tk-ask</code>&#x27;s: <strong>yes / no / one word / a number / a path / <code>unknown</code></strong>. No sentences, no hedging, no &quot;it depends&quot;.</p>
+<p>Preferred model: <strong>Fable 5.1</strong> (cheap; grilling is many small turns). See <code>../references/model-roster.md</code>.</p>
+<h2>Two targets</h2>
+<ol><li><strong>Grill the user</strong> — resolve intent: scope, non-goals, done-state, constraints.</li><li><strong>Grill the harness</strong> — force the agent to state, in one-word answers, what it *thinks* it</li></ol>
+<p>   knows: which files, which tests, which commands, which model. Every <code>unknown</code> becomes a <code>tk-map</code>    task or a user question; nothing stays implicit.</p>
+<h2>Question rules</h2>
+<ul><li><strong>Closed form only.</strong> Each question must be answerable by yes/no, one word, a number, or a path.</li></ul>
+<p>  &quot;How should auth work?&quot; is banned. &quot;Does auth stay in <code>src/auth/</code>? (yes/no)&quot; is allowed.</p>
+<ul><li><strong>One question per turn</strong> to the user. Batch questions to the harness (it doesn&#x27;t tire).</li><li><strong>Offer the default.</strong> Every user question carries the answer you&#x27;d pick, so &quot;yes&quot; is enough.</li><li><strong>Stop when the checklist is green</strong>, not when you run out of curiosity. Grilling is bounded.</li></ul>
+<h2>The intake checklist (grill until every row has a non-<code>unknown</code> value)</h2>
+<table><thead><tr><th>Key</th><th>Question shape</th><th>Example answer</th></tr></thead><tbody><tr><td>goal</td><td>&quot;Goal in ≤7 words?&quot;</td><td><code>migrate auth to token refresh</code></td></tr><tr><td>scope_roots</td><td>&quot;Which top-level dirs change? (paths)&quot;</td><td><code>src/auth src/api</code></td></tr><tr><td>frozen</td><td>&quot;Which dirs must NOT change? (paths/none)&quot;</td><td><code>src/billing</code></td></tr><tr><td>done_check</td><td>&quot;One command that proves done? (cmd)&quot;</td><td><code>cargo test -p auth</code></td></tr><tr><td>breaking_ok</td><td>&quot;Public API may break? (yes/no)&quot;</td><td><code>no</code></td></tr><tr><td>deadline_layers</td><td>&quot;Max dependency layers? (number)&quot;</td><td><code>3</code></td></tr><tr><td>critical_model</td><td>&quot;Critical-path model? (name/ask)&quot;</td><td><code>ask</code></td></tr><tr><td>review_families</td><td>&quot;Review families? (number ≥2)&quot;</td><td><code>2</code></td></tr><tr><td>unknowns</td><td>&quot;Anything you can&#x27;t answer? (list/none)&quot;</td><td><code>none</code></td></tr></tbody></table>
+<h2>Harness grill (batch, answers must be one word / path / number)</h2>
+<pre><code>Files you will edit? (paths)          → src/auth/token.rs src/auth/refresh.rs
+Tests that cover them? (paths/none)   → src/auth/tests/token.rs
+Command that runs them? (cmd)         → cargo test -p auth
+Will you touch anything else? (yes/no)→ no
+Confidence in that list? (0-10)       → 7
+What is unknown? (word/none)          → retry-policy</code></pre>
+<p>A <code>7</code> or an <code>unknown</code> is a *finding*: it goes to <code>tk-map</code> (fill the gap) or back to the user (a question), never silently into the plan.</p>
+<h2>Output contract — <code>.thunderkit/BRIEF.md</code></h2>
+<p>The filled checklist plus the harness grill transcript. <code>tk-plan</code> refuses to plan without a BRIEF whose <code>unknowns</code> row is <code>none</code>. Persistent selections (<code>critical_model</code>, <code>review_families</code>) also go to <code>.thunderkit/config.json</code> via <code>tk-memory</code> so the router stops asking on this project.</p>
+<h2>Degrade honestly</h2>
+<p>If the user says &quot;you decide&quot; for a row, record <code>default:&lt;value&gt;</code> — the choice is visible and reversible, not buried. If the harness can&#x27;t answer in the closed form after one retry, record <code>unknown</code> and move on; don&#x27;t accept a paragraph as an answer.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

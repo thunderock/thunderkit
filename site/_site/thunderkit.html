@@ -32,18 +32,32 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <h2>Routing procedure</h2>
 <ol><li><strong>Size the work.</strong> If it fits in one context window and is one coherent edit, say so and</li></ol>
 <p>   suggest a plain single-agent edit — thunderkit is overhead for small work. Otherwise continue.</p>
+<ol><li><strong>Grill if anything is gray.</strong> Route to <code>tk-grill</code> to fill <code>.thunderkit/BRIEF.md</code> with closed</li></ol>
+<p>   answers. Skip only when the request already names scope, frozen paths, and a done-command.</p>
 <ol><li><strong>Recon if the repo is large/unfamiliar.</strong> Route to <code>tk-map</code> to build/refresh a code map so</li></ol>
 <p>   planning works from structure, not guesses.</p>
 <ol><li><strong>Plan.</strong> Route to <code>tk-plan</code> to decompose into dependency-layered disjoint lanes, each with</li></ol>
 <p>   acceptance criteria and a verification command.</p>
-<ol><li><strong>Pick load-bearing models.</strong> Before execution, for the planning model and the critical-path</li></ol>
-<p>   lane, present the preferred model + the &quot;also offer&quot; set from the roster and <strong>ask the user    to choose</strong>. Auto-pick the cheap/wide lanes (Fable 5.1) and just report them.</p>
+<ol><li><strong>Pick load-bearing models — from config first.</strong> Read <code>.thunderkit/config.json</code>. For any</li></ol>
+<p>   model key already present, use it and say so. For any absent key (planning model, critical    path), present the preferred model + &quot;also offer&quot; set from the roster, <strong>ask the user</strong>, then    have <code>tk-memory</code> write the answer. Auto-pick cheap/wide lanes (Fable 5.1) and just report them.</p>
 <ol><li><strong>Execute.</strong> Route to <code>tk-execute</code> to run lanes in parallel via portable CLI dispatch, each</li></ol>
 <p>   in its own git worktree with a captured resumable id.</p>
 <ol><li><strong>Review + verify.</strong> Route to <code>tk-review</code> for cross-family review and per-lane verification.</li><li><strong>Remember.</strong> Route to <code>tk-memory</code> to record decisions and keep <code>.thunderkit/NORTH_STAR.md</code></li></ol>
-<p>   current.</p>
+<p>   and <code>config.json</code> current.</p>
+<h2>Where selections live (per project) — <code>.thunderkit/config.json</code></h2>
+<p>The router never asks the same load-bearing question twice on one project. Choices go through <code>tk-memory</code> into <code>.thunderkit/config.json</code> (committed), and the router <strong>reads it first</strong>:</p>
+<pre><code>{
+  &quot;models&quot;: { &quot;plan&quot;: &quot;opus48&quot;, &quot;critical_path&quot;: &quot;opus5&quot;, &quot;review&quot;: [&quot;sol&quot;, &quot;opus5&quot;] },
+  &quot;review_families_min&quot;: 2,
+  &quot;max_layers&quot;: 3,
+  &quot;frozen_paths&quot;: [&quot;src/billing&quot;],
+  &quot;decided_at&quot;: &quot;2026-09-03&quot;
+}</code></pre>
+<p>Rules: a key present → use it and *report* it (&quot;critical path: Opus 5, per project config&quot;); a key absent → ask, then write it. The user can override any run with a one-line instruction, which also updates the file and logs a <code>DECISIONS.md</code> entry. Short names resolve to ids via the roster, so a model rename never invalidates a project&#x27;s config.</p>
+<h2>Intake first: <code>tk-grill</code> + <code>tk-ask</code></h2>
+<p>Before <code>tk-plan</code>, a request with any gray area goes to <code>tk-grill</code>, which fills <code>.thunderkit/BRIEF.md</code> using <code>tk-ask</code>&#x27;s closed-answer discipline (yes/no/word/number/path/ <code>unknown</code>). <code>tk-plan</code> refuses a BRIEF with open unknowns.</p>
 <h2>The map (which skill owns what)</h2>
-<table><thead><tr><th>Skill</th><th>Owns</th></tr></thead><tbody><tr><td><code>tk-map</code></td><td>Big-repo reconnaissance / code map</td></tr><tr><td><code>tk-plan</code></td><td>Decompose into parallel dependency-layered lanes</td></tr><tr><td><code>tk-execute</code></td><td>Run lanes in parallel (portable CLI dispatch, worktrees)</td></tr><tr><td><code>tk-review</code></td><td>Cross-family review <strong>and</strong> evidence/verification gate</td></tr><tr><td><code>tk-memory</code></td><td>Project north-star memory + decision log</td></tr></tbody></table>
+<table><thead><tr><th>Skill</th><th>Owns</th></tr></thead><tbody><tr><td><code>tk-ask</code></td><td>Answer discipline: yes/no/word/number/path/<code>unknown</code>, hard word cap</td></tr><tr><td><code>tk-grill</code></td><td>Closed-question intake of user + harness → <code>.thunderkit/BRIEF.md</code></td></tr><tr><td><code>tk-map</code></td><td>Big-repo reconnaissance / code map</td></tr><tr><td><code>tk-plan</code></td><td>Decompose into parallel dependency-layered lanes</td></tr><tr><td><code>tk-execute</code></td><td>Run lanes in parallel (portable CLI dispatch, worktrees)</td></tr><tr><td><code>tk-review</code></td><td>Cross-family review <strong>and</strong> evidence/verification gate</td></tr><tr><td><code>tk-memory</code></td><td>Project north-star memory, decision log, <strong><code>config.json</code> selections</strong></td></tr></tbody></table>
 <h2>Asking the user to choose models (required for load-bearing lanes)</h2>
 <p>Present it concretely, from the roster:</p>
 <p>&gt; Critical-path lane (the auth refactor) — preferred <strong>Opus 4.8</strong>. Alternatives: <strong>Opus 5</strong> &gt; (login-free), <strong>Sol</strong> (different family). Which should implement it?</p>

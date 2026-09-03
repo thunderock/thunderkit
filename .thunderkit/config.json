@@ -1,0 +1,11 @@
+{
+  "models": {
+    "plan": "opus48",
+    "critical_path": "opus48",
+    "review": ["sol", "opus5"]
+  },
+  "review_families_min": 2,
+  "max_layers": 3,
+  "frozen_paths": ["LICENSE"],
+  "decided_at": "2026-09-03"
+}

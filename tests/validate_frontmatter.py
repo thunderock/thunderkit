@@ -106,9 +106,10 @@ def check_leakage():
     for dp, dn, fn in os.walk(ROOT):
         if os.sep + ".git" in dp:
             continue
-        # scan skills/ and top-level docs only
+        # scan skills/, site/, top-level docs, and .thunderkit/ project memory
         rel = os.path.relpath(dp, ROOT)
-        if not (rel == "." or rel.startswith("skills") or rel.startswith("site")):
+        if not (rel == "." or rel.startswith("skills") or rel.startswith("site")
+                or rel.startswith(".thunderkit")):
             continue
         for f in fn:
             if not f.endswith((".md", ".html", ".js", ".py", ".json", ".yml", ".yaml", ".css")):

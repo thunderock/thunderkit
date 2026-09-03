@@ -9,12 +9,14 @@ tokens, or org-internal routing.
 
 ## The fleet (today)
 
-| Short name | Provider id | Harness(es) | Auth | Character |
-|---|---|---|---|---|
-| **Fable 5.1** | `us.anthropic.claude-fable-5-1` (Bedrock) | hermes, opencode | Bedrock bearer token (login-free) | Fast, cheap, wide. Breadth, retrieval, cleanup, exploration. |
-| **Opus 4.8** | `claude-opus-4-8` (Anthropic) | claude, hermes | Anthropic login | Strongest coder on the critical path. |
-| **Opus 5** | `us.anthropic.claude-opus-5` (Bedrock) | hermes, opencode | Bedrock bearer token (login-free) | Strong, login-free. Critical-path fallback + a strong second reviewer. |
-| **Sol** | `gpt-5.6-sol` (OpenAI/Codex) | codex | Codex/ChatGPT login | Different family. The cross-family reviewer. Best-effort (credit-capped). |
+| Short name | Config key | Provider id | Harness(es) | Auth | Character |
+|---|---|---|---|---|---|
+| **Fable 5.1** | `fable51` | `us.anthropic.claude-fable-5-1` (Bedrock) | hermes, opencode | Bedrock bearer token (login-free) | Fast, cheap, wide. Breadth, retrieval, cleanup, exploration. |
+| **Opus 4.8** | `opus48` | `claude-opus-4-8` (Anthropic) | claude, hermes | Anthropic login | Strongest coder on the critical path. |
+| **Opus 5** | `opus5` | `us.anthropic.claude-opus-5` (Bedrock) | hermes, opencode | Bedrock bearer token (login-free) | Strong, login-free. Critical-path fallback + a strong second reviewer. |
+| **Sol** | `sol` | `gpt-5.6-sol` (OpenAI/Codex) | codex | Codex/ChatGPT login | Different family. The cross-family reviewer. Best-effort (credit-capped). |
+
+`Config key` is what `.thunderkit/config.json` stores; it is stable across provider renames.
 
 > If a model isn't authenticated on this machine, the skill using it must degrade to an
 > available one and **say so** — never fail silently, never invent a result.

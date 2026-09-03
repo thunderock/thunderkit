@@ -12,8 +12,8 @@ model — plus a static docs site generated from the skills.
 
 ## Must never break
 
-- **Public + secrets-free.** No Adobe IP, internal endpoints, tokens, or work-repo names. The CI
-  leakage gate enforces this.
+- **Public + secrets-free.** No proprietary IP, internal endpoints, tokens, or employer/work-repo
+  names. The CI leakage gate enforces this.
 - **Plain SKILL.md distribution.** Installable by `npx skills add thunderock/thunderkit`. No npm
   launcher, plugin, or hook machinery to own.
 - **Model-id indirection.** Skills reference models by short name; ids live only in the roster.

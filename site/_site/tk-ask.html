@@ -1,0 +1,50 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-ask — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">skill</span><h2>tk-ask</h2><p class="mut">Use when you need a harness or model to answer in a very limited set of simple words: enforces yes/no, one-word, number, or path answers with a hard word cap, so answers are checkable and cannot hide uncertainty in prose.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-ask -g</code></p><hr><h1>tk-ask — answer in simple words, or say <code>unknown</code></h1>
+<p>A model asked an open question returns a paragraph, and a paragraph can hide &quot;I&#x27;m not sure&quot; in confident prose. <code>tk-ask</code> is the answer discipline the rest of thunderkit relies on: a question is posed with an <strong>allowed answer set</strong>, and the reply must be <strong>one item from that set</strong> — or the literal word <code>unknown</code>.</p>
+<p>Use it standalone to get a checkable fact out of any harness, or as the protocol <code>tk-grill</code> and <code>tk-review</code> apply to every question they ask.</p>
+<h2>The five allowed answer shapes</h2>
+<table><thead><tr><th>Shape</th><th>Allowed replies</th><th>Example</th></tr></thead><tbody><tr><td><strong>bool</strong></td><td><code>yes</code> <code>no</code></td><td>&quot;Tests exist for this file?&quot; → <code>no</code></td></tr><tr><td><strong>word</strong></td><td>exactly one token, ≤ 20 chars</td><td>&quot;Language?&quot; → <code>rust</code></td></tr><tr><td><strong>number</strong></td><td>an integer or decimal, unit stated in the question</td><td>&quot;LOC touched?&quot; → <code>340</code></td></tr><tr><td><strong>path</strong></td><td>one repo-relative path per line, nothing else</td><td>&quot;Entry point?&quot; → <code>src/main.rs</code></td></tr><tr><td><strong>enum</strong></td><td>one of the options listed in the question</td><td>&quot;Model? (opus48/opus5/sol)&quot; → <code>opus5</code></td></tr></tbody></table>
+<p>Plus, always allowed: <strong><code>unknown</code></strong> — the honest answer. It is never a failure; a confident wrong <code>yes</code> is.</p>
+<h2>How to pose a question (the asker&#x27;s side)</h2>
+<p>Every question states its shape and, for enum, its options:</p>
+<pre><code>Q: Does src/auth/ have integration tests?   [bool]
+Q: Which dir owns the token refresh logic?  [path]
+Q: Preferred critical-path model?           [enum: opus48 | opus5 | sol]
+Q: How many dependency layers?              [number]</code></pre>
+<p>Ask several at once to a harness; ask <strong>one at a time</strong> to a human.</p>
+<h2>How to answer (the harness&#x27;s side — enforce this on yourself and on dispatched lanes)</h2>
+<ol><li>Reply with the answer only. No preamble, no &quot;I think&quot;, no explanation.</li><li>If you&#x27;re below ~80% sure, reply <code>unknown</code>. Don&#x27;t round up.</li><li>If the shape doesn&#x27;t fit reality (two entry points, not one), reply <code>unknown</code> and let the asker</li></ol>
+<p>   re-shape — don&#x27;t smuggle a list into a <code>word</code> slot.</p>
+<ol><li>Hard cap: <strong>the whole reply is ≤ 3 words</strong> except <code>path</code>, which is one path per line.</li></ol>
+<h2>Validation (the asker checks, mechanically)</h2>
+<ul><li><code>bool</code> → must be exactly <code>yes</code>/<code>no</code>/<code>unknown</code>.</li><li><code>word</code> → one token, no spaces, ≤ 20 chars.</li><li><code>number</code> → parses as a number.</li><li><code>path</code> → each line exists in the repo (check it!) or reply was <code>unknown</code>.</li><li><code>enum</code> → exact match to a listed option.</li></ul>
+<p>An invalid reply gets <strong>one</strong> re-ask with the shape restated. A second invalid reply is recorded as <code>unknown</code>. Never accept prose as an answer.</p>
+<h2>Why so strict</h2>
+<p>Because every downstream thunderkit skill *acts* on these answers — <code>tk-plan</code> cuts lanes along the paths, <code>tk-execute</code> picks the enum&#x27;d model, <code>tk-review</code> trusts the bool &quot;tests exist&quot;. A paragraph can&#x27;t be acted on; <code>no</code> can. And <code>unknown</code> is the single most useful word in the pack: it&#x27;s the exact place where <code>tk-map</code> or the user has to fill a gap before work starts.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>
