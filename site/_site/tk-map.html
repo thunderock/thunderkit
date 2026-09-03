@@ -1,0 +1,47 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-map — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">skill</span><h2>tk-map</h2><p class="mut">Use before planning work in a large or unfamiliar repo: builds or refreshes a code map (structure, entry points, ownership, hotspots) so plan and execute work from facts, not guesses.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-map -g</code></p><hr><h1>tk-map — big-repo reconnaissance</h1>
+<p>A repo too large to hold in one context window cannot be planned from memory. <code>tk-map</code> builds a compact, durable <strong>code map</strong> so <code>tk-plan</code> and <code>tk-execute</code> reason about real structure. Route here first whenever the repo is large, unfamiliar, or hasn&#x27;t been mapped this session.</p>
+<p>Preferred model: <strong>Fable 5.1</strong> (wide, cheap — recon fans across many files). See <code>../references/model-roster.md</code>.</p>
+<h2>What a code map contains</h2>
+<p>Write it to <code>.thunderkit/MAP.md</code> (committed, refreshable):</p>
+<ol><li><strong>Shape</strong> — top-level modules/packages, what each is for, rough LOC per area.</li><li><strong>Entry points</strong> — binaries, services, jobs, test roots, build/CI entry.</li><li><strong>Boundaries</strong> — where subsystems meet (the seams lanes will be cut along).</li><li><strong>Ownership signals</strong> — CODEOWNERS, directory conventions, per-area lint/test config.</li><li><strong>Hotspots</strong> — highest-churn and highest-fan-in files (where a change ripples).</li><li><strong>How to verify each area</strong> — the smallest build/test command that exercises it.</li></ol>
+<h2>Procedure</h2>
+<ol><li><strong>Reuse existing intelligence first.</strong> If the fleet has a code-graph tool available</li></ol>
+<p>   (codegraph, scout, or similar), use it — it&#x27;s cheaper and more accurate than re-reading.    Name which tool produced the map. If none is available, fall back to structured file/dir    inspection and say so.</p>
+<ol><li><strong>Fan wide, cheaply.</strong> Summarize each major area in parallel on Fable 5.1 rather than one</li></ol>
+<p>   serial deep read. The map is breadth, not depth — depth is <code>tk-plan</code>&#x27;s job per lane.</p>
+<ol><li><strong>Record verification per area</strong> — every area&#x27;s smallest test/build command, because</li></ol>
+<p>   <code>tk-plan</code> will attach one to each lane and <code>tk-review</code> will run it.</p>
+<ol><li><strong>Write <code>.thunderkit/MAP.md</code></strong> and note the timestamp + the tool used. Stale maps mislead;</li></ol>
+<p>   <code>tk-plan</code> should refresh if the map is older than the working branch&#x27;s base.</p>
+<h2>Output contract</h2>
+<p><code>.thunderkit/MAP.md</code> with the six sections above, each area carrying its verification command. This is what <code>tk-plan</code> consumes to cut disjoint, file-scoped lanes along real seams.</p>
+<h2>Degrade honestly</h2>
+<p>No code-graph tool? Say the map is inspection-based (lower fidelity) and recommend which tool to install. Repo too large to fully map in budget? Map the areas the requested change touches plus their immediate boundaries, and mark the rest <code>unmapped</code> rather than guessing.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

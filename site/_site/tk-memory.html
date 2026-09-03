@@ -1,0 +1,54 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-memory — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">skill</span><h2>tk-memory</h2><p class="mut">Use to give a project durable intent: scaffolds and maintains .thunderkit/ (north-star goals + a decision log) so the project&#x27;s opinion and choices persist across sessions, agents, and model changes.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-memory -g</code></p><hr><h1>tk-memory — project north-star memory</h1>
+<p>Context is a committed artifact, not chat recall. <code>tk-memory</code> scaffolds and maintains the project&#x27;s <code>.thunderkit/</code> directory so the *why* — the project&#x27;s north star and the decisions made along the way — survives across sessions, across different agents, and across model renames. Any agent that reads <code>.thunderkit/</code> inherits the project&#x27;s opinion.</p>
+<h2>What lives in <code>.thunderkit/</code></h2>
+<table><thead><tr><th>File</th><th>Purpose</th><th>Written by</th></tr></thead><tbody><tr><td><code>NORTH_STAR.md</code></td><td>This project&#x27;s specific goals, constraints, and non-negotiables. The &quot;why&quot; every lane serves.</td><td>tk-memory (you maintain)</td></tr><tr><td><code>DECISIONS.md</code></td><td>Append-only decision log — dated entries: what was decided, why, what was rejected.</td><td>tk-memory + tk-plan/tk-execute</td></tr><tr><td><code>MAP.md</code></td><td>Code map.</td><td>tk-map</td></tr><tr><td><code>PLAN.md</code> / <code>plan.json</code></td><td>Current decomposition.</td><td>tk-plan</td></tr><tr><td><code>runs/*.json[l]</code></td><td>Per-lane dispatch records + resume ids.</td><td>tk-execute</td></tr><tr><td><code>REVIEW.md</code></td><td>Latest cross-family review + evidence.</td><td>tk-review</td></tr></tbody></table>
+<p><code>tk-memory</code> owns the first two; it *knows about* the rest so it can keep the north star consistent with what actually happened.</p>
+<h2>Scaffold procedure (new project)</h2>
+<ol><li>Create <code>.thunderkit/</code> if absent.</li><li>Write <code>NORTH_STAR.md</code> from a short interview: What is this project&#x27;s goal? What must never</li></ol>
+<p>   break? What&#x27;s explicitly out of scope? What does &quot;done&quot; look like at the project level?    Keep it tight — a north star is a page, not a spec.</p>
+<ol><li>Start <code>DECISIONS.md</code> with the seed decision (why thunderkit is being used here).</li><li>Add <code>.thunderkit/runs/</code> to the project&#x27;s <code>.gitignore</code> <strong>only if</strong> the run records contain</li></ol>
+<p>   machine-local paths; the north star, decisions, map, plan, and review are meant to be committed.</p>
+<h2>Decision-log entry format</h2>
+<p>Append-only. Newest first. Each entry:</p>
+<pre><code>## 2026-09-03 — Chose portable CLI dispatch over the orchestrator
+- Decision: tk-execute dispatches claude/codex CLIs directly.
+- Why: public/portable; no coupling to private wiring.
+- Rejected: routing through a private kanban orchestrator (richer, but non-portable).
+- Ref: lane L2-execute-dispatch.</code></pre>
+<h2>Maintaining the north star</h2>
+<ul><li>When <code>tk-plan</code> or <code>tk-execute</code> makes a load-bearing choice (model selection, a scope cut, a</li></ul>
+<p>  rejected approach), append it to <code>DECISIONS.md</code> — the decision log is how the next session   learns what this one settled.</p>
+<ul><li>When the north star and reality diverge (the project&#x27;s goal shifted), update <code>NORTH_STAR.md</code></li></ul>
+<p>  and log *that* as a decision. A stale north star is worse than none.</p>
+<ul><li>On model renames, note the swap here (the roster changes the id; the log records that it</li></ul>
+<p>  happened and when), so history stays legible.</p>
+<h2>Why committed, not conversational</h2>
+<p>A different agent — or you in a later session, or a teammate — opens the repo and reads <code>.thunderkit/NORTH_STAR.md</code> + <code>DECISIONS.md</code> and immediately has the project&#x27;s opinion and its settled choices. That&#x27;s the whole point: the opinion travels with the repo, so heterogeneous agents stay aligned without re-litigating what was already decided.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

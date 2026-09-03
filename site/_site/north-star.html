@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>North Star — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<h1>thunderkit — North Star</h1>
+<p>&gt; <strong>Big work in big repos is won by decomposition + heterogeneity, not by one smart model.</strong></p>
+<p>thunderkit is an *opinionated* skill pack. It exists to take a large change in a large repository and:</p>
+<ol><li><strong>Decompose</strong> it into disjoint, dependency-layered lanes that don&#x27;t collide.</li><li><strong>Route</strong> each lane to the best model *and* harness for that kind of work.</li><li><strong>Run</strong> those lanes in parallel across a heterogeneous fleet (Bedrock Fable 5.1,</li></ol>
+<p>   Claude Opus, Codex Sol — via the <code>claude</code>, <code>codex</code>, and <code>opencode</code>/<code>hermes</code> harnesses).</p>
+<ol><li><strong>Review</strong> the result across at least two model families before calling it done.</li><li><strong>Remember</strong> the project&#x27;s intent as a committed artifact, not a chat transcript.</li></ol>
+<h2>The opinions (non-negotiable — skills enforce these as gates)</h2>
+<ol><li><strong>No single-model plans.</strong> A plan that can&#x27;t be split into parallelizable lanes isn&#x27;t</li></ol>
+<p>   finished. <code>tk-plan</code> emits lanes or it fails.</p>
+<ol><li><strong>Review is always cross-family.</strong> A model family reviewing its own output is not review.</li></ol>
+<p>   <code>tk-review</code> fans work to ≥2 families (e.g. Opus + Sol) and consolidates.</p>
+<ol><li><strong>Done is evidence, not intent.</strong> Every lane carries a verification command. No command,</li></ol>
+<p>   no &quot;done&quot; — the lane is *blocked*.</p>
+<ol><li><strong>The fleet is heterogeneous and partially unavailable.</strong> Skills degrade to the agents</li></ol>
+<p>   actually installed and authenticated, and *name* what&#x27;s missing instead of failing dark.</p>
+<ol><li><strong>The user picks load-bearing models.</strong> When the model choice materially changes the</li></ol>
+<p>   outcome (the critical path, the final review), thunderkit offers the top models and asks —    it does not silently default.</p>
+<ol><li><strong>Context is committed.</strong> A project&#x27;s opinion and decisions live in <code>.thunderkit/</code></li></ol>
+<p>   (<code>NORTH_STAR.md</code> + a decision log), so they travel with the repo across sessions and agents.</p>
+<h2>What thunderkit is not</h2>
+<ul><li>Not a UX / SEO / design / payments / delivery framework. It has exactly one concern:</li></ul>
+<p>  turning big-repo changes into parallel, cross-reviewed, evidence-gated work.</p>
+<ul><li>Not a launcher, plugin marketplace, or hook system. It is plain <code>SKILL.md</code> files that any</li></ul>
+<p>  Agent-Skills-compatible agent can read.</p>
+<ul><li>Not coupled to any private orchestrator. Lane execution uses portable CLI dispatch that</li></ul>
+<p>  works on anyone&#x27;s machine.</p>
+<h2>Why heterogeneity</h2>
+<p>Different work has different cost/quality curves. Wide exploration and cheap retrieval want a fast, login-free model (Fable 5.1). The critical implementation path wants the strongest coder (Opus). Review wants a *different* family than the author, so blind spots don&#x27;t survive. Sol (Codex) brings a genuinely different lineage for that second opinion. One model can&#x27;t be all of these at once; a fleet can — if the work is decomposed to feed it. That decomposition is the whole game, and it&#x27;s what thunderkit is opinionated about.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

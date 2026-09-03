@@ -1,0 +1,64 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-review — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">skill</span><h2>tk-review</h2><p class="mut">Use to review and verify completed big-repo work: fans a diff to two-plus model families for cross-family review, consolidates findings by severity, and runs each lane&#x27;s verification command so done means evidence, not intent.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-review -g</code></p><hr><h1>tk-review — cross-family review + evidence gate</h1>
+<p>The quality gate. <code>tk-review</code> does two inseparable jobs (merged by design):</p>
+<ol><li><strong>Cross-family review</strong> — fan the change to <strong>≥2 model families</strong> and consolidate. A model</li></ol>
+<p>   family reviewing its own output is not review; the author&#x27;s family cannot be the only reviewer.</p>
+<ol><li><strong>Evidence gate</strong> — run each lane&#x27;s <code>verify</code> command. A lane without a passing verification is</li></ol>
+<p>   <strong>not done</strong> — it&#x27;s blocked. Done means evidence, never intent.</p>
+<p>Preferred reviewers: <strong>Sol + Opus 5</strong> (at least one different from whoever authored the lane). Verification runs on <strong>Fable 5.1</strong> (running commands is cheap). See <code>../references/model-roster.md</code>.</p>
+<h2>Cross-family review procedure</h2>
+<ol><li><strong>Identify the author family</strong> per lane (from <code>.thunderkit/runs/&lt;lane-id&gt;</code>). Choose reviewers</li></ol>
+<p>   from *other* families — if Opus authored, review with Sol (+ Opus 5 as the strong same-lineage    second, but never Opus alone).</p>
+<ol><li><strong>Fan the diff</strong> to each reviewer via portable dispatch (roster dispatch table). Send the lane</li></ol>
+<p>   diff, its acceptance criteria, and the goal. Ask each for findings with severity    (blocker / major / minor / nit) and a file:line anchor.</p>
+<ol><li><strong>Consolidate</strong> — merge reviewer outputs, dedupe overlapping findings, keep the highest</li></ol>
+<p>   severity when they disagree, and record *which reviewer* raised each (families disagree — that    disagreement is signal, preserve it).</p>
+<ol><li><strong>Show each reviewer&#x27;s model</strong> inline: <code>(Sol)</code>, <code>(Opus 5)</code>. Best-effort reviewers (Sol is</li></ol>
+<p>   credit-capped) that fail are dropped with a note, not silently omitted.</p>
+<h2>Evidence gate procedure</h2>
+<p>For every lane in the plan:</p>
+<ol><li>Run its <code>verify</code> command from <code>plan.json</code>.</li><li>Record pass / fail / blocked with the actual command output (truncated), not a summary.</li><li>A lane is <strong>done</strong> only if: verify passes <strong>and</strong> it has no unresolved blocker-severity review</li></ol>
+<p>   finding. Otherwise it&#x27;s <code>blocked</code> — name what&#x27;s needed.</p>
+<h2>Output contract — <code>.thunderkit/REVIEW.md</code></h2>
+<pre><code>## Lane L0-auth-token-refresh
+- Author: Opus 4.8 | Reviewers: Sol, Opus 5
+- Verify: `cargo test -p auth token::` → PASS (12 passed)
+- Findings:
+  - [major] (Sol) src/auth/token.rs:88 — backoff not jittered; thundering herd on mass expiry
+  - [nit] (Opus 5) src/auth/token.rs:40 — name `t` → `token`
+- Status: BLOCKED (1 major unresolved)</code></pre>
+<p>Plus a roll-up: N lanes, X done, Y blocked, and the consolidated blocker list that must clear before the change is shippable.</p>
+<h2>Opinions this skill enforces</h2>
+<ul><li><strong>≥2 families or it&#x27;s not a review.</strong> If only one family is available/authed, say the review is</li></ul>
+<p>  single-family (reduced confidence) and name what to install for a real cross-family pass —   don&#x27;t quietly downgrade.</p>
+<ul><li><strong>No verify, not done.</strong> A lane whose verify can&#x27;t run is blocked, full stop.</li><li><strong>Preserve disagreement.</strong> When families split on a finding, record both positions; don&#x27;t</li></ul>
+<p>  average them into mush.</p>
+<h2>Degrade honestly</h2>
+<p>Sol credit-capped (429) and no other second family authed? Report the review as best-effort single-family, list the specific blocker findings you *could* get, and recommend the login that restores a cross-family gate. Never present a single-family pass as a full review.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

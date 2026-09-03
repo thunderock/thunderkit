@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<h2>The thesis</h2><p>Big work in big repos is won by <strong>decomposition + heterogeneity</strong>, not by one smart model. thunderkit turns a large change into disjoint parallel lanes and routes each to the best model and harness — asking you to pick the load-bearing ones.</p><h2>Install</h2><pre><code>npx skills add thunderock/thunderkit -s '*' -g</code></pre><p class='mut'>Or one skill: <code>npx skills add thunderock/thunderkit -s thunderkit -g</code></p><h2>Skills</h2><div class="card"><h3><a href="thunderkit.html">thunderkit</a></h3><p>Use when starting big-repo multi-model work: routes a large change into parallel lanes across the best model/harness per lane, asking you to pick load-bearing models. Entry point for thunderkit.</p></div><div class="card"><h3><a href="tk-execute.html">tk-execute</a></h3><p>Use to run an accepted thunderkit plan: implements disjoint lanes in parallel across the fleet via portable CLI dispatch (claude/codex), each lane in its own git worktree with a captured resumable session id.</p></div><div class="card"><h3><a href="tk-map.html">tk-map</a></h3><p>Use before planning work in a large or unfamiliar repo: builds or refreshes a code map (structure, entry points, ownership, hotspots) so plan and execute work from facts, not guesses.</p></div><div class="card"><h3><a href="tk-memory.html">tk-memory</a></h3><p>Use to give a project durable intent: scaffolds and maintains .thunderkit/ (north-star goals + a decision log) so the project&#x27;s opinion and choices persist across sessions, agents, and model changes.</p></div><div class="card"><h3><a href="tk-plan.html">tk-plan</a></h3><p>Use to turn a big-repo change into a parallel execution plan: decomposes work into disjoint, dependency-layered lanes, each file-scoped with acceptance criteria and a verification command, ready for tk-execute.</p></div><div class="card"><h3><a href="tk-review.html">tk-review</a></h3><p>Use to review and verify completed big-repo work: fans a diff to two-plus model families for cross-family review, consolidates findings by severity, and runs each lane&#x27;s verification command so done means evidence, not intent.</p></div>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>
