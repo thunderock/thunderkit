@@ -21,22 +21,37 @@ tokens, or org-internal routing.
 > If a model isn't authenticated on this machine, the skill using it must degrade to an
 > available one and **say so** — never fail silently, never invent a result.
 
+## The three model classes (what tk-router asks for)
+
+Every run picks three classes. `tk-router` asks once per project and stores them in
+`.thunderkit/config.json`:
+
+| Class | Cardinality | Role | Default |
+|---|---|---|---|
+| **Planner** | exactly one — the most capable model | spec, discuss, plan, debug-reasoning | `opus48` (→ `opus5` without Anthropic login) |
+| **Executors** | a set — lanes spread by weight | map, research, implement, docs-write | `opus48 opus5 fable51` |
+| **Reviewers + verifiers** | all authed families | plan-check, review, verify, UAT, audit, docs-verify | `all` |
+
+The planner is one best brain (planning is a single point of failure); executors are many hands
+matched to lane weight (throughput); reviewers are every family (blind-spot coverage). A model
+appears in more than one class — the strongest model plans *and* takes the heaviest execution
+lane *and* reviews.
+
 ## Work type → routing
 
-| Work type | Preferred | Also offer the user | Why |
+| Work type | Class | Preferred within class | Why |
 |---|---|---|---|
-| **Route / classify** (thunderkit entry) | Opus 4.8 | Opus 5 | Routing is a reasoning task; cheap to get right once. |
-| **Repo recon / mapping** (tk-map) | Fable 5.1 | Opus 5 | Wide, mechanical, cost-sensitive — fan across many files. |
-| **Planning / decomposition** (tk-plan) | Opus 4.8 | Opus 5 | Load-bearing: bad lanes cost the whole run. **Ask the user.** |
-| **Critical-path implementation** (tk-execute lane) | Opus 4.8 → Opus 5 | Opus 5, Sol | The hardest lane wants the strongest coder. **Ask the user.** |
-| **Breadth / cleanup / docs lanes** (tk-execute lane) | Fable 5.1 | Opus 5 | Parallel-wide, cost-sensitive. |
-| **Review — author's family** | (the author's model) | — | For reference only; never the sole reviewer. |
-| **Review — cross-family** (tk-review) | Sol + Opus 5 | Fable 5.1 | ≥2 families; at least one different from the author. |
-| **Verification** (tk-review evidence half) | Fable 5.1 | lane-native | Running commands is cheap; use the cheap model. |
+| **Route / classify** (tk-router) | planner | Opus 4.8 | Routing is reasoning; get it right once. |
+| **Spec / discuss / plan** (tk-spec, tk-discuss, tk-plan) | planner | Opus 4.8 → Opus 5 | Load-bearing; one best brain. |
+| **Repo recon / research** (tk-map, tk-research) | executors | Fable 5.1 | Wide, mechanical, cost-sensitive — fan out. |
+| **Critical-path implementation** (tk-execute) | executors | Opus 4.8 → Opus 5 | The hardest lane wants the strongest coder. |
+| **Breadth / cleanup / docs write** (tk-execute, tk-docs) | executors | Fable 5.1 | Parallel-wide, cost-sensitive. |
+| **Plan-check / review / verify / UAT / audit** (tk-review, tk-verify-work, tk-audit) | reviewers | Sol + Opus 5 | ≥2 families; at least one ≠ author. |
+| **Verification commands** (tk-review evidence half) | reviewers | Fable 5.1 | Running commands is cheap. |
 
-**Load-bearing choices (marked "Ask the user" above): thunderkit presents the preferred model
-plus the "also offer" set and asks you to pick before dispatching.** Everything else auto-picks
-the preferred model and just reports it.
+**tk-router asks the user for the three classes before dispatching**, then auto-assigns each work
+type to its class and reports the pick. A model that isn't authed degrades to an available one,
+named — never silently swapped.
 
 ## Portable dispatch reference
 

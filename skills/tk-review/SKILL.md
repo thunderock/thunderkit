@@ -9,7 +9,18 @@ metadata:
 
 # tk-review — cross-family review + evidence gate
 
-The quality gate. `tk-review` does two inseparable jobs (merged by design):
+## Two modes
+
+- **`tk-review` (default)** — review a completed diff (post-execute). Both jobs below.
+- **`tk-review --plan`** — review the *plan* before execution (the plan-check gate, lifecycle
+  stage 8). Fan `PLAN.md`/`plan.json` to the reviewer families and check: are lanes truly
+  disjoint, does every lane have a runnable verify, are the dependency layers acyclic, do lanes
+  cite real symbols (not hallucinated names)? Output `.thunderkit/PLAN-REVIEW.md`. `tk-execute`
+  refuses to start when `review_families_min ≥ 2` and no `PLAN-REVIEW.md` exists.
+
+## The two jobs (default mode)
+
+`tk-review` does two inseparable jobs (merged by design):
 
 1. **Cross-family review** — fan the change to **≥2 model families** and consolidate. A model
    family reviewing its own output is not review; the author's family cannot be the only reviewer.

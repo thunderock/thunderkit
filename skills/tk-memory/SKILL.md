@@ -20,12 +20,19 @@ renames. Any agent that reads `.thunderkit/` inherits the project's opinion.
 |---|---|---|
 | `NORTH_STAR.md` | This project's specific goals, constraints, and non-negotiables. The "why" every lane serves. | tk-memory (you maintain) |
 | `DECISIONS.md` | Append-only decision log — dated entries: what was decided, why, what was rejected. | tk-memory + tk-plan/tk-execute |
-| `config.json` | **Per-project selections the router reuses**: chosen models per role (short names), min review families, max layers, frozen paths. Read by `tk-router` before it asks anything. | tk-memory (writes on user choice) |
+| `config.json` | **Per-project selections the router reuses**: model classes (planner/executors/reviewers), min review families, max layers, frozen paths. Read by `tk-router` before it asks anything. | tk-memory (writes on user choice) |
 | `BRIEF.md` | Intake checklist + harness grill transcript. | tk-grill |
+| `SPEC.md` | WHAT the change delivers, ambiguity-scored. | tk-spec |
 | `MAP.md` | Code map. | tk-map |
-| `PLAN.md` / `plan.json` | Current decomposition. | tk-plan |
+| `CONTEXT.md` | Implementation decisions + rejected alternatives. | tk-discuss |
+| `RESEARCH.md` | Consolidated parallel research findings. | tk-research |
+| `PLAN.md` / `plan.json` | Current decomposition into lanes. | tk-plan |
+| `PLAN-REVIEW.md` | Cross-family plan-check before execution. | tk-review --plan |
 | `runs/*.json[l]` | Per-lane dispatch records + resume ids. | tk-execute |
-| `REVIEW.md` | Latest cross-family review + evidence. | tk-review |
+| `REVIEW.md` | Latest cross-family diff review + evidence. | tk-review |
+| `UAT.md` | Conversational acceptance walk-through. | tk-verify-work |
+| `debug/<slug>.md` | Scientific-method debug sessions. | tk-debug |
+| `AUDIT.md` | Milestone done-ness vs intent. | tk-audit |
 
 `tk-memory` owns the first two; it *knows about* the rest so it can keep the north star
 consistent with what actually happened.

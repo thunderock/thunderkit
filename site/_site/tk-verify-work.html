@@ -1,0 +1,44 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-verify-work — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">skill</span><h2>tk-verify-work</h2><p class="mut">Use to validate built features through conversational walk-through: turns each acceptance criterion into a real user-surface test, tracks pass/fail/gap in UAT.md that survives a context reset, and feeds gaps back to tk-plan.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-verify-work -g</code></p><hr><h1>tk-verify-work — conversational UAT</h1>
+<p>The parallel-thunderkit analogue of GSD&#x27;s verify-work. <code>tk-review</code> proves the code passes its *verify commands*; <code>tk-verify-work</code> proves the built thing actually does what the user asked, by walking the acceptance criteria through the <strong>real user surface</strong> — not the tests, the surface.</p>
+<p>Model class: <strong>reviewers</strong>. Answers use <code>tk-ask</code> discipline.</p>
+<h2>Procedure</h2>
+<ol><li>Read <code>SPEC.md</code>/<code>PLAN.md</code> acceptance criteria. Turn each into a concrete walk-through step:</li></ol>
+<p>   the action, the expected observable, the surface it happens on.</p>
+<ol><li>Exercise each on the real surface (run the CLI, hit the endpoint, open the page) — a passing</li></ol>
+<p>   unit test is not a substitute for the surface behaving.</p>
+<ol><li>Record each as pass / fail / gap with the observed result. A <code>gap</code> is a criterion the build</li></ol>
+<p>   doesn&#x27;t meet.</p>
+<ol><li>Persist to <code>UAT.md</code> continuously so the session survives a context reset — resume by re-reading</li></ol>
+<p>   it, not by re-testing from scratch.</p>
+<h2>Output — <code>.thunderkit/UAT.md</code></h2>
+<p>Per-criterion status + observed evidence. Gaps feed back to <code>tk-plan</code> as new lanes (a gap is a mini-plan, not a &quot;done with caveats&quot;). The phase isn&#x27;t shippable while any acceptance criterion is a <code>gap</code>.</p>
+<h2>Boundary</h2>
+<p><code>tk-verify-work</code> tests behavior, it doesn&#x27;t fix it — a gap routes to <code>tk-plan</code>/<code>tk-debug</code>, not to an inline patch that skips the loop.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

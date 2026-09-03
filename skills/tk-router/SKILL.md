@@ -1,6 +1,6 @@
 ---
 name: tk-router
-description: "Use when starting big-repo multi-model work: routes a large change into parallel lanes across the best model/harness per lane, asking you to pick load-bearing models. Entry point for the thunderkit pack."
+description: "Use when starting big-repo multi-model work: sizes the change, asks you to pick three model classes (one planner, a set of executors, everyone as reviewers), and routes through the thunderkit lifecycle — grill, map, plan, execute, review, ship. Entry point for the thunderkit pack."
 metadata:
   thunderkit:
     role: router
@@ -11,8 +11,8 @@ metadata:
 
 The entry point. You reach for `tk-router` when a change is **big enough that one model in one
 pass is the wrong tool** — a large repo, a cross-cutting refactor, a feature touching many
-files, a migration. `tk-router` classifies the request, decides which skills and which fleet
-models the work needs, and hands off. It does not implement — it routes.
+files, a migration. `tk-router` classifies the request, gets the **model classes** chosen,
+and hands off through the lifecycle. It does not implement — it routes.
 
 Read `../references/model-roster.md` first. It is the source of truth for every model id and
 which work type prefers which model. Never hardcode a model id here.
@@ -21,78 +21,91 @@ which work type prefers which model. Never hardcode a model id here.
 
 Big work in big repos is won by **decomposition + heterogeneity**, not by one smart model. See
 `../../NORTH_STAR.md`. As router you enforce the opinions: no single-model plans, cross-family
-review, evidence-gated done, degrade-and-name for missing agents, **ask the user for
-load-bearing model choices**, commit project context.
+review, evidence-gated done, degrade-and-name for missing agents, **the user picks the model
+classes**, commit project context.
 
-## Routing procedure
+## Step 0 — Model classes (ask once per project, then remember)
 
-1. **Size the work.** If it fits in one context window and is one coherent edit, say so and
-   suggest a plain single-agent edit — thunderkit is overhead for small work. Otherwise continue.
-2. **Grill if anything is gray.** Route to `tk-grill` to fill `.thunderkit/BRIEF.md` with closed
-   answers. Skip only when the request already names scope, frozen paths, and a done-command.
-3. **Recon if the repo is large/unfamiliar.** Route to `tk-map` to build/refresh a code map so
-   planning works from structure, not guesses.
-4. **Plan.** Route to `tk-plan` to decompose into dependency-layered disjoint lanes, each with
-   acceptance criteria and a verification command.
-5. **Pick load-bearing models — from config first.** Read `.thunderkit/config.json`. For any
-   model key already present, use it and say so. For any absent key (planning model, critical
-   path), present the preferred model + "also offer" set from the roster, **ask the user**, then
-   have `tk-memory` write the answer. Auto-pick cheap/wide lanes (Fable 5.1) and just report them.
-6. **Execute.** Route to `tk-execute` to run lanes in parallel via portable CLI dispatch, each
-   in its own git worktree with a captured resumable id.
-7. **Review + verify.** Route to `tk-review` for cross-family review and per-lane verification.
-8. **Remember.** Route to `tk-memory` to record decisions and keep `.thunderkit/NORTH_STAR.md`
-   and `config.json` current.
+Every thunderkit run uses **three classes of model**. On a project with no
+`.thunderkit/config.json`, ask these three questions — closed form, `tk-ask` style — before
+anything else. On a project that has one, read it and *report* the classes instead of asking.
 
-## Where selections live (per project) — `.thunderkit/config.json`
+| Class | Cardinality | Question to the user | Default offer (from roster) |
+|---|---|---|---|
+| **Planner** | exactly **one**, the most capable model available | "Planner? [enum: opus48 \| opus5]" | `opus48` (→ `opus5` if no Anthropic login) |
+| **Executors** | **a set**; lanes are spread across it by lane weight | "Executors? [multi: opus48 \| opus5 \| sol \| fable51]" | `opus48 opus5 fable51` — heavy lanes to the strongest, wide/cheap lanes to Fable 5.1 |
+| **Reviewers + verifiers** | **all** of the above, plus any other authed family | "Reviewers = everyone authed? [bool]" | `yes` — every model reviews; the author's family never reviews alone |
 
-The router never asks the same load-bearing question twice on one project. Choices go through
-`tk-memory` into `.thunderkit/config.json` (committed), and the router **reads it first**:
+Why three classes: planning is a single point of failure (one best brain), execution is a
+throughput problem (many hands, matched to lane weight), and review is a blind-spot problem
+(every family looks, so no one family's blind spot survives). One-model plans are rejected by
+`tk-plan`; single-family review is rejected by `tk-review`.
+
+Write the answers via `tk-memory` to `.thunderkit/config.json`:
 
 ```json
 {
-  "models": { "plan": "opus48", "critical_path": "opus5", "review": ["sol", "opus5"] },
+  "classes": {
+    "planner": "opus48",
+    "executors": ["opus48", "opus5", "fable51"],
+    "reviewers": "all"
+  },
   "review_families_min": 2,
   "max_layers": 3,
-  "frozen_paths": ["src/billing"],
-  "decided_at": "2026-09-03"
+  "frozen_paths": [],
+  "decided_at": "YYYY-MM-DD"
 }
 ```
 
-Rules: a key present → use it and *report* it ("critical path: Opus 5, per project config"); a
-key absent → ask, then write it. The user can override any run with a one-line instruction,
-which also updates the file and logs a `DECISIONS.md` entry. Short names resolve to ids via the
-roster, so a model rename never invalidates a project's config.
+Rules: a key present → use it and say so ("planner: Opus 4.8, per project config"); absent → ask,
+then write. The user can override any run in one line, which also updates the file and logs a
+`DECISIONS.md` entry. Short names resolve to ids via the roster, so a model rename never
+invalidates a project's config. If a chosen model isn't authed on this machine, **degrade and
+name it** — never silently substitute.
 
-## Intake first: `tk-grill` + `tk-ask`
+## The lifecycle (routing procedure)
 
-Before `tk-plan`, a request with any gray area goes to `tk-grill`, which fills
-`.thunderkit/BRIEF.md` using `tk-ask`'s closed-answer discipline (yes/no/word/number/path/
-`unknown`). `tk-plan` refuses a BRIEF with open unknowns.
+thunderkit mirrors the GSD phase loop — *discuss → plan → execute → verify → ship* — with every
+stage made parallel and cross-model. Route in this order; skip a stage only when its artifact
+already exists and is fresh.
 
-## The map (which skill owns what)
+| # | Stage | Skill | Artifact in `.thunderkit/` | Model class |
+|---|---|---|---|---|
+| 1 | **Size** | (you) | — | — |
+| 2 | **Intake** — closed-question grill of user + harness | `tk-grill` (+ `tk-ask`) | `BRIEF.md` | Fable 5.1 (cheap turns) |
+| 3 | **Spec** — WHAT is delivered, ambiguity-scored | `tk-spec` | `SPEC.md` | planner |
+| 4 | **Map** — parallel code recon along seams | `tk-map` | `MAP.md` | executors (wide) |
+| 5 | **Discuss** — implementation decisions, gray areas | `tk-discuss` | `CONTEXT.md` | planner asks, user decides |
+| 6 | **Research** — parallel investigation of unknowns | `tk-research` | `RESEARCH.md` | executors (wide) |
+| 7 | **Plan** — disjoint dependency-layered lanes | `tk-plan` | `PLAN.md` + `plan.json` | **planner** (one) |
+| 8 | **Plan check** — cross-family critique of the plan | `tk-review --plan` | `PLAN-REVIEW.md` | reviewers (all) |
+| 9 | **Execute** — lanes in parallel, worktrees, resume ids | `tk-execute` | `runs/` | **executors** (set) |
+| 10 | **Review + verify** — cross-family diff review + evidence gate | `tk-review` | `REVIEW.md` | **reviewers** (all) |
+| 11 | **UAT** — conversational walk-through of what was built | `tk-verify-work` | `UAT.md` | reviewers |
+| 12 | **Debug** — scientific-method loop when 10/11 fail | `tk-debug` | `debug/<slug>.md` | planner + executors |
+| 13 | **Ship** — PR body from artifacts, gates, no auto-merge | `tk-ship` | — | Fable 5.1 (assembly) |
+| 14 | **Docs** — parallel doc write + verify against code | `tk-docs` | — | executors + reviewers |
+| 15 | **Audit** — milestone done-ness vs original intent | `tk-audit` | `AUDIT.md` | reviewers (all) |
+| 16 | **Remember** — north star, decisions, config | `tk-memory` | `NORTH_STAR.md`, `DECISIONS.md`, `config.json` | any |
 
-| Skill | Owns |
-|---|---|
-| `tk-ask` | Answer discipline: yes/no/word/number/path/`unknown`, hard word cap |
-| `tk-grill` | Closed-question intake of user + harness → `.thunderkit/BRIEF.md` |
-| `tk-map` | Big-repo reconnaissance / code map |
-| `tk-plan` | Decompose into parallel dependency-layered lanes |
-| `tk-execute` | Run lanes in parallel (portable CLI dispatch, worktrees) |
-| `tk-review` | Cross-family review **and** evidence/verification gate |
-| `tk-memory` | Project north-star memory, decision log, **`config.json` selections** |
+**Minimum path** for a mid-size change: 1 → 2 → 4 → 7 → 9 → 10 → 16.
+**Full path** for a milestone: all of it. `tk-plan` refuses a BRIEF with open unknowns;
+`tk-execute` refuses a plan with no `PLAN-REVIEW.md` when `review_families_min ≥ 2`;
+`tk-ship` refuses without a passing `REVIEW.md`.
 
-## Asking the user to choose models (required for load-bearing lanes)
+## Asking the user (closed form, from the roster)
 
-Present it concretely, from the roster:
+Present it concretely:
 
-> Critical-path lane (the auth refactor) — preferred **Opus 4.8**. Alternatives: **Opus 5**
-> (login-free), **Sol** (different family). Which should implement it?
+> Planner — one model, most capable. `[enum: opus48 | opus5]` (default `opus48`)
+> Executors — a set; heavy lanes go to the strongest listed. `[multi: opus48 opus5 sol fable51]`
+> Reviewers — everyone authed reviews every lane. `[bool]` (default `yes`)
 
-Do not proceed on a load-bearing lane until the user picks or explicitly says "you decide."
+Do not proceed until the user picks or explicitly says "defaults."
 
 ## Degrade honestly
 
-If an agent/model the plan wants isn't installed or authed on this machine, say which lane is
-affected, what you're falling back to, and what the user would install/login to get the
-intended model. Never fake a lane's result.
+If an agent/model a class wants isn't installed or authed on this machine, say which class and
+which lanes are affected, what you're falling back to, and what the user would install/login to
+get the intended model. Never fake a lane's result. Fewer than two reviewer families → the run is
+marked `single-family-review` in `REVIEW.md` and `tk-ship` refuses.

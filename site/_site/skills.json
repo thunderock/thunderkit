@@ -1,10 +1,18 @@
 [
   "tk-ask",
+  "tk-audit",
+  "tk-debug",
+  "tk-discuss",
+  "tk-docs",
   "tk-execute",
   "tk-grill",
   "tk-map",
   "tk-memory",
   "tk-plan",
+  "tk-research",
   "tk-review",
-  "tk-router"
+  "tk-router",
+  "tk-ship",
+  "tk-spec",
+  "tk-verify-work"
 ]

@@ -1,0 +1,44 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-research — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">skill</span><h2>tk-research</h2><p class="mut">Use to investigate unknowns before planning a big change: fans parallel research lanes (library options, prior art, pitfalls, API behavior) across cheap wide models, each writing a focused finding, consolidated into RESEARCH.md.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-research -g</code></p><hr><h1>tk-research — parallel investigation of the unknowns</h1>
+<p>The parallel-thunderkit analogue of GSD&#x27;s research step. When a plan would otherwise rest on guesses — how a library actually behaves, what prior art exists, where the pitfalls are — <code>tk-research</code> fans <strong>parallel research lanes</strong> across the wide/cheap executor models, each with a fresh context and a narrow question, then consolidates.</p>
+<p>Model class: <strong>executors</strong> (the wide, cheap ones — research is breadth). Each lane writes its own finding; the orchestrator only collects and dedupes.</p>
+<h2>Procedure</h2>
+<ol><li>Turn the <code>BRIEF.md</code>/<code>SPEC.md</code> unknowns (the <code>unknown</code> rows from <code>tk-grill</code>) into discrete</li></ol>
+<p>   research questions — one per lane, disjoint.</p>
+<ol><li>Dispatch each as its own lane (portable dispatch, resume id captured — same contract as</li></ol>
+<p>   <code>tk-execute</code>), on a wide model, with a fresh context.</p>
+<ol><li>Each lane returns a finding: the answer, the evidence (a link, a file, a probe result), and a</li></ol>
+<p>   confidence. <code>unknown</code> is a valid finding — it goes back to the user.</p>
+<ol><li>Consolidate into <code>RESEARCH.md</code>: findings grouped by question, contradictions preserved (two</li></ol>
+<p>   sources disagreeing is signal), each with its evidence and confidence.</p>
+<h2>Output — <code>.thunderkit/RESEARCH.md</code></h2>
+<p>Decision-driving findings with evidence, consumed by <code>tk-plan</code> — options and rejected alternatives in the plan should cite these, not restate assumptions.</p>
+<h2>Boundary</h2>
+<p>Research is source-backed and read-only — it investigates, it does not implement. A finding without evidence is a guess; label it <code>unverified</code> rather than presenting it as fact.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

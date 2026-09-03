@@ -1,8 +1,8 @@
 {
-  "models": {
-    "plan": "opus48",
-    "critical_path": "opus48",
-    "review": ["sol", "opus5"]
+  "classes": {
+    "planner": "opus48",
+    "executors": ["opus48", "opus5", "fable51"],
+    "reviewers": "all"
   },
   "review_families_min": 2,
   "max_layers": 3,

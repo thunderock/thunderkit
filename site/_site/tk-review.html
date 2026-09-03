@@ -25,7 +25,11 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
 <span class="tag">skill</span><h2>tk-review</h2><p class="mut">Use to review and verify completed big-repo work: fans a diff to two-plus model families for cross-family review, consolidates findings by severity, and runs each lane&#x27;s verification command so done means evidence, not intent.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-review -g</code></p><hr><h1>tk-review — cross-family review + evidence gate</h1>
-<p>The quality gate. <code>tk-review</code> does two inseparable jobs (merged by design):</p>
+<h2>Two modes</h2>
+<ul><li><strong><code>tk-review</code> (default)</strong> — review a completed diff (post-execute). Both jobs below.</li><li><strong><code>tk-review --plan</code></strong> — review the *plan* before execution (the plan-check gate, lifecycle</li></ul>
+<p>  stage 8). Fan <code>PLAN.md</code>/<code>plan.json</code> to the reviewer families and check: are lanes truly   disjoint, does every lane have a runnable verify, are the dependency layers acyclic, do lanes   cite real symbols (not hallucinated names)? Output <code>.thunderkit/PLAN-REVIEW.md</code>. <code>tk-execute</code>   refuses to start when <code>review_families_min ≥ 2</code> and no <code>PLAN-REVIEW.md</code> exists.</p>
+<h2>The two jobs (default mode)</h2>
+<p><code>tk-review</code> does two inseparable jobs (merged by design):</p>
 <ol><li><strong>Cross-family review</strong> — fan the change to <strong>≥2 model families</strong> and consolidate. A model</li></ol>
 <p>   family reviewing its own output is not review; the author&#x27;s family cannot be the only reviewer.</p>
 <ol><li><strong>Evidence gate</strong> — run each lane&#x27;s <code>verify</code> command. A lane without a passing verification is</li></ol>
