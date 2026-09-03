@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>thunderkit — thunderkit</title><style>
+<title>tk-router — thunderkit</title><style>
 :root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
@@ -24,8 +24,8 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
-<span class="tag">skill</span><h2>thunderkit</h2><p class="mut">Use when starting big-repo multi-model work: routes a large change into parallel lanes across the best model/harness per lane, asking you to pick load-bearing models. Entry point for thunderkit.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s thunderkit -g</code></p><hr><h1>thunderkit — router</h1>
-<p>The entry point. You reach for <code>thunderkit</code> when a change is <strong>big enough that one model in one pass is the wrong tool</strong> — a large repo, a cross-cutting refactor, a feature touching many files, a migration. thunderkit classifies the request, decides which skills and which fleet models the work needs, and hands off. It does not implement — it routes.</p>
+<span class="tag">skill</span><h2>tk-router</h2><p class="mut">Use when starting big-repo multi-model work: routes a large change into parallel lanes across the best model/harness per lane, asking you to pick load-bearing models. Entry point for the thunderkit pack.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-router -g</code></p><hr><h1>tk-router — the router</h1>
+<p>The entry point. You reach for <code>tk-router</code> when a change is <strong>big enough that one model in one pass is the wrong tool</strong> — a large repo, a cross-cutting refactor, a feature touching many files, a migration. <code>tk-router</code> classifies the request, decides which skills and which fleet models the work needs, and hands off. It does not implement — it routes.</p>
 <p>Read <code>../references/model-roster.md</code> first. It is the source of truth for every model id and which work type prefers which model. Never hardcode a model id here.</p>
 <h2>The thunderkit thesis (enforce it, don&#x27;t just cite it)</h2>
 <p>Big work in big repos is won by <strong>decomposition + heterogeneity</strong>, not by one smart model. See <code>../../NORTH_STAR.md</code>. As router you enforce the opinions: no single-model plans, cross-family review, evidence-gated done, degrade-and-name for missing agents, <strong>ask the user for load-bearing model choices</strong>, commit project context.</p>

@@ -26,7 +26,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
 <span class="tag">skill</span><h2>tk-plan</h2><p class="mut">Use to turn a big-repo change into a parallel execution plan: decomposes work into disjoint, dependency-layered lanes, each file-scoped with acceptance criteria and a verification command, ready for tk-execute.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-plan -g</code></p><hr><h1>tk-plan — decompose into parallel lanes</h1>
 <p>The heart of the thunderkit thesis. <code>tk-plan</code> takes a change and produces a plan whose unit is the <strong>lane</strong>: a disjoint, file-scoped slice of work that can run *in parallel* with its siblings without collision, ordered into dependency layers. A plan that can&#x27;t be split into lanes is not finished here — that&#x27;s the opinion this skill enforces.</p>
-<p>Preferred model: <strong>Opus 4.8</strong> (planning is load-bearing — bad lanes cost the whole run). This is one of the choices <code>thunderkit</code> should offer the user (Opus 4.8 / Opus 5). See <code>../references/model-roster.md</code>. Read <code>.thunderkit/MAP.md</code> from <code>tk-map</code> first.</p>
+<p>Preferred model: <strong>Opus 4.8</strong> (planning is load-bearing — bad lanes cost the whole run). This is one of the choices <code>tk-router</code> should offer the user (Opus 4.8 / Opus 5). See <code>../references/model-roster.md</code>. Read <code>.thunderkit/MAP.md</code> from <code>tk-map</code> first.</p>
 <h2>What a lane is</h2>
 <ul><li><strong>Disjoint file scope</strong> — two lanes in the same layer must not write the same files. This is</li></ul>
 <p>  what makes parallel execution safe. If two slices need the same file, they belong in different   *layers*, not the same layer.</p>
@@ -62,7 +62,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p>   slice that needs another&#x27;s output in a later layer.</p>
 <ol><li><strong>Attach acceptance + verify to every lane</strong> from the map&#x27;s per-area verification commands.</li></ol>
 <p>   A lane with no runnable verify is <code>blocked</code> — record why and what&#x27;s needed to unblock it.</p>
-<ol><li><strong>Mark model hints.</strong> Flag the critical-path lane(s) so <code>thunderkit</code> knows to ask the user</li></ol>
+<ol><li><strong>Mark model hints.</strong> Flag the critical-path lane(s) so <code>tk-router</code> knows to ask the user</li></ol>
 <p>   which model implements them.</p>
 <ol><li><strong>Check testability</strong> before finishing: can each lane&#x27;s verify actually run in this repo? If</li></ol>
 <p>   a command is aspirational (test doesn&#x27;t exist yet), the lane&#x27;s first task is to create it.</p>

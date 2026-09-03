@@ -19,7 +19,7 @@ machine with no private orchestrator. See the dispatch table in `../references/m
 ## Prerequisites (check, don't assume)
 
 - `.thunderkit/plan.json` exists and passed `tk-plan`'s parallelism check.
-- The user has chosen the load-bearing models (via `thunderkit`) — critical-path lane model is
+- The user has chosen the load-bearing models (via `tk-router`) — critical-path lane model is
   resolved, not a placeholder.
 - The harnesses the plan's models need are installed and authed. If not, **degrade and name**:
   run the lanes you can, report which lanes are blocked on which missing auth.

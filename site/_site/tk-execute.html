@@ -28,7 +28,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p>Takes <code>.thunderkit/plan.json</code> from <code>tk-plan</code> and <strong>implements its lanes in parallel</strong> across the fleet. Layer by layer: all lanes in a layer dispatch concurrently (they&#x27;re disjoint by construction), the layer&#x27;s verifications gate advancement, then the next layer starts.</p>
 <p>Dispatch is <strong>portable CLI only</strong> — <code>claude -p</code> and <code>codex exec</code> — so this runs on anyone&#x27;s machine with no private orchestrator. See the dispatch table in <code>../references/model-roster.md</code>.</p>
 <h2>Prerequisites (check, don&#x27;t assume)</h2>
-<ul><li><code>.thunderkit/plan.json</code> exists and passed <code>tk-plan</code>&#x27;s parallelism check.</li><li>The user has chosen the load-bearing models (via <code>thunderkit</code>) — critical-path lane model is</li></ul>
+<ul><li><code>.thunderkit/plan.json</code> exists and passed <code>tk-plan</code>&#x27;s parallelism check.</li><li>The user has chosen the load-bearing models (via <code>tk-router</code>) — critical-path lane model is</li></ul>
 <p>  resolved, not a placeholder.</p>
 <ul><li>The harnesses the plan&#x27;s models need are installed and authed. If not, <strong>degrade and name</strong>:</li></ul>
 <p>  run the lanes you can, report which lanes are blocked on which missing auth.</p>

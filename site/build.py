@@ -169,7 +169,7 @@ def build(out):
            "disjoint parallel lanes and routes each to the best model and harness — asking you to "
            "pick the load-bearing ones.</p>"
            "<h2>Install</h2><pre><code>npx skills add thunderock/thunderkit -s '*' -g</code></pre>"
-           "<p class='mut'>Or one skill: <code>npx skills add thunderock/thunderkit -s thunderkit -g</code></p>"
+           "<p class='mut'>Or one skill: <code>npx skills add thunderock/thunderkit -s tk-router -g</code></p>"
            "<h2>Skills</h2>" + "".join(cards))
     write(out, "index.html", page("Home", nav, idx))
 

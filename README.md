@@ -18,7 +18,7 @@ models. Context is committed, not recalled.
 
 | Skill | What it owns |
 |---|---|
-| **thunderkit** | Router / entry point. Sizes the work, routes through the pipeline, reads `.thunderkit/config.json` for past selections, and **asks you to choose among the top models** only for undecided load-bearing lanes. |
+| **tk-router** | Router / entry point. Sizes the work, routes through the pipeline, reads `.thunderkit/config.json` for past selections, and **asks you to choose among the top models** only for undecided load-bearing lanes. |
 | **tk-ask** | Answer discipline — a harness must answer in yes/no, one word, a number, a path, or `unknown`. No prose. |
 | **tk-grill** | Closed-question intake — interrogates you *and* the harness until the brief has no unknowns → `.thunderkit/BRIEF.md`. |
 | **tk-map** | Big-repo reconnaissance — a durable code map so planning works from structure, not guesses. |
@@ -46,7 +46,7 @@ npx skills add thunderock/thunderkit --all
 npx skills add thunderock/thunderkit -s '*' -g --agent claude-code codex opencode hermes-agent
 
 # one skill
-npx skills add thunderock/thunderkit -s thunderkit -g
+npx skills add thunderock/thunderkit -s tk-router -g
 
 # what's in the repo, without installing
 npx skills add thunderock/thunderkit -l
@@ -63,7 +63,7 @@ directly. A fresh-machine setup script can pin it with one line:
 npx -y skills add thunderock/thunderkit -s '*' -g -y --agent '*'
 ```
 
-Then invoke the router by name (e.g. `thunderkit: refactor the auth layer across the monorepo`)
+Then invoke the router by name (e.g. `tk-router: refactor the auth layer across the monorepo`)
 and it routes the rest.
 
 ## How the fleet is used

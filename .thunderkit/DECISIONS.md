@@ -2,8 +2,14 @@
 
 Append-only. Newest first. Each entry: what was decided, why, what was rejected.
 
+## 2026-09-03 — Router skill named tk-router (not thunderkit)
+- Decision: the entry skill is `tk-router`, consistent with the `tk-*` family.
+- Why: `thunderkit` as a skill name collides with the pack name — in `npx skills list` it read as
+  the pack, not a skill. `tk-router` is self-describing and uniform with tk-plan/tk-execute/etc.
+- Rejected: keeping `thunderkit` as the router's invoke name (sshlg-style single entry word).
+
 ## 2026-09-03 — Build thunderkit as an opinionated big-repo delegation pack
-- Decision: 6 skills (thunderkit router, tk-map, tk-plan, tk-execute, tk-review, tk-memory) +
+- Decision: 6 skills (tk-router, tk-map, tk-plan, tk-execute, tk-review, tk-memory) +
   a shared model-roster reference. Plain SKILL.md, installed via `npx skills add`.
 - Why: the thesis is decomposition + heterogeneity for very large repos; a router + plan +
   parallel execute + cross-family review + committed memory covers that loop.

@@ -1,10 +1,10 @@
 [
-  "thunderkit",
   "tk-ask",
   "tk-execute",
   "tk-grill",
   "tk-map",
   "tk-memory",
   "tk-plan",
-  "tk-review"
+  "tk-review",
+  "tk-router"
 ]

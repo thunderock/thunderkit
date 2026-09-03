@@ -1,17 +1,17 @@
 ---
-name: thunderkit
-description: "Use when starting big-repo multi-model work: routes a large change into parallel lanes across the best model/harness per lane, asking you to pick load-bearing models. Entry point for thunderkit."
+name: tk-router
+description: "Use when starting big-repo multi-model work: routes a large change into parallel lanes across the best model/harness per lane, asking you to pick load-bearing models. Entry point for the thunderkit pack."
 metadata:
   thunderkit:
     role: router
     tier: entry
 ---
 
-# thunderkit — router
+# tk-router — the router
 
-The entry point. You reach for `thunderkit` when a change is **big enough that one model in one
+The entry point. You reach for `tk-router` when a change is **big enough that one model in one
 pass is the wrong tool** — a large repo, a cross-cutting refactor, a feature touching many
-files, a migration. thunderkit classifies the request, decides which skills and which fleet
+files, a migration. `tk-router` classifies the request, decides which skills and which fleet
 models the work needs, and hands off. It does not implement — it routes.
 
 Read `../references/model-roster.md` first. It is the source of truth for every model id and

@@ -20,7 +20,7 @@ renames. Any agent that reads `.thunderkit/` inherits the project's opinion.
 |---|---|---|
 | `NORTH_STAR.md` | This project's specific goals, constraints, and non-negotiables. The "why" every lane serves. | tk-memory (you maintain) |
 | `DECISIONS.md` | Append-only decision log — dated entries: what was decided, why, what was rejected. | tk-memory + tk-plan/tk-execute |
-| `config.json` | **Per-project selections the router reuses**: chosen models per role (short names), min review families, max layers, frozen paths. Read by `thunderkit` before it asks anything. | tk-memory (writes on user choice) |
+| `config.json` | **Per-project selections the router reuses**: chosen models per role (short names), min review families, max layers, frozen paths. Read by `tk-router` before it asks anything. | tk-memory (writes on user choice) |
 | `BRIEF.md` | Intake checklist + harness grill transcript. | tk-grill |
 | `MAP.md` | Code map. | tk-map |
 | `PLAN.md` / `plan.json` | Current decomposition. | tk-plan |

@@ -15,7 +15,7 @@ without collision, ordered into dependency layers. A plan that can't be split in
 finished here — that's the opinion this skill enforces.
 
 Preferred model: **Opus 4.8** (planning is load-bearing — bad lanes cost the whole run). This is
-one of the choices `thunderkit` should offer the user (Opus 4.8 / Opus 5). See
+one of the choices `tk-router` should offer the user (Opus 4.8 / Opus 5). See
 `../references/model-roster.md`. Read `.thunderkit/MAP.md` from `tk-map` first.
 
 ## What a lane is
@@ -64,7 +64,7 @@ Human-readable `PLAN.md` and a machine-readable `plan.json` that `tk-execute` co
    slice that needs another's output in a later layer.
 4. **Attach acceptance + verify to every lane** from the map's per-area verification commands.
    A lane with no runnable verify is `blocked` — record why and what's needed to unblock it.
-5. **Mark model hints.** Flag the critical-path lane(s) so `thunderkit` knows to ask the user
+5. **Mark model hints.** Flag the critical-path lane(s) so `tk-router` knows to ask the user
    which model implements them.
 6. **Check testability** before finishing: can each lane's verify actually run in this repo? If
    a command is aspirational (test doesn't exist yet), the lane's first task is to create it.
