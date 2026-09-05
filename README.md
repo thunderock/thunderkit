@@ -4,7 +4,7 @@
 
 **Ship big changes in big repos — by splitting the work into parallel lanes and routing each to the best model across a heterogeneous agent fleet.**
 
-[![skills](https://img.shields.io/badge/Agent_Skills-16-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
+[![skills](https://img.shields.io/badge/Agent_Skills-17-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
 [![CI](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/ci.yml?branch=master&style=for-the-badge&logo=github&label=CI)](https://github.com/thunderock/thunderkit/actions/workflows/ci.yml)
 [![Pages](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/pages.yml?branch=master&style=for-the-badge&logo=githubpages&label=Docs)](https://thunderock.github.io/thunderkit/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
@@ -76,11 +76,12 @@ hands matched to lane weight. Review is a blind-spot problem → every family lo
 family's blind spot survives.* A model can be in more than one class — the strongest model plans,
 takes the heaviest lane, and reviews.
 
-## The skills (16)
+## The skills (17)
 
 | Stage | Skill | What it owns |
 |---|---|---|
 | **entry** | `tk-router` | Sizes the work, gets the three model classes chosen, routes the lifecycle. |
+| **preflight** | `tk-test` | Pings every configured model through its real harness CLI — proves the fleet is reachable and ≥2 review families answer before work starts. |
 | **intake** | `tk-ask` | Answer discipline — yes/no, one word, a number, a path, or `unknown`. No prose. |
 | **intake** | `tk-grill` | Interrogates you *and* the harness with closed questions until the brief has no unknowns. |
 | **pre-plan** | `tk-spec` | Ambiguity-scored Socratic loop pinning *what* the change delivers. |

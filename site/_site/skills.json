@@ -14,5 +14,6 @@
   "tk-router",
   "tk-ship",
   "tk-spec",
+  "tk-test",
   "tk-verify-work"
 ]

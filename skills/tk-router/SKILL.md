@@ -72,6 +72,7 @@ already exists and is fresh.
 | # | Stage | Skill | Artifact in `.thunderkit/` | Model class |
 |---|---|---|---|---|
 | 1 | **Size** | (you) | — | — |
+| 1.5 | **Preflight** — ping every configured model, confirm reachable + ≥2 review families | `tk-test` | (report) | all configured |
 | 2 | **Intake** — closed-question grill of user + harness | `tk-grill` (+ `tk-ask`) | `BRIEF.md` | Fable 5.1 (cheap turns) |
 | 3 | **Spec** — WHAT is delivered, ambiguity-scored | `tk-spec` | `SPEC.md` | planner |
 | 4 | **Map** — parallel code recon along seams | `tk-map` | `MAP.md` | executors (wide) |
@@ -88,9 +89,10 @@ already exists and is fresh.
 | 15 | **Audit** — milestone done-ness vs original intent | `tk-audit` | `AUDIT.md` | reviewers (all) |
 | 16 | **Remember** — north star, decisions, config | `tk-memory` | `NORTH_STAR.md`, `DECISIONS.md`, `config.json` | any |
 
-**Minimum path** for a mid-size change: 1 → 2 → 4 → 7 → 9 → 10 → 16.
-**Full path** for a milestone: all of it. `tk-plan` refuses a BRIEF with open unknowns;
-`tk-execute` refuses a plan with no `PLAN-REVIEW.md` when `review_families_min ≥ 2`;
+**Minimum path** for a mid-size change: 1 → 1.5 → 2 → 4 → 7 → 9 → 10 → 16.
+**Full path** for a milestone: all of it. `tk-test` gates the run start (unreachable model or
+< 2 review families → fix config before dispatching); `tk-plan` refuses a BRIEF with open
+unknowns; `tk-execute` refuses a plan with no `PLAN-REVIEW.md` when `review_families_min ≥ 2`;
 `tk-ship` refuses without a passing `REVIEW.md`.
 
 ## Asking the user (closed form, from the roster)

@@ -9,5 +9,8 @@ wt-*/
 # macOS
 .DS_Store
 
+# oh-my-claudecode / harness state written by tk-test CLI probes — never ours to commit
+.omc/
+
 # Note: site/_site IS committed (GitHub Pages serves it, and tests/site_drift.py
 # gates the committed skills.json against skills/ on disk).

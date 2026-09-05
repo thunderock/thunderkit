@@ -29,7 +29,7 @@ run_tests:
 
 # Lint is best-effort so it stays green on a fresh machine without dev tools.
 lint:
-	@$(PY) -m py_compile tests/validate_frontmatter.py tests/site_drift.py site/build.py && echo "py_compile OK"
+	@$(PY) -m py_compile tests/validate_frontmatter.py tests/site_drift.py site/build.py $$(find skills -name '*.py') && echo "py_compile OK"
 	@if command -v shellcheck >/dev/null; then \
 		find . -name '*.sh' -not -path './.git/*' -print0 | xargs -0 -r shellcheck && echo "shellcheck OK"; \
 	else echo "shellcheck absent — skipped"; fi

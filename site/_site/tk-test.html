@@ -1,0 +1,57 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-test — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">skill</span><h2>tk-test</h2><p class="mut">Use to prove the fleet configured by tk-router is actually reachable: pings every model in .thunderkit/config.json through its real harness CLI with a one-word probe and reports reachable/unreachable per model and per class before any real work starts.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-test -g</code></p><hr><h1>tk-test — does the configured fleet actually answer?</h1>
+<p>A smoke test for the model classes <code>tk-router</code> chose. Before committing a big run to a fleet, <code>tk-test</code> proves each configured model is <strong>actually reachable through its harness on this machine</strong> — not assumed from config. It sends the smallest possible <code>tk-ask</code> probe (&quot;Reply with exactly one word: pong&quot;) to every model and reports what came back, with the resumable id.</p>
+<p>Run it right after <code>tk-router</code> writes <code>.thunderkit/config.json</code>, on a fresh machine, or whenever a run mysteriously stalls — a stalled lane is usually an unreachable or unauthed model, and this finds that in seconds instead of minutes of silence.</p>
+<h2>What it does</h2>
+<p><code>scripts/tk-test.py</code> reads <code>.thunderkit/config.json</code>, resolves each short name to a harness + provider id via the roster, and dispatches the probe through the <strong>real CLI</strong> for each:</p>
+<table><thead><tr><th>Harness</th><th>Probe command</th><th>Reads</th></tr></thead><tbody><tr><td>claude</td><td><code>claude -p &quot;&lt;probe&gt;&quot; --model &lt;id&gt; --output-format json</code></td><td><code>.result</code> == pong, <code>.session_id</code></td></tr><tr><td>codex</td><td><code>codex exec --json --skip-git-repo-check -m &lt;id&gt; &quot;&lt;probe&gt;&quot;</code></td><td><code>item.completed</code> text, <code>thread.started.thread_id</code></td></tr><tr><td>hermes</td><td><code>hermes chat -q &quot;&lt;probe&gt;&quot; --oneshot -Q --provider &lt;p&gt; -m &lt;id&gt; -t &quot;&quot;</code></td><td>last line == pong, <code>session_id</code></td></tr></tbody></table>
+<p>Each model is reported <code>reachable</code> (answered &quot;pong&quot;), <code>unreachable</code> (CLI ran but wrong/failed answer — auth, quota, bad id), or <code>not-installed</code> (harness not on PATH). It also checks the <strong>cross-family invariant</strong>: how many distinct model *families* are reachable among the reviewers, against <code>review_families_min</code> — because if only one family answers, <code>tk-review</code> can&#x27;t do a real cross-family review and <code>tk-ship</code> will block.</p>
+<h2>Run it</h2>
+<pre><code>python3 skills/tk-test/scripts/tk-test.py                 # human table, exit 0 iff all reachable
+python3 skills/tk-test/scripts/tk-test.py --json          # machine-readable
+python3 skills/tk-test/scripts/tk-test.py --timeout 150   # per-probe timeout (default 120s)
+python3 skills/tk-test/scripts/tk-test.py --config path/to/config.json</code></pre>
+<p>(When the pack is installed via <code>npx skills</code>, the script lives at <code>~/.agents/skills/tk-test/scripts/tk-test.py</code>.)</p>
+<h2>Output — reachability report</h2>
+<p>Per-model status + timing + resumable id, then a per-class roll-up and the family check:</p>
+<pre><code>✓ opus48  claude   reachable   8.9  pong
+✓ opus5   hermes   reachable  28.1  pong
+✓ fable51 hermes   reachable  14.8  pong
+✗ sol     codex    unreachable      rc=1 quota exceeded
+
+  reviewer families reachable: 1 (anthropic); required ≥ 2  ← cross-family review NOT possible</code></pre>
+<p>Exit 0 only when every configured model answered; non-zero otherwise, so it drops straight into a Makefile target or CI preflight.</p>
+<h2>Discipline</h2>
+<ul><li><strong>Never fakes a result.</strong> A model that doesn&#x27;t answer is <code>unreachable</code>/<code>not-installed</code>, never a</li></ul>
+<p>  silent pass. The probe asserts the literal word <code>pong</code> came back, not just that the CLI exited 0.</p>
+<ul><li><strong>Degrade honestly.</strong> If a class loses a model, <code>tk-test</code> says which class and whether the</li></ul>
+<p>  cross-family invariant still holds — the same honesty rule the rest of the pack follows.</p>
+<ul><li><strong>Cheap and bounded.</strong> One tiny turn per model, each under a timeout, so a hung harness can&#x27;t</li></ul>
+<p>  stall the preflight.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

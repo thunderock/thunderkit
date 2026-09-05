@@ -22,6 +22,7 @@ renames. Any agent that reads `.thunderkit/` inherits the project's opinion.
 | `DECISIONS.md` | Append-only decision log — dated entries: what was decided, why, what was rejected. | tk-memory + tk-plan/tk-execute |
 | `config.json` | **Per-project selections the router reuses**: model classes (planner/executors/reviewers), min review families, max layers, frozen paths. Read by `tk-router` before it asks anything. | tk-memory (writes on user choice) |
 | `BRIEF.md` | Intake checklist + harness grill transcript. | tk-grill |
+| _(preflight)_ | Fleet reachability report (not persisted). | tk-test |
 | `SPEC.md` | WHAT the change delivers, ambiguity-scored. | tk-spec |
 | `MAP.md` | Code map. | tk-map |
 | `CONTEXT.md` | Implementation decisions + rejected alternatives. | tk-discuss |
