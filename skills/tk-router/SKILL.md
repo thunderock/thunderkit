@@ -71,13 +71,14 @@ already exists and is fresh.
 
 | # | Stage | Skill | Artifact in `.thunderkit/` | Model class |
 |---|---|---|---|---|
+| 0 | **Restore** — if a handoff exists, resume from it instead of starting fresh | `tk-handoff restore` | reads `HANDOFF.md` | any |
 | 1 | **Size** | (you) | — | — |
 | 1.5 | **Preflight** — ping every configured model, confirm reachable + ≥2 review families | `tk-test` | (report) | all configured |
-| 2 | **Intake** — closed-question grill of user + harness | `tk-grill` (+ `tk-ask`) | `BRIEF.md` | Fable 5.1 (cheap turns) |
+| 2 | **Intake** — closed-question grill of user + harness; `--learn` routes project-unknowns to tk-learn | `tk-grill` (+ `tk-ask`) | `BRIEF.md` | Fable 5.1 (cheap turns) |
 | 3 | **Spec** — WHAT is delivered, ambiguity-scored | `tk-spec` | `SPEC.md` | planner |
 | 4 | **Map** — parallel code recon along seams | `tk-map` | `MAP.md` | executors (wide) |
 | 5 | **Discuss** — implementation decisions, gray areas | `tk-discuss` | `CONTEXT.md` | planner asks, user decides |
-| 6 | **Research** — parallel investigation of unknowns | `tk-research` | `RESEARCH.md` | executors (wide) |
+| 6 | **Research / Learn** — investigate unknowns; learn new domains source-backed | `tk-research`, `tk-learn` | `RESEARCH.md`, `knowledge/` | executors (wide) |
 | 7 | **Plan** — disjoint dependency-layered lanes | `tk-plan` | `PLAN.md` + `plan.json` | **planner** (one) |
 | 8 | **Plan check** — cross-family critique of the plan | `tk-review --plan` | `PLAN-REVIEW.md` | reviewers (all) |
 | 9 | **Execute** — lanes in parallel, worktrees, resume ids | `tk-execute` | `runs/` | **executors** (set) |
@@ -88,12 +89,21 @@ already exists and is fresh.
 | 14 | **Docs** — parallel doc write + verify against code | `tk-docs` | — | executors + reviewers |
 | 15 | **Audit** — milestone done-ness vs original intent | `tk-audit` | `AUDIT.md` | reviewers (all) |
 | 16 | **Remember** — north star, decisions, config | `tk-memory` | `NORTH_STAR.md`, `DECISIONS.md`, `config.json` | any |
+| any | **Handoff** — save session state at ~80% context or on pause | `tk-handoff save` | `HANDOFF.md` | any |
 
-**Minimum path** for a mid-size change: 1 → 1.5 → 2 → 4 → 7 → 9 → 10 → 16.
+**Minimum path** for a mid-size change: 0 → 1 → 1.5 → 2 → 4 → 7 → 9 → 10 → 16.
 **Full path** for a milestone: all of it. `tk-test` gates the run start (unreachable model or
 < 2 review families → fix config before dispatching); `tk-plan` refuses a BRIEF with open
 unknowns; `tk-execute` refuses a plan with no `PLAN-REVIEW.md` when `review_families_min ≥ 2`;
 `tk-ship` refuses without a passing `REVIEW.md`.
+
+## Context discipline — save before you're full
+
+A run longer than one context window must not lose itself. **At ~80% context, call
+`tk-handoff save`** — it writes `.thunderkit/HANDOFF.md` (current stage, lanes in flight with their
+resume ids, decisions this session, next action). At the start of any run, **if `HANDOFF.md`
+exists, offer to `tk-handoff restore`** (stage 0) instead of starting cold. The handoff is portable
+committed markdown, so a session started on one harness resumes on another.
 
 ## Asking the user (closed form, from the roster)
 

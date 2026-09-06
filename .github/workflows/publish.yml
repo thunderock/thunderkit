@@ -1,0 +1,25 @@
+name: publish
+"on":
+  release:
+    types: ["published"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # OIDC trusted publishing — no long-lived npm token
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+      # Trusted publishing needs a recent npm; ensure it and publish with provenance.
+      - run: npm install -g npm@latest
+      - name: Verify the pack contents (skills + bin, no repo noise)
+        run: npm pack --dry-run
+      - name: Publish to npm (OIDC, public)
+        run: npm publish --provenance --access public

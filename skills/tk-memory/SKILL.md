@@ -23,6 +23,8 @@ renames. Any agent that reads `.thunderkit/` inherits the project's opinion.
 | `config.json` | **Per-project selections the router reuses**: model classes (planner/executors/reviewers), min review families, max layers, frozen paths. Read by `tk-router` before it asks anything. | tk-memory (writes on user choice) |
 | `BRIEF.md` | Intake checklist + harness grill transcript. | tk-grill |
 | _(preflight)_ | Fleet reachability report (not persisted). | tk-test |
+| `knowledge/<slug>.md` | Source-backed knowledge notes. | tk-learn |
+| `HANDOFF.md` | Portable session save for restore across context resets/harnesses. | tk-handoff |
 | `SPEC.md` | WHAT the change delivers, ambiguity-scored. | tk-spec |
 | `MAP.md` | Code map. | tk-map |
 | `CONTEXT.md` | Implementation decisions + rejected alternatives. | tk-discuss |

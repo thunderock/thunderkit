@@ -1,10 +1,11 @@
 <div align="center">
 
-# ⚡ thunderkit
+# ⏩ thunderkit
 
 **Ship big changes in big repos — by splitting the work into parallel lanes and routing each to the best model across a heterogeneous agent fleet.**
 
-[![skills](https://img.shields.io/badge/Agent_Skills-17-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
+[![skills](https://img.shields.io/badge/Agent_Skills-19-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
+[![npm](https://img.shields.io/npm/v/thunderkit?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/thunderkit)
 [![CI](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/ci.yml?branch=master&style=for-the-badge&logo=github&label=CI)](https://github.com/thunderock/thunderkit/actions/workflows/ci.yml)
 [![Pages](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/pages.yml?branch=master&style=for-the-badge&logo=githubpages&label=Docs)](https://thunderock.github.io/thunderkit/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
@@ -76,18 +77,20 @@ hands matched to lane weight. Review is a blind-spot problem → every family lo
 family's blind spot survives.* A model can be in more than one class — the strongest model plans,
 takes the heaviest lane, and reviews.
 
-## The skills (17)
+## The skills (19)
 
 | Stage | Skill | What it owns |
 |---|---|---|
 | **entry** | `tk-router` | Sizes the work, gets the three model classes chosen, routes the lifecycle. |
+| **restore** | `tk-handoff` | Save/restore a session in a portable format — resume across context resets or a different harness. |
 | **preflight** | `tk-test` | Pings every configured model through its real harness CLI — proves the fleet is reachable and ≥2 review families answer before work starts. |
-| **intake** | `tk-ask` | Answer discipline — yes/no, one word, a number, a path, or `unknown`. No prose. |
-| **intake** | `tk-grill` | Interrogates you *and* the harness with closed questions until the brief has no unknowns. |
+| **intake** | `tk-ask` | Answer discipline — yes/no, one word, a number, a path, or `unknown`. No prose. Routes each `unknown` to map/learn/user. |
+| **intake** | `tk-grill` | Interrogates you *and* the harness with closed questions until the brief has no unknowns (`--learn` mode frames what to learn). |
 | **pre-plan** | `tk-spec` | Ambiguity-scored Socratic loop pinning *what* the change delivers. |
 | **pre-plan** | `tk-map` | Big-repo recon — a durable code map so planning works from structure. |
 | **pre-plan** | `tk-discuss` | Captures implementation decisions + rejected alternatives before planning. |
 | **pre-plan** | `tk-research` | Parallel investigation lanes for the unknowns, consolidated. |
+| **pre-plan** | `tk-learn` | Research a topic online → source-backed knowledge note → optionally draft a new validated skill. |
 | **plan** | `tk-plan` | Decompose into **disjoint, dependency-layered lanes**, each with acceptance + a verify command. |
 | **execute** | `tk-execute` | Run lanes **in parallel** via portable CLI dispatch, own worktree + resumable id each. |
 | **verify** | `tk-review` | **Cross-family review + evidence gate** (also `--plan` for pre-execution plan-check). |
@@ -177,6 +180,19 @@ Most multi-agent setups fail at scale for three reasons, and thunderkit answers 
 | One model does everything and its weaknesses show everywhere | Three model classes — the right model for planning, execution, and review |
 | "Parallel" agents collide on the same files | Lanes are **file-disjoint by construction**, each in its own worktree |
 | Nothing checks the work; "done" is a claim | Every lane has a verify command; review is cross-family; ship fails closed |
+
+## Releasing
+
+Versioning is automated with [release-please](https://github.com/googleapis/release-please) and
+Conventional Commits — no manual bump. Every push to `master` updates a bot PR
+(`chore(master): release X.Y.Z`) whose version is computed from the commits since the last tag.
+**Merging that PR** cuts the tag `vX.Y.Z` + a GitHub Release, which triggers `publish.yml` to
+publish to npm via [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) (no
+long-lived token, provenance attached).
+
+> **One-time bootstrap** (a package that doesn't exist yet can't be published by CI): the first
+> publish is manual — `npm login` then `npm publish --access public` from a clean checkout — after
+> which the trusted-publisher config on npmjs.com hands all future releases to `publish.yml`.
 
 <div align="center">
 

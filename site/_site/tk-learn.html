@@ -1,0 +1,54 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-learn — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">skill</span><h2>tk-learn</h2><p class="mut">Use to learn something the fleet doesn&#x27;t know yet: researches a topic online, writes a source-backed knowledge note under .thunderkit/knowledge/, and can draft a new validated tk-* skill from what was learned — so knowledge becomes reusable, not one-shot.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-learn -g</code></p><hr><h1>tk-learn — gather knowledge, make it reusable</h1>
+<p>The fleet can&#x27;t route work it doesn&#x27;t understand. <code>tk-learn</code> closes that gap: pick a topic the project needs (a library, an API, a pattern, a domain), research it online, and write a <strong>source-backed knowledge note</strong> the rest of the pack can consume — and, when the topic is a recurring capability, draft a new <code>tk-*</code> skill from it.</p>
+<p>Model class: <strong>executors</strong> (wide, cheap — learning is breadth-first reading), with the <strong>planner</strong> distilling. Every claim is source-backed; unverified claims are labelled, never asserted.</p>
+<h2>When to reach for it</h2>
+<ul><li>Before planning work in an unfamiliar domain (feeds <code>tk-plan</code> better than guessing).</li><li>When <code>tk-grill</code>/<code>tk-ask</code> return <code>unknown</code> on something the *project* should know — a <code>learn</code>-mode</li></ul>
+<p>  grill routes the unknown here instead of to the user.</p>
+<ul><li>When a workflow keeps recurring by hand — learn it once, draft a skill, stop re-deriving it.</li></ul>
+<h2>Procedure</h2>
+<ol><li><strong>Frame the question</strong> (use <code>tk-grill --learn</code>): what exactly to learn, from which kinds of</li></ol>
+<p>   sources, and how a claim will be verified. One learning goal per note.</p>
+<ol><li><strong>Research in parallel</strong> — fan wide across sources (docs, specs, reference implementations,</li></ol>
+<p>   primary sources over blog posts). Each finding carries its source URL and a confidence.</p>
+<ol><li><strong>Distill</strong> — the planner consolidates findings into a knowledge note: what&#x27;s true, the</li></ol>
+<p>   evidence, the contradictions (kept, not averaged), and the residual unknowns.</p>
+<ol><li><strong>Optionally draft a skill</strong> — if the topic is a reusable capability, write</li></ol>
+<p>   <code>skills/tk-&lt;name&gt;/SKILL.md</code> from the note, then <strong>validate it</strong>    (<code>python3 tests/validate_frontmatter.py</code>) and rebuild the site drift gate. Never auto-commit a    drafted skill — surface it for review first.</p>
+<h2>Output — <code>.thunderkit/knowledge/&lt;slug&gt;.md</code></h2>
+<pre><code># &lt;topic&gt;
+learned_at: YYYY-MM-DD · confidence: high|medium|low
+## What&#x27;s true (each line cites a source)
+## Contradictions / open questions
+## Sources</code></pre>
+<p>Committed, so the knowledge travels with the repo (same rule as the north star). A drafted skill, if any, lands as a separate reviewable change.</p>
+<h2>Discipline</h2>
+<ul><li><strong>Source or it didn&#x27;t happen.</strong> A claim without a citation is <code>unverified</code>, not a fact.</li><li><strong>Primary over secondary.</strong> Prefer official docs / specs / source to blog summaries.</li><li><strong>Learning is read-only</strong> — <code>tk-learn</code> gathers and drafts; it never edits production code. A</li></ul>
+<p>  drafted skill is a proposal that must pass the validator and your review before it ships.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

@@ -73,3 +73,20 @@ also go to `.thunderkit/config.json` via `tk-memory` so the router stops asking 
 If the user says "you decide" for a row, record `default:<value>` — the choice is visible and
 reversible, not buried. If the harness can't answer in the closed form after one retry, record
 `unknown` and move on; don't accept a paragraph as an answer.
+
+## learn mode (`tk-grill --learn`)
+
+When the intake surfaces something the *project* should know but nobody does — a library's real
+behavior, an API contract, a domain rule — don't route that `unknown` to the user as a question.
+Route it to `tk-learn`. In `--learn` mode the grill's questions target the *learning goal*, not the
+work:
+
+| Key | Question shape | Example |
+|---|---|---|
+| learn_goal | "What must we learn, in ≤7 words? [word/phrase]" | `stripe webhook idempotency` |
+| source_kind | "Which sources count? [enum: docs \| spec \| source \| paper]" | `docs` |
+| verify_by | "How will a claim be proven? [cmd/observation]" | `probe against test mode` |
+| blocking | "Does planning block on this? [bool]" | `yes` |
+
+The filled learn-brief goes to `tk-learn`, which returns a source-backed note. A `blocking:yes`
+unknown holds `tk-plan` until the note exists; a `blocking:no` one is logged and planning proceeds.

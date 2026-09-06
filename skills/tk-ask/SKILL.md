@@ -67,4 +67,18 @@ An invalid reply gets **one** re-ask with the shape restated. A second invalid r
 Because every downstream thunderkit skill *acts* on these answers — `tk-plan` cuts lanes along the
 paths, `tk-execute` picks the enum'd model, `tk-review` trusts the bool "tests exist". A paragraph
 can't be acted on; `no` can. And `unknown` is the single most useful word in the pack: it's the
-exact place where `tk-map` or the user has to fill a gap before work starts.
+exact place where `tk-map`, `tk-learn`, or the user has to fill a gap before work starts.
+
+## `unknown` routing (where a gap goes)
+
+`unknown` is not a dead end — it's a dispatch. The asker routes each `unknown` by *what kind* of
+gap it is, so no gap silently becomes an assumption:
+
+| The `unknown` is about… | Route it to |
+|---|---|
+| repo structure / where something lives | `tk-map` (recon fills it) |
+| external behavior / a library / a domain rule | `tk-learn` (research fills it) |
+| a product decision / intent / scope | the **user** (one closed question) |
+
+This is the contract that lets `tk-grill` interrogate a harness safely: the harness answering
+`unknown` is a *feature*, because the answer is actionable — it names exactly who fills the gap.

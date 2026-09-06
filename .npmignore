@@ -1,0 +1,13 @@
+# Publish only the pack (skills + bin + north star, per package.json "files").
+# Everything below is belt-and-suspenders so repo/dev cruft never reaches npm.
+.github/
+.thunderkit/
+.omh/
+site/
+tests/
+Makefile
+CHANGELOG.md
+.release-please-config.json
+.release-please-manifest.json
+.gitignore
+.npmignore

@@ -136,7 +136,7 @@ def page(title, nav, body_html):
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)} — thunderkit</title><style>{CSS}</style></head>
-<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top">{nav}</nav></header>
 {body_html}

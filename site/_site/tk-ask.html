@@ -21,7 +21,7 @@ th{background:#0d1220}
 nav.top a{margin-right:1rem}
 footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
 </style></head>
-<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
 <span class="tag">skill</span><h2>tk-ask</h2><p class="mut">Use when you need a harness or model to answer in a very limited set of simple words: enforces yes/no, one-word, number, or path answers with a hard word cap, so answers are checkable and cannot hide uncertainty in prose.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-ask -g</code></p><hr><h1>tk-ask — answer in simple words, or say <code>unknown</code></h1>
@@ -45,6 +45,10 @@ Q: How many dependency layers?              [number]</code></pre>
 <ul><li><code>bool</code> → must be exactly <code>yes</code>/<code>no</code>/<code>unknown</code>.</li><li><code>word</code> → one token, no spaces, ≤ 20 chars.</li><li><code>number</code> → parses as a number.</li><li><code>path</code> → each line exists in the repo (check it!) or reply was <code>unknown</code>.</li><li><code>enum</code> → exact match to a listed option.</li></ul>
 <p>An invalid reply gets <strong>one</strong> re-ask with the shape restated. A second invalid reply is recorded as <code>unknown</code>. Never accept prose as an answer.</p>
 <h2>Why so strict</h2>
-<p>Because every downstream thunderkit skill *acts* on these answers — <code>tk-plan</code> cuts lanes along the paths, <code>tk-execute</code> picks the enum&#x27;d model, <code>tk-review</code> trusts the bool &quot;tests exist&quot;. A paragraph can&#x27;t be acted on; <code>no</code> can. And <code>unknown</code> is the single most useful word in the pack: it&#x27;s the exact place where <code>tk-map</code> or the user has to fill a gap before work starts.</p>
+<p>Because every downstream thunderkit skill *acts* on these answers — <code>tk-plan</code> cuts lanes along the paths, <code>tk-execute</code> picks the enum&#x27;d model, <code>tk-review</code> trusts the bool &quot;tests exist&quot;. A paragraph can&#x27;t be acted on; <code>no</code> can. And <code>unknown</code> is the single most useful word in the pack: it&#x27;s the exact place where <code>tk-map</code>, <code>tk-learn</code>, or the user has to fill a gap before work starts.</p>
+<h2><code>unknown</code> routing (where a gap goes)</h2>
+<p><code>unknown</code> is not a dead end — it&#x27;s a dispatch. The asker routes each <code>unknown</code> by *what kind* of gap it is, so no gap silently becomes an assumption:</p>
+<table><thead><tr><th>The <code>unknown</code> is about…</th><th>Route it to</th></tr></thead><tbody><tr><td>repo structure / where something lives</td><td><code>tk-map</code> (recon fills it)</td></tr><tr><td>external behavior / a library / a domain rule</td><td><code>tk-learn</code> (research fills it)</td></tr><tr><td>a product decision / intent / scope</td><td>the <strong>user</strong> (one closed question)</td></tr></tbody></table>
+<p>This is the contract that lets <code>tk-grill</code> interrogate a harness safely: the harness answering <code>unknown</code> is a *feature*, because the answer is actionable — it names exactly who fills the gap.</p>
 <footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
 </div></body></html>

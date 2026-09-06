@@ -1,0 +1,44 @@
+{
+  "name": "thunderkit",
+  "version": "0.1.0",
+  "description": "Opinionated Agent Skills for shipping big changes in big repos — decompose into parallel lanes, route each to the best model across a heterogeneous fleet (Claude, Codex, Bedrock), review cross-family, ship on evidence.",
+  "keywords": [
+    "agent-skills",
+    "claude-code",
+    "codex",
+    "opencode",
+    "hermes",
+    "cursor",
+    "ai-agents",
+    "multi-model",
+    "parallel",
+    "monorepo",
+    "context-engineering",
+    "skills"
+  ],
+  "homepage": "https://thunderock.github.io/thunderkit/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thunderock/thunderkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/thunderock/thunderkit/issues"
+  },
+  "license": "MIT",
+  "author": "Ashutosh Tiwari (https://github.com/thunderock)",
+  "type": "module",
+  "bin": {
+    "thunderkit": "bin/thunderkit.js"
+  },
+  "files": [
+    "skills/",
+    "bin/",
+    "NORTH_STAR.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "python3 tests/validate_frontmatter.py && python3 tests/site_drift.py"
+  }
+}

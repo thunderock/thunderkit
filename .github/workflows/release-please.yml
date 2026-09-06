@@ -1,0 +1,20 @@
+name: release-please
+"on":
+  push:
+    branches: ["master"]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          release-type: node
+          # Config + manifest live in the repo so the next version is computed
+          # from Conventional Commits since the last tag — no manual bump.
+          config-file: .release-please-config.json
+          manifest-file: .release-please-manifest.json

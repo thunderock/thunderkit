@@ -21,7 +21,7 @@ th{background:#0d1220}
 nav.top a{margin-right:1rem}
 footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
 </style></head>
-<body><div class="wrap"><header class="site"><h1><a href="index.html">thunderkit</a></h1>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
 <span class="tag">skill</span><h2>tk-grill</h2><p class="mut">Use before planning when a request is vague or a plan has gray areas: interrogates the harness and the user with short closed questions (yes/no, one word, a number, a path) until the brief has no unknowns. Never a paragraph.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-grill -g</code></p><hr><h1>tk-grill — interrogate until the brief is complete</h1>
@@ -49,5 +49,9 @@ What is unknown? (word/none)          → retry-policy</code></pre>
 <p>The filled checklist plus the harness grill transcript. <code>tk-plan</code> refuses to plan without a BRIEF whose <code>unknowns</code> row is <code>none</code>. Persistent selections (<code>critical_model</code>, <code>review_families</code>) also go to <code>.thunderkit/config.json</code> via <code>tk-memory</code> so the router stops asking on this project.</p>
 <h2>Degrade honestly</h2>
 <p>If the user says &quot;you decide&quot; for a row, record <code>default:&lt;value&gt;</code> — the choice is visible and reversible, not buried. If the harness can&#x27;t answer in the closed form after one retry, record <code>unknown</code> and move on; don&#x27;t accept a paragraph as an answer.</p>
+<h2>learn mode (<code>tk-grill --learn</code>)</h2>
+<p>When the intake surfaces something the *project* should know but nobody does — a library&#x27;s real behavior, an API contract, a domain rule — don&#x27;t route that <code>unknown</code> to the user as a question. Route it to <code>tk-learn</code>. In <code>--learn</code> mode the grill&#x27;s questions target the *learning goal*, not the work:</p>
+<table><thead><tr><th>Key</th><th>Question shape</th><th>Example</th></tr></thead><tbody><tr><td>learn_goal</td><td>&quot;What must we learn, in ≤7 words? [word/phrase]&quot;</td><td><code>stripe webhook idempotency</code></td></tr><tr><td>source_kind</td><td>&quot;Which sources count? [enum: docs \</td><td>spec \</td><td>source \</td><td>paper]&quot;</td><td><code>docs</code></td></tr><tr><td>verify_by</td><td>&quot;How will a claim be proven? [cmd/observation]&quot;</td><td><code>probe against test mode</code></td></tr><tr><td>blocking</td><td>&quot;Does planning block on this? [bool]&quot;</td><td><code>yes</code></td></tr></tbody></table>
+<p>The filled learn-brief goes to <code>tk-learn</code>, which returns a source-backed note. A <code>blocking:yes</code> unknown holds <code>tk-plan</code> until the note exists; a <code>blocking:no</code> one is logged and planning proceeds.</p>
 <footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
 </div></body></html>
