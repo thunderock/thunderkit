@@ -186,13 +186,16 @@ Most multi-agent setups fail at scale for three reasons, and thunderkit answers 
 Versioning is automated with [release-please](https://github.com/googleapis/release-please) and
 Conventional Commits — no manual bump. Every push to `master` updates a bot PR
 (`chore(master): release X.Y.Z`) whose version is computed from the commits since the last tag.
-**Merging that PR** cuts the tag `vX.Y.Z` + a GitHub Release, which triggers `publish.yml` to
-publish to npm via [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) (no
-long-lived token, provenance attached).
+**Merging that PR** cuts the tag `vX.Y.Z` + a GitHub Release and, in the same run, publishes to
+npm via [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) (no long-lived token,
+provenance attached). The publish job lives inside `release-please.yml` — a release created by
+`GITHUB_TOKEN` never fires `on: release`, so a separate release-triggered workflow would stay silent.
+`publish.yml` is a manual re-publish fallback (`workflow_dispatch` with a tag).
 
 > **One-time bootstrap** (a package that doesn't exist yet can't be published by CI): the first
 > publish is manual — `npm login` then `npm publish --access public` from a clean checkout — after
-> which the trusted-publisher config on npmjs.com hands all future releases to `publish.yml`.
+> which the trusted-publisher config on npmjs.com (workflow filename `release-please.yml`) hands
+> all future releases to CI.
 
 <div align="center">
 
