@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/thunderock/thunderkit/compare/v0.1.0...v0.1.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **ci:** publish to npm from the release-please run ([2b7e26b](https://github.com/thunderock/thunderkit/commit/2b7e26b9a70da251ebe1657a31c8a58cc1202bd0))
+
 ## 0.1.0 (2026-09-06)
 
 

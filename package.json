@@ -1,6 +1,6 @@
 {
   "name": "thunderkit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Opinionated Agent Skills for shipping big changes in big repos — decompose into parallel lanes, route each to the best model across a heterogeneous fleet (Claude, Codex, Bedrock), review cross-family, ship on evidence.",
   "keywords": [
     "agent-skills",
