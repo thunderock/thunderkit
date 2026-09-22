@@ -1,0 +1,563 @@
+{
+  "schema_version": 1,
+  "ecosystems": {
+    "omo": {
+      "package": "oh-my-openagent",
+      "version": "5.0.0-beta.81",
+      "registry": "https://registry.npmjs.org/oh-my-openagent/5.0.0-beta.81",
+      "source": "https://github.com/code-yeongyu/oh-my-openagent",
+      "source_commit": "a5eb7c130cae64125f31de13adee083eccc5d004",
+      "license": "SUL-1.0",
+      "license_url": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/a5eb7c130cae64125f31de13adee083eccc5d004/LICENSE.md",
+      "integrity": "sha512-ZcMzDhlZ0zVOjq8c03ffdqEW4NlRkByz2c7vGq5GP+CoAQ9f24tMCwFbPNtcmAYK0jsfE9mwIbpWBCMa4ro/RQ==",
+      "hosts": [
+        "opencode",
+        "codex"
+      ],
+      "install_hint": "Host-native opencode.json plugin pin: {\"plugin\":[\"oh-my-openagent@5.0.0-beta.81\"]}; Thunderkit never runs this installation.",
+      "doctor_hint": "bunx oh-my-openagent@5.0.0-beta.81 doctor",
+      "skill_source_dir": "dist/skills",
+      "invocation": "host skill tool (skill(name=...) / $name)",
+      "notes": "SUL-1.0 means no redistribution or relicensing by Thunderkit; skills load in-process, not via npx skills."
+    },
+    "omh": {
+      "package": "oh-my-hermes",
+      "version": "2.0.3",
+      "registry": "https://registry.npmjs.org/oh-my-hermes/2.0.3",
+      "source": "https://github.com/rlaope/oh-my-hermes",
+      "license": "MIT",
+      "integrity": "sha512-YCxZpbTFUb8UgWsh6Yyg8P//YfrncFwpbpy80VFx2HaAh1RSlFA+I7ROYNVXr08Tqj1VWMxxjarkrFBSL5/53g==",
+      "hosts": [
+        "hermes"
+      ],
+      "runtime": {
+        "node": ">=18",
+        "python": ">=3.11"
+      },
+      "install_hint": "npm install -g oh-my-hermes@2.0.3 && omh setup --full --yes --no-interactive --no-menubar --scope user",
+      "doctor_hint": "omh doctor",
+      "skills_root": "~/.omh/skills",
+      "manifest": "~/.omh/manifest.json",
+      "selector_style": "categorized path <category>/<skill>",
+      "shared_rail": "guide/omh-routing/references/skill-common-rail.md",
+      "context_cost_note": "The full profile installs 123 skills; core installs 10.",
+      "notes": "omh doctor may record local state; it is not a guaranteed read-only probe."
+    }
+  },
+  "distribution_cli": {
+    "package": "skills",
+    "version": "1.7.0",
+    "node": ">=22.20.0",
+    "note": "vercel skills CLI used by bin/thunderkit.js install/list; not a peer ecosystem"
+  },
+  "skills": {
+    "tk-router": {
+      "role": "router",
+      "default_operation": "route",
+      "operations": [
+        "bootstrap",
+        "route"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns bootstrap and routing because model selection and lifecycle policy must remain local."
+    },
+    "tk-test": {
+      "role": "preflight",
+      "default_operation": "preflight",
+      "operations": [
+        "preflight"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns preflight because configured model reachability requires its own evidence checks."
+    },
+    "tk-ask": {
+      "role": "answer-discipline",
+      "default_operation": "validate",
+      "operations": [
+        "validate"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns answer validation because its response constraints must remain consistent across peers."
+    },
+    "tk-grill": {
+      "role": "interrogator",
+      "default_operation": "interview",
+      "operations": [
+        "interview"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-interview",
+          "selector": "ultrawork/ulw-interview",
+          "mode": "component",
+          "operations": [
+            "interview"
+          ],
+          "requires": [
+            "tool:skill"
+          ],
+          "notes": "Return bounded clarification questions without writes; Thunderkit owns the interview and user decisions."
+        }
+      ],
+      "fallback": "Thunderkit conducts its own bounded intake when compatible native interview support is unavailable."
+    },
+    "tk-spec": {
+      "role": "spec",
+      "default_operation": "clarify",
+      "operations": [
+        "clarify"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-interview",
+          "selector": "ultrawork/ulw-interview",
+          "mode": "component",
+          "operations": [
+            "clarify"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Return ambiguity findings and questions without writes; Thunderkit owns specification acceptance."
+        }
+      ],
+      "fallback": "Thunderkit clarifies the specification itself when native interview findings cannot be safely obtained."
+    },
+    "tk-map": {
+      "role": "recon",
+      "default_operation": "map",
+      "operations": [
+        "map"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-research",
+          "selector": "ulw-research",
+          "mode": "component",
+          "operations": [
+            "map"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Read-only repository reconnaissance returning findings; do not start a second research workflow."
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-codebase-onboarding",
+          "selector": "planner/omh-codebase-onboarding",
+          "mode": "component",
+          "operations": [
+            "map"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Read-only onboarding findings; Thunderkit assembles and persists the repository map."
+        }
+      ],
+      "fallback": "Thunderkit maps the repository with its own scoped reconnaissance when no qualified native component is ready."
+    },
+    "tk-discuss": {
+      "role": "discuss",
+      "default_operation": "discuss",
+      "operations": [
+        "discuss"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-interview",
+          "selector": "ultrawork/ulw-interview",
+          "mode": "component",
+          "operations": [
+            "discuss"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Return decision questions and alternatives without writes; the user decides and Thunderkit records the choices."
+        }
+      ],
+      "fallback": "Thunderkit frames implementation choices itself when a qualified native interview component is unavailable."
+    },
+    "tk-research": {
+      "role": "research",
+      "default_operation": "research",
+      "operations": [
+        "research"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-research",
+          "selector": "ulw-research",
+          "mode": "handoff",
+          "operations": [
+            "research"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Own the native research workflow within the agreed scope; return findings and evidence to Thunderkit."
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-research",
+          "selector": "ultrawork/ulw-research",
+          "mode": "handoff",
+          "operations": [
+            "research"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Own the native research workflow using the categorized selector and return sourced evidence."
+        }
+      ],
+      "fallback": "Thunderkit performs its own scoped research when native workflow provenance or model bindings cannot be proven."
+    },
+    "tk-learn": {
+      "role": "learner",
+      "default_operation": "research",
+      "operations": [
+        "research",
+        "discover"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-research",
+          "selector": "ulw-research",
+          "mode": "component",
+          "operations": [
+            "research"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Return read-only findings for a bounded knowledge question; Thunderkit owns synthesis and persistence."
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-research",
+          "selector": "ultrawork/ulw-research",
+          "mode": "component",
+          "operations": [
+            "research"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Return read-only research findings rather than taking ownership of the learning workflow."
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-skill-scout",
+          "selector": "operator/omh-skill-scout",
+          "mode": "component",
+          "operations": [
+            "discover"
+          ],
+          "requires": [
+            "tool:skill"
+          ],
+          "notes": "Read-only skill discovery and recommendations only; never install or activate discovered skills."
+        }
+      ],
+      "fallback": "Thunderkit answers knowledge questions or reports discovery limits itself when compatible native components are unavailable."
+    },
+    "tk-plan": {
+      "role": "planner",
+      "default_operation": "plan",
+      "operations": [
+        "plan"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-plan",
+          "selector": "ulw-plan",
+          "mode": "handoff",
+          "operations": [
+            "plan"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Own the native planning workflow; prove the requested planner binding before handoff."
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-plan",
+          "selector": "ultrawork/ulw-plan",
+          "mode": "handoff",
+          "operations": [
+            "plan"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Own the native planning workflow; this categorized target belongs to oh-my-hermes, not the same-named peer skill."
+        }
+      ],
+      "fallback": "Thunderkit writes its own scoped plan when neither qualified native planner can honor the requested model binding."
+    },
+    "tk-execute": {
+      "role": "executor",
+      "default_operation": "execute",
+      "operations": [
+        "execute"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-execute",
+          "selector": "ulw-execute",
+          "mode": "handoff",
+          "operations": [
+            "execute"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors",
+            "delivery:disabled"
+          ],
+          "notes": "Requires an enforceable no-delivery opt-out: no --make-pr/--ship, no push/PR/merge; otherwise refuse native execution."
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-work",
+          "selector": "ultrawork/ulw-work",
+          "mode": "handoff",
+          "operations": [
+            "execute"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors",
+            "runtime_home:isolated"
+          ],
+          "notes": "Own native execution only inside the task-owned HERMES_HOME; keep executor bindings isolated and delivery unapproved."
+        }
+      ],
+      "fallback": "Thunderkit coordinates its own scoped execution when native safety gates fail and approved model bindings remain provable."
+    },
+    "tk-review": {
+      "role": "reviewer",
+      "default_operation": "diff",
+      "operations": [
+        "diff",
+        "plan"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-code-review",
+          "selector": "reviewer/omh-code-review",
+          "mode": "component",
+          "operations": [
+            "diff"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "Return read-only diff findings; Thunderkit retains plan review and the cross-family review gate."
+        }
+      ],
+      "fallback": "Thunderkit owns plan review and performs its own diff review when the native component cannot satisfy review policy."
+    },
+    "tk-verify-work": {
+      "role": "uat",
+      "default_operation": "cli",
+      "operations": [
+        "cli",
+        "api",
+        "visual"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "visual-qa",
+          "selector": "visual-qa",
+          "mode": "component",
+          "operations": [
+            "visual"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "Return bounded visual findings without repairs; Thunderkit owns captures, acceptance checks, and persistence."
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-visual-qa",
+          "selector": "operator/omh-visual-qa",
+          "mode": "component",
+          "operations": [
+            "visual"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "prepares/assesses; wrapper collects captures"
+        }
+      ],
+      "fallback": "Thunderkit owns CLI and API checks and evaluates visual evidence itself when native assessment is unavailable."
+    },
+    "tk-debug": {
+      "role": "debug",
+      "default_operation": "general",
+      "operations": [
+        "general",
+        "native-fault"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "debugging",
+          "selector": "debugging",
+          "mode": "handoff",
+          "operations": [
+            "general",
+            "native-fault"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Own the scoped native debugging workflow and return root-cause evidence plus verification results."
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-native-debugging",
+          "selector": "reviewer/omh-native-debugging",
+          "mode": "component",
+          "operations": [
+            "native-fault"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "investigation plan only"
+        }
+      ],
+      "fallback": "Thunderkit runs its own evidence-driven debugging when native ownership is unavailable or only investigation advice can be returned."
+    },
+    "tk-ship": {
+      "role": "ship",
+      "default_operation": "prepare",
+      "operations": [
+        "prepare"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-verification-gate",
+          "selector": "reviewer/omh-verification-gate",
+          "mode": "component",
+          "operations": [
+            "prepare"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "Return read-only readiness findings; Thunderkit owns preparation and any separate delivery approval."
+        }
+      ],
+      "fallback": "Thunderkit prepares delivery evidence itself because native findings never authorize publication or merging."
+    },
+    "tk-docs": {
+      "role": "docs",
+      "default_operation": "docs",
+      "operations": [
+        "docs"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns documentation writing and verification because no qualified native target is declared."
+    },
+    "tk-audit": {
+      "role": "audit",
+      "default_operation": "audit",
+      "operations": [
+        "audit"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-verification-gate",
+          "selector": "reviewer/omh-verification-gate",
+          "mode": "component",
+          "operations": [
+            "audit"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "Return read-only evidence gaps and findings; Thunderkit owns the audit and final acceptance decision."
+        }
+      ],
+      "fallback": "Thunderkit audits the evidence itself when native findings are unavailable or insufficient for its acceptance policy."
+    },
+    "tk-memory": {
+      "role": "memory",
+      "default_operation": "view",
+      "operations": [
+        "view",
+        "save"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns memory viewing and saving because project context must remain under its persistence policy."
+    },
+    "tk-handoff": {
+      "role": "continuity",
+      "default_operation": "save",
+      "operations": [
+        "save",
+        "restore",
+        "lookup"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "coding-agent-sessions",
+          "selector": "coding-agent-sessions",
+          "mode": "component",
+          "operations": [
+            "lookup"
+          ],
+          "requires": [
+            "tool:skill",
+            "user-request:explicit"
+          ],
+          "notes": "only explicit user-requested missing-session lookup"
+        }
+      ],
+      "fallback": "Thunderkit owns handoff saving and restoration and reports lookup limits when explicitly requested session recovery is unavailable."
+    }
+  },
+  "excluded": [
+    "gsd",
+    "omc"
+  ],
+  "excluded_note": "not eligible as targets, fallbacks, or install hints"
+}
