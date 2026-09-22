@@ -1,0 +1,168 @@
+{
+  "schema_version": 2,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "classes",
+    "review_families_min",
+    "max_layers",
+    "frozen_paths",
+    "decided_at"
+  ],
+  "properties": {
+    "classes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planner",
+        "executors",
+        "reviewers"
+      ],
+      "properties": {
+        "executors": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "model_key": true
+          }
+        },
+        "planner": {
+          "type": "string",
+          "model_key": true
+        },
+        "reviewers": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "all"
+              ]
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "model_key": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    "decided_at": {
+      "type": "string",
+      "description": "Date recorded when the user makes a choice; empty means not decided yet."
+    },
+    "delegation": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "off"
+      ]
+    },
+    "ecosystems": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "omo",
+          "omh"
+        ]
+      }
+    },
+    "frozen_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000]+$",
+        "description": "Repository-relative path using forward slashes; no absolute path, drive prefix, parent traversal, backslash, or NUL."
+      }
+    },
+    "max_layers": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "review_families_min": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 2
+    }
+  },
+  "legacy": {
+    "root": "models",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "plan",
+      "critical_path",
+      "review"
+    ],
+    "properties": {
+      "critical_path": {
+        "type": "string",
+        "model_key": true
+      },
+      "plan": {
+        "type": "string",
+        "model_key": true
+      },
+      "review": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "model_key": true
+        }
+      }
+    },
+    "mapping": {
+      "critical_path": "classes.executors",
+      "plan": "classes.planner",
+      "review": "classes.reviewers"
+    },
+    "wrap_in_array": [
+      "critical_path"
+    ]
+  },
+  "defaults": {
+    "schema_version": 2,
+    "classes": {
+      "planner": "opus48",
+      "executors": [
+        "opus48",
+        "opus5",
+        "fable51"
+      ],
+      "reviewers": "all"
+    },
+    "review_families_min": 2,
+    "max_layers": 3,
+    "frozen_paths": [],
+    "ecosystems": [
+      "omo",
+      "omh"
+    ],
+    "delegation": "auto",
+    "decided_at": ""
+  },
+  "notes": [
+    "This is a JSON-Schema-like contract interpreted by stdlib validation; model_key: true means membership in models.json.models, not a hardcoded enum.",
+    "Canonical writes use schema_version: 2. schema_version absent + classes present == v1-compatible; no rewrite is triggered.",
+    "Missing ecosystems and delegation use their defaults in memory without rewriting an existing file. An empty ecosystems array selects neither ecosystem.",
+    "The only recognized legacy shape is models.{plan,critical_path,review}: plan becomes classes.planner, critical_path becomes a singleton classes.executors array, and review becomes classes.reviewers. No other aliases are recognized.",
+    "Legacy input must be migrated explicitly before canonical validation; mixed models and classes shapes are invalid.",
+    "Reject duplicate JSON object keys before constructing dictionaries, and reject duplicate model keys within each class array.",
+    "reviewers: all draws candidates from every catalog model; authentication and the minimum distinct-family gate are checked at preflight, not inferred from model count.",
+    "defaults.classes matches models.json.classes.defaults, and defaults.review_families_min matches models.json.families_min_default. A choice writer supplies decided_at; readers do not fabricate a date."
+  ]
+}

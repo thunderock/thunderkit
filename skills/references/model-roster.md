@@ -7,6 +7,13 @@ ids move faster than skills), you update one table here and the whole pack follo
 Model ids below are **public** provider ids only. thunderkit ships no private endpoints,
 tokens, or org-internal routing.
 
+## Machine-readable contracts
+
+[`models.json`](models.json) is the machine-readable source of truth for model keys, provider
+ids, portable harness mappings, families, and class defaults. [`config.schema.json`](config.schema.json)
+defines the canonical project configuration and its recognized legacy mapping. The four provider
+ids below must match `models.json` byte-for-byte; keep the catalog and this human roster synchronized.
+
 ## The fleet (today)
 
 | Short name | Config key | Provider id | Harness(es) | Auth | Character |
