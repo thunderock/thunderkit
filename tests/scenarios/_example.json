@@ -1,0 +1,103 @@
+{
+  "skill": "tk-plan",
+  "cases": {
+    "happy": [
+      {
+        "name": "compatible opencode planner",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "sections": ["Delegation", "Fallback"],
+        "frontmatter": {
+          "thunderkit-role": "planner",
+          "thunderkit-tier": "workflow",
+          "thunderkit-delegates": "omo:ulw-plan omh:ultrawork/ulw-plan",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "compatible hermes planner",
+        "operation": null,
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "target_mode": "handoff",
+          "exit": 0
+        },
+        "sections": ["Delegation", "Fallback"]
+      },
+      {
+        "name": "delegation disabled",
+        "operation": "plan",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "missing peer",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "peer_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 0
+        }
+      },
+      {
+        "name": "wrong native model",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "binding_mismatch",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 1
+        }
+      },
+      {
+        "name": "model-bearing operation without config",
+        "operation": "plan",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}
