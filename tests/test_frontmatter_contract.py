@@ -1,10 +1,10 @@
-from dataclasses import replace
-from pathlib import Path
 import subprocess
 import sys
+import unittest
+from dataclasses import replace
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
-import unittest
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -97,15 +97,13 @@ class FrontmatterContractTests(unittest.TestCase):
             ' role: "router"\n', '   role: "router"\n', '    role: "router"\n',
             '\trole: "router"\n', '  role:\n', '  role: ["router"]\n',
         ):
-            with self.subTest(entry=entry):
-                with self.assertRaises(FrontmatterError):
-                    parse_skill_md(CORE + "metadata:\n" + entry + "---\n")
+            with self.subTest(entry=entry), self.assertRaises(FrontmatterError):
+                parse_skill_md(CORE + "metadata:\n" + entry + "---\n")
 
     def test_metadata_requires_a_nonempty_block(self) -> None:
         for suffix in ("metadata:\n", "metadata:\nlicense: MIT\n", 'metadata: "x"\n'):
-            with self.subTest(suffix=suffix):
-                with self.assertRaises(FrontmatterError):
-                    parse_skill_md(CORE + suffix + "---\n")
+            with self.subTest(suffix=suffix), self.assertRaises(FrontmatterError):
+                parse_skill_md(CORE + suffix + "---\n")
 
     def test_nested_scalars_and_other_yaml_constructs_are_rejected(self) -> None:
         for suffix in (
@@ -113,15 +111,13 @@ class FrontmatterContractTests(unittest.TestCase):
             'license: [MIT]\n', 'license: {kind: MIT}\n', 'license: |\n',
             'license: >\n', '- license: MIT\n', '# comment\n', '\n',
         ):
-            with self.subTest(suffix=suffix):
-                with self.assertRaises(FrontmatterError):
-                    parse_skill_md(CORE + suffix + "---\n")
+            with self.subTest(suffix=suffix), self.assertRaises(FrontmatterError):
+                parse_skill_md(CORE + suffix + "---\n")
 
     def test_malformed_quotes_are_rejected(self) -> None:
         for scalar in ('"MIT', "'MIT", '"MIT\'', '\'MIT"', '"MIT" extra', '"a"b"', '"a\\"'):
-            with self.subTest(scalar=scalar):
-                with self.assertRaises(FrontmatterError):
-                    parse_skill_md(CORE + f"license: {scalar}\n---\n")
+            with self.subTest(scalar=scalar), self.assertRaises(FrontmatterError):
+                parse_skill_md(CORE + f"license: {scalar}\n---\n")
 
     def test_frontmatter_requires_exact_opening_and_closing_lines(self) -> None:
         for text in (
@@ -137,15 +133,13 @@ class FrontmatterContractTests(unittest.TestCase):
 
     def test_required_fields_cannot_be_missing(self) -> None:
         for line in ('name: tk-example\n', f'description: "{DESCRIPTION}"\n'):
-            with self.subTest(line=line):
-                with self.assertRaises(FrontmatterError):
-                    parse_skill_md(CORE.replace(line, "") + "---\n")
+            with self.subTest(line=line), self.assertRaises(FrontmatterError):
+                parse_skill_md(CORE.replace(line, "") + "---\n")
 
     def test_name_syntax_and_length_are_enforced(self) -> None:
         for name in ("", " ", "Upper", "-name", "name-", "two--parts", "under_score", "a" * 65):
-            with self.subTest(name=name):
-                with self.assertRaisesRegex(FrontmatterError, "name"):
-                    parse_skill_md(CORE.replace("tk-example", name) + "---\n")
+            with self.subTest(name=name), self.assertRaisesRegex(FrontmatterError, "name"):
+                parse_skill_md(CORE.replace("tk-example", name) + "---\n")
 
     def test_spec_boundaries_allow_names_and_descriptions_outside_repo_policy(self) -> None:
         for name, description in (("a", "x"), ("a" * 64, "x" * 1024)):
@@ -155,9 +149,8 @@ class FrontmatterContractTests(unittest.TestCase):
 
     def test_description_must_be_nonempty_and_within_spec_limit(self) -> None:
         for description in ("", "   ", "x" * 1025):
-            with self.subTest(length=len(description)):
-                with self.assertRaisesRegex(FrontmatterError, "description"):
-                    parse_skill_md(CORE.replace(DESCRIPTION, description) + "---\n")
+            with self.subTest(length=len(description)), self.assertRaisesRegex(FrontmatterError, "description"):
+                parse_skill_md(CORE.replace(DESCRIPTION, description) + "---\n")
 
     def test_file_adapter_preserves_body_bytes(self) -> None:
         body = "\r\n# Café\r\nline\rnext\n\tend  "
@@ -181,7 +174,7 @@ class FrontmatterContractTests(unittest.TestCase):
             "from skill_frontmatter import parse_skill_md; "
             f"assert parse_skill_md({HEADER!r}).name == 'tk-example'"
         )
-        result = subprocess.run([sys.executable, "-I", "-B", "-c", code], capture_output=True, text=True)
+        result = subprocess.run([sys.executable, "-I", "-B", "-c", code], capture_output=True, text=True, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_repo_policy_accepts_valid_delegates_and_length_boundaries(self) -> None:
@@ -191,7 +184,7 @@ class FrontmatterContractTests(unittest.TestCase):
                     fm = replace(parse_skill_md(HEADER), description="Use " + "x" * (length - 4),
                                  compatibility="x" * 500,
                                  metadata={**METADATA, "thunderkit-delegates": delegates})
-                    self.assertIsNone(validate_thunderkit(fm, "tk-example"))
+                    validate_thunderkit(fm, "tk-example")
 
     def test_repo_policy_rejects_a_different_directory_name(self) -> None:
         with self.assertRaisesRegex(FrontmatterError, "name"):
@@ -208,7 +201,7 @@ class FrontmatterContractTests(unittest.TestCase):
         for compatibility in (None, "x", "x" * 500):
             with self.subTest(compatibility=compatibility):
                 fm = replace(parse_skill_md(HEADER), compatibility=compatibility)
-                self.assertIsNone(validate_thunderkit(fm, "tk-example"))
+                validate_thunderkit(fm, "tk-example")
 
     def test_repo_policy_rejects_empty_provided_compatibility(self) -> None:
         for raw in ('""', "''"):

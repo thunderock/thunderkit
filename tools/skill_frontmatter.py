@@ -1,9 +1,9 @@
 """The deliberately small frontmatter dialect used by Thunderkit skills."""
 
+import re
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
-import re
 from typing import Final
 
 _TOP_LEVEL_KEYS: Final = frozenset({
