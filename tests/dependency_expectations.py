@@ -29,6 +29,33 @@ OPERATIONS: Final = {
     "tk-handoff": ("save", ("save", "restore", "lookup")),
 }
 ROOT_KINDS: Final = {"omo": "package", "omh": "omh"}
+SKILL_PREFIXES: Final = {"omo": "dist/skills", "omh": "skills"}
+PEER_ROOTS: Final = {
+    "omo": ("package", "package.json", "dist/skills/<skill_name>/SKILL.md"),
+    "omh": ("omh", "manifest.json", "skills/<category>/<skill_name>/SKILL.md"),
+}
+TARGET_KEYS: Final = frozenset({
+    "ecosystem", "skill_name", "selector", "mode", "operations", "requires", "notes", "provenance",
+})
+NATIVE_ROLES: Final = {
+    ("omo", "ulw-plan"): {
+        "root": "planner", "explore": "executors", "librarian": "executors", "metis": "executors",
+        "momus": "reviewers", "oracle": "reviewers",
+    },
+    ("omh", "ultrawork/ulw-plan"): {"root": "planner"},
+    ("omo", "ulw-execute"): {
+        "root": "executors", "worker": "executors", "explore": "executors", "librarian": "executors",
+        "gate-reviewer": "reviewers",
+    },
+    ("omh", "ultrawork/ulw-work"): {
+        "root": "executors", "lane": "executors", "verification": "executors", "code-review-gate": "reviewers",
+    },
+}
+SINGLE_CLASS: Final = {
+    "tk-grill": "planner", "tk-spec": "planner", "tk-map": "executors", "tk-discuss": "planner",
+    "tk-research": "executors", "tk-learn": "executors", "tk-review": "reviewers", "tk-verify-work": "reviewers",
+    "tk-debug": "planner", "tk-ship": "reviewers", "tk-audit": "reviewers",
+}
 OMH_RAIL: Final = "skills/guide/omh-routing/references/skill-common-rail.md"
 SHA256: Final = re.compile(r"[0-9a-f]{64}")
 # Entrypoint fingerprints pinned from the trusted artifact inventories, independent of the manifest.
@@ -51,8 +78,9 @@ ENTRYPOINT_SHA256: Final = {
     ("omh", "reviewer/omh-verification-gate"): "5ac11ff9c08bf1c5f5933daf659deb22046c927328d85bb1fb7adbd7b3af1583",
 }
 OMH_RAIL_SHA256: Final = "8762158b58981df3127c86bffc8172c91c4d371d16bca668feb76910460c4a19"
-# Required companions per target root, pinned from the same trusted inventories (entrypoint and rail excluded).
-COMPANIONS: Final[dict[tuple[str, str], frozenset[str]]] = {
+SHARED_FILES: Final = {"omh": {OMH_RAIL: OMH_RAIL_SHA256}}
+# Skill-local inventory entries are expanded to peer-root-relative paths below.
+_LOCAL_COMPANIONS: Final[dict[tuple[str, str], frozenset[str]]] = {
     ("omo", "ulw-research"): frozenset({"ATTRIBUTION.md"}),
     ("omo", "ulw-plan"): frozenset({"agents/openai.yaml", "references/full-workflow.md", "references/intent-clear.md",
                                     "references/intent-unclear.md", "scripts/scaffold-plan.mjs"}),
@@ -89,6 +117,10 @@ COMPANIONS: Final[dict[tuple[str, str], frozenset[str]]] = {
     ("omh", "operator/omh-visual-qa"): frozenset({"references/visual-verdict-contract.md"}),
     ("omh", "reviewer/omh-native-debugging"): frozenset({"references/native-debug-loop.md"}),
     ("omh", "reviewer/omh-verification-gate"): frozenset(),
+}
+COMPANIONS: Final = {
+    (ecosystem, selector): frozenset(f"{SKILL_PREFIXES[ecosystem]}/{selector}/{path}" for path in paths)
+    for (ecosystem, selector), paths in _LOCAL_COMPANIONS.items()
 }
 OMH_CANONICAL: Final = {
     "ultrawork/ulw-interview": "deep-interview",
