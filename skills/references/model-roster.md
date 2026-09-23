@@ -1,8 +1,7 @@
 # Model Roster
 
-**The single source of truth for which model runs which kind of work.** Every thunderkit skill
-reads this file instead of hardcoding a model id inline, so when a model id changes (they do —
-ids move faster than skills), you update one table here and the whole pack follows.
+[`models.json`](models.json) is the source of truth for model data; this roster is its human
+reference. Skills resolve user-selected keys through the catalog rather than hardcoding IDs.
 
 Model ids below are **public** provider ids only. thunderkit ships no private endpoints,
 tokens, or org-internal routing.
@@ -10,9 +9,13 @@ tokens, or org-internal routing.
 ## Machine-readable contracts
 
 [`models.json`](models.json) is the machine-readable source of truth for model keys, provider
-ids, portable harness mappings, families, and class defaults. [`config.schema.json`](config.schema.json)
+ids, portable harness mappings, families, and class cardinalities. [`config.schema.json`](config.schema.json)
 defines the canonical project configuration and its recognized legacy mapping. The four provider
 ids below must match `models.json` byte-for-byte; keep the catalog and this human roster synchronized.
+
+Menus list catalog entries and annotate observed local availability, using `unknown` when not
+probed. Listing choices requires no paid call and selects nothing. Use only documented harness
+mappings; the catalog implies no undocumented effort choices.
 
 ## The fleet (today)
 
@@ -25,24 +28,73 @@ ids below must match `models.json` byte-for-byte; keep the catalog and this huma
 
 `Config key` is what `.thunderkit/config.json` stores; it is stable across provider renames.
 
-> If a model isn't authenticated on this machine, the skill using it must degrade to an
-> available one and **say so** — never fail silently, never invent a result.
+> An unavailable explicitly selected model blocks dispatch. Report the failure and ask the user
+> to choose another model; naming an automatic replacement does not make it an approved choice.
 
 ## The three model classes (what tk-router asks for)
 
 Every run picks three classes. `tk-router` asks once per project and stores them in
 `.thunderkit/config.json`:
 
-| Class | Cardinality | Role | Default |
+| Class | Cardinality | Role | Example choice (requires confirmation) |
 |---|---|---|---|
-| **Planner** | exactly one — the most capable model | spec, discuss, plan, debug-reasoning | `opus48` (→ `opus5` without Anthropic login) |
-| **Executors** | a set — lanes spread by weight | map, research, implement, docs-write | `opus48 opus5 fable51` |
-| **Reviewers + verifiers** | all authed families | plan-check, review, verify, UAT, audit, docs-verify | `all` |
+| **Planner** | exactly one catalog key | spec, discuss, plan, debug-reasoning | `opus48` |
+| **Executors** | nonempty unique array of catalog keys | map, research, implement, docs-write | `["opus48", "opus5", "fable51"]` |
+| **Reviewers + verifiers** | `"all"` or a nonempty unique array of catalog keys | plan-check, review, verify, UAT, audit, docs-verify | `"all"` |
 
 The planner is one best brain (planning is a single point of failure); executors are many hands
 matched to lane weight (throughput); reviewers are every family (blind-spot coverage). A model
 appears in more than one class — the strongest model plans *and* takes the heaviest execution
 lane *and* reviews.
+
+All three classes are required choices, not reader defaults. A blank or partial configuration
+cannot pass by inheriting the examples above. `reviewers: "all"` considers **every catalog
+model**, including models not selected as planner or executor. Preflight reports unavailable
+optional candidates and forms the reviewer set from successful responses. Explicit selections
+must all succeed, and the reachable reviewer set must independently meet `review_families_min`.
+`opus48`, `opus5`, and `fable51` are one `anthropic` family; `sol` is `openai`.
+
+## Configuration readers and legacy previews
+
+Canonical writes use `schema_version: 2` and `classes.planner/executors/reviewers`. Existing
+`classes` configurations may omit the version. Only missing operational fields receive these
+defaults **in memory**, without changing the file or replacing an explicit value:
+
+| Field | Default when missing | Constraint |
+|---|---|---|
+| `schema_version` | `2` | Explicit canonical version must be integer `2` |
+| `review_families_min` | `2` | Integer ≥2; booleans and floats are invalid |
+| `max_layers` | `3` | Integer ≥1; booleans and floats are invalid |
+| `frozen_paths` | `[]` | Literal repository-relative POSIX paths |
+| `ecosystems` | `["omo", "omh"]` | Unique list containing only `omo` and/or `omh`; `[]` disables both |
+| `delegation` | `"auto"` | `"auto"` or `"off"` |
+
+`decided_at` is optional for readers. Preserve a supplied string, including an empty string;
+never fabricate a date or placeholder. The choice writer records the user's decision date.
+
+Only a complete, valid legacy `models` object is recognized:
+
+| Legacy field | Normalized field |
+|---|---|
+| `models.plan` | `classes.planner` (one catalog key) |
+| `models.critical_path` | `classes.executors` (wrap the one catalog key in an array) |
+| `models.review` | `classes.reviewers` (retain `"all"` or a nonempty unique catalog-key array) |
+
+Legacy input may omit `schema_version` or specify integer `1` or `2`. Preserve known operational
+fields and any supplied `decided_at`, and return a migration warning with the normalized preview.
+Saving the preview requires the user's normal config-write approval; reading it never saves it.
+
+Reject mixed `models`/`classes`, incomplete roles, unknown model keys, malformed choices, and
+unknown object keys at the root or inside `classes`/legacy `models`. `critical_model` and
+`review_families` are not supported aliases. Reject duplicate JSON keys before constructing
+dictionaries, and reject non-finite numbers (`NaN`, `Infinity`, `-Infinity`, or numeric overflow).
+Reject repeated model keys in class arrays and duplicate ecosystems rather than deduplicating.
+
+Frozen paths must be nonempty and use forward slashes. Reject absolute paths, Windows drive
+prefixes, any `..` segment, backslashes anywhere, and ASCII controls (U+0000–U+001F or U+007F).
+Do not expand `~` or environment variables. `src/config.json`, `src/my file.py`, `.`, and `./src`
+are relative paths; `src/../outside`, `C:relative`, and `src\config.json` are invalid.
+Invalid input must produce an actionable error before any subprocess starts.
 
 ## Work type → routing
 
@@ -56,9 +108,9 @@ lane *and* reviews.
 | **Plan-check / review / verify / UAT / audit** (tk-review, tk-verify-work, tk-audit) | reviewers | Sol + Opus 5 | ≥2 families; at least one ≠ author. |
 | **Verification commands** (tk-review evidence half) | reviewers | Fable 5.1 | Running commands is cheap. |
 
-**tk-router asks the user for the three classes before dispatching**, then auto-assigns each work
-type to its class and reports the pick. A model that isn't authed degrades to an available one,
-named — never silently swapped.
+**tk-router asks the user for the three classes before dispatching**, then assigns each work
+type within its selected class and reports the pick. The preferences above never override a
+user's selections or authorize substitution when a selected model is unavailable.
 
 ## Portable dispatch reference
 
@@ -79,6 +131,6 @@ a scratch-edit probe before the real dispatch on a fresh machine.
 
 ## Updating this file
 
-When a provider renames a model, change the id in **The fleet** table only. Skills reference
-models by short name ("Fable 5.1", "Opus 4.8") and resolve ids here, so no skill body needs to
-change. Add a row to the project decision log (`.thunderkit/DECISIONS.md`) noting the swap.
+When a provider renames a model, update its ID and documented harness mappings in `models.json`,
+then synchronize **The fleet** table. Keep its config key stable so existing user choices are
+preserved. Add a row to the project decision log (`.thunderkit/DECISIONS.md`) noting the swap.

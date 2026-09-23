@@ -30,6 +30,11 @@
           "harness": "claude",
           "provider": "anthropic",
           "model_id": "claude-opus-4-8"
+        },
+        {
+          "harness": "hermes",
+          "provider": "anthropic",
+          "model_id": "claude-opus-4-8"
         }
       ],
       "label": "Opus 4.8",
@@ -83,16 +88,7 @@
     },
     "reviewers": {
       "cardinality": "all or nonempty unique set",
-      "description": "All authenticated families for plan checks, review, verification, UAT, and audits."
-    },
-    "defaults": {
-      "planner": "opus48",
-      "executors": [
-        "opus48",
-        "opus5",
-        "fable51"
-      ],
-      "reviewers": "all"
+      "description": "Explicit review models or all reachable catalog models for plan checks, review, verification, UAT, and audits."
     }
   },
   "families_min_default": 2
