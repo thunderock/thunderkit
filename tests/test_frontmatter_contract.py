@@ -204,6 +204,20 @@ class FrontmatterContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(FrontmatterError, "description"):
                     validate_thunderkit(fm, "tk-example")
 
+    def test_repo_policy_accepts_omitted_or_nonempty_compatibility(self) -> None:
+        for compatibility in (None, "x", "x" * 500):
+            with self.subTest(compatibility=compatibility):
+                fm = replace(parse_skill_md(HEADER), compatibility=compatibility)
+                self.assertIsNone(validate_thunderkit(fm, "tk-example"))
+
+    def test_repo_policy_rejects_empty_provided_compatibility(self) -> None:
+        for raw in ('""', "''"):
+            with self.subTest(raw=raw):
+                text = HEADER.replace("metadata:\n", f"compatibility: {raw}\nmetadata:\n", 1)
+                fm = parse_skill_md(text)
+                with self.assertRaisesRegex(FrontmatterError, "compatibility"):
+                    validate_thunderkit(fm, "tk-example")
+
     def test_repo_policy_rejects_long_compatibility(self) -> None:
         fm = replace(parse_skill_md(HEADER), compatibility="x" * 501)
         with self.assertRaisesRegex(FrontmatterError, "compatibility"):
@@ -234,12 +248,15 @@ class FrontmatterContractTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertFalse(is_legacy_nested_metadata(text))
 
-    def test_all_current_skill_headers_are_legacy(self) -> None:
-        paths = sorted((ROOT / "skills").glob("tk-*/SKILL.md"))
-        self.assertEqual(len(paths), 19)
-        for path in paths:
-            with self.subTest(skill=path.parent.name):
-                self.assertTrue(is_legacy_nested_metadata(path.read_text(encoding="utf-8")))
+    def test_legacy_detector_recognizes_representative_nested_headers(self) -> None:
+        for header in (
+            "metadata:\n  thunderkit:\n    role: router\n    tier: entry\n",
+            "metadata:\n  thunderkit:\n    role: executor\nlicense: MIT\n",
+            'metadata:\n  label: "example"\n  thunderkit:\n    role: reviewer\n',
+        ):
+            with self.subTest(header=header):
+                text = CORE + header + "---\n"
+                self.assertTrue(is_legacy_nested_metadata(text))
 
 
 if __name__ == "__main__":

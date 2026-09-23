@@ -137,8 +137,8 @@ def validate_thunderkit(fm: Frontmatter, dir_name: str) -> None:
         raise FrontmatterError(path, 1, "description must start with 'Use <word>'")
     if not 40 <= len(fm.description) <= 500:
         raise FrontmatterError(path, 1, "description must contain 40 to 500 characters")
-    if fm.compatibility is not None and len(fm.compatibility) > 500:
-        raise FrontmatterError(path, 1, "compatibility must contain at most 500 characters")
+    if fm.compatibility is not None and not 1 <= len(fm.compatibility) <= 500:
+        raise FrontmatterError(path, 1, "compatibility must contain 1 to 500 characters")
     missing = _METADATA_KEYS - fm.metadata.keys()
     if missing:
         raise FrontmatterError(path, 1, f"missing metadata keys: {', '.join(sorted(missing))}")
