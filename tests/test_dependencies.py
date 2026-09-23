@@ -2,6 +2,7 @@
 
 import copy
 import json
+import re
 import unittest
 from pathlib import Path
 from typing import Final
@@ -274,6 +275,26 @@ class DependencyTests(unittest.TestCase):
             text = "---\nname: tk-plan\ndescription: Plan work.\n" + header + "---\n"
             with self.subTest(header=header), self.assertRaisesRegex(AssertionError, "skill role mismatch"):
                 validate_role(text + "metadata:\n  thunderkit:\n    role: planner\n", "planner")
+
+    def test_decision_example_preserves_model_selections(self) -> None:
+        text = (ROOT / "skills/references/delegation.md").read_text(encoding="utf-8")
+        block = re.search(r"```json\n(.*?)\n```", text, re.DOTALL)
+        assert block is not None
+        record = json_object(json.loads(block[1]))
+        bindings = json_object(record["bindings"])
+        requested = json_object(bindings["requested"])
+        checks: dict[str, tuple[JsonValue, JsonValue]] = {
+            "schema_version": (record.get("schema_version"), 1),
+            "planner": (requested.get("planner"), "opus48"),
+            "executors": (requested.get("executors"), ["fable51", "opus5"]),
+            "reviewers": (requested.get("reviewers"), ["sol", "opus5"]),
+            "observed": (bindings.get("observed"), None),
+        }
+        for field, (actual, expected) in checks.items():
+            with self.subTest(field=field):
+                self.assertEqual(actual, expected)
+        self.assertEqual(set(record), {"schema_version", "skill", "operation", "decision", "reason_code", "detail",
+                                       "target", "bindings", "runtime_home", "evidence_paths"})
 
 
 if __name__ == "__main__":
