@@ -112,6 +112,31 @@ class ModelConfigTests(unittest.TestCase):
         executors.append("sol")
         self.assertEqual(raw, LIVE)
 
+    def test_frozen_paths_are_rejected_when_containing_ascii_controls(self) -> None:
+        path = f"src/{SENSITIVE}/file"
+        for codepoint, offset in product((*range(32), 127), (0, 4, len(path))):
+            with self.subTest(codepoint=codepoint, offset=offset):
+                raw: JsonObject = {**deepcopy(LIVE), "frozen_paths": [
+                    "LICENSE", path[:offset] + chr(codepoint) + path[offset:]]}
+
+                detail = self.error_detail(lambda: self.normalize(raw))
+
+                self.assertIn("frozen_paths[1]", detail)
+                self.assertNotIn(chr(codepoint), detail)
+
+    def test_frozen_paths_are_preserved_when_valid_repo_relative_names(self) -> None:
+        for path in (".", "./src", "資料/file", "café/😀.txt", "folder/file name",
+                     " leading/trailing ", " ", "name..md", "src/.../file",
+                     "src/~file", "src/\u0080file", "src/\u00a0file"):
+            with self.subTest(path=path):
+                raw: JsonObject = {**deepcopy(LIVE), "schema_version": 2,
+                                   "ecosystems": ["omh"], "delegation": "off", "frozen_paths": [path]}
+
+                normalized, warnings = self.normalize(raw)
+
+                self.assertEqual(normalized, raw)
+                self.assertEqual(warnings, [])
+
     def test_all_reviewers_include_models_outside_planner_and_executors(self) -> None:
         cfg, _ = self.normalize({"classes": {"planner": "opus48", "executors": ["opus48"],
                                              "reviewers": "all"}})

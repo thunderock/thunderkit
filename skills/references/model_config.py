@@ -214,10 +214,11 @@ def normalize_config(raw: JsonObject, catalog: JsonObject) -> tuple[JsonObject, 
 
     paths = _strings(source.get("frozen_paths", []), "frozen_paths")
     for index, path in enumerate(paths):
-        if (not path or "\0" in path or "\\" in path or path.startswith("/")
+        if (not path or any(ord(char) < 32 or ord(char) == 127 for char in path)
+                or "\\" in path or path.startswith("/")
                 or PureWindowsPath(path).drive or ".." in path.split("/")):
             raise ConfigError(f"frozen_paths[{index}] must be repo-relative using forward slashes, "
-                              "without a drive, '..' segments or NUL")
+                              "without a drive, '..' segments or ASCII control characters")
     normalized["frozen_paths"] = list(paths)
     ecosystems = _strings(source.get("ecosystems", ["omo", "omh"]), "ecosystems")
     if len(set(ecosystems)) != len(ecosystems):
