@@ -250,7 +250,7 @@ def qualify(candidate: JsonObject, snapshot: JsonObject, request: Request) -> Ve
             cls = expect_text(raw_class, "class")
             binding = expect_object(evidence(reported, slot), slot)
             descriptor = expect_text(evidence(binding, "descriptor"), "descriptor")
-            need(bool(descriptor), "missing_evidence", f"Empty descriptor for {slot}")
+            need(bool(descriptor.strip()), "missing_evidence", f"Empty descriptor for {slot}")
             method = expect_text(evidence(binding, "method"), "method")
             if method not in ("configured", "delegate_route", "explicit_dispatch"):
                 raise ConfigError("method must be configured, delegate_route or explicit_dispatch")

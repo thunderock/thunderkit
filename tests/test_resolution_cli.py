@@ -48,6 +48,27 @@ class ResolutionCliTests(unittest.TestCase):
         self.assertEqual(before, {path: path.read_bytes() for path in paths})
         self.assertEqual(set(self.root.rglob("*")), entries)
 
+    def test_missing_evidence_when_native_descriptor_is_blank(self) -> None:
+        for host, skill, slot, decision, code in (("opencode", "tk-plan", "root", "blocked", 1),
+                                                 ("hermes", "tk-review", "reviewers", "fallback", 0)):
+            for descriptor in (" \t ", "", " ", "\t", "\r\n", "\u2003"):
+                with self.subTest(host=host, skill=skill, descriptor=descriptor):
+                    f = Fixture(self.root, host, skill)
+                    mapping(mapping(f.snapshot["model_bindings"])[slot])["descriptor"] = descriptor
+                    result = self.cli(f.arguments(), code)
+                    self.assertEqual((result["decision"], result["reason_code"]), (decision, "missing_evidence"))
+
+    def test_descriptor_preserved_when_nonblank_text_has_surrounding_whitespace(self) -> None:
+        descriptor = " \tfixture:custom descriptor\t "
+        for host, skill, slot in (("opencode", "tk-plan", "root"), ("hermes", "tk-review", "reviewers")):
+            with self.subTest(host=host, skill=skill):
+                f = Fixture(self.root, host, skill)
+                mapping(mapping(f.snapshot["model_bindings"])[slot])["descriptor"] = descriptor
+                result = self.cli(f.arguments())
+                self.assertEqual((result["decision"], result["reason_code"]), ("delegate", "compatible"))
+                binding = mapping(mapping(mapping(result["bindings"])["effective"])[slot])
+                self.assertEqual(binding["descriptor"], descriptor)
+
     def test_exit_one_when_selected_model_is_not_effective(self) -> None:
         root = mapping(mapping(self.fixture.snapshot["model_bindings"])["root"])
         mapping(sequence(root["members"])[0])["model_id"] = "wrong"
