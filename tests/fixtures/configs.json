@@ -1,0 +1,76 @@
+{
+  "canonical": {
+    "classes": {
+      "planner": "opus48",
+      "executors": ["opus48", "opus5", "fable51"],
+      "reviewers": ["opus48", "opus5", "fable51", "sol"]
+    },
+    "review_families_min": 2,
+    "max_layers": 3,
+    "frozen_paths": ["LICENSE"],
+    "decided_at": "2026-09-04"
+  },
+  "delegation_off": {
+    "classes": {
+      "planner": "opus48",
+      "executors": ["opus48", "opus5", "fable51"],
+      "reviewers": ["opus48", "opus5", "fable51", "sol"]
+    },
+    "review_families_min": 2,
+    "max_layers": 3,
+    "frozen_paths": ["LICENSE"],
+    "decided_at": "2026-09-04",
+    "delegation": "off"
+  },
+  "omo_only": {
+    "classes": {
+      "planner": "opus48",
+      "executors": ["opus48", "opus5", "fable51"],
+      "reviewers": ["opus48", "opus5", "fable51", "sol"]
+    },
+    "review_families_min": 2,
+    "max_layers": 3,
+    "frozen_paths": ["LICENSE"],
+    "decided_at": "2026-09-04",
+    "ecosystems": ["omo"]
+  },
+  "legacy": {
+    "models": {
+      "plan": "opus48",
+      "critical_path": "opus48",
+      "review": ["opus48", "opus5", "fable51", "sol"]
+    }
+  },
+  "opencode": {
+    "schema_version": 2,
+    "classes": {
+      "planner": "opus5",
+      "executors": ["fable51", "opus5"],
+      "reviewers": ["fable51", "opus5"]
+    }
+  },
+  "hermes": {
+    "schema_version": 2,
+    "classes": {
+      "planner": "opus48",
+      "executors": ["fable51", "opus5"],
+      "reviewers": ["opus48", "opus5"]
+    }
+  },
+  "sol": {
+    "schema_version": 2,
+    "classes": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+  },
+  "opencode_all": {
+    "schema_version": 2,
+    "classes": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": "all"}
+  },
+  "legacy_opencode": {
+    "models": {"plan": "opus5", "critical_path": "fable51", "review": ["fable51", "opus5"]}
+  },
+  "owned": {
+    "schema_version": 2,
+    "classes": {"planner": "opus48", "executors": ["opus48"], "reviewers": ["sol", "opus5"]},
+    "ecosystems": []
+  }
+}
