@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "models": {
+    "fable51": {
+      "auth": "Bedrock bearer token (login-free)",
+      "character": "Fast, cheap, wide. Breadth, retrieval, cleanup, exploration.",
+      "family": "anthropic",
+      "harnesses": [
+        {
+          "harness": "hermes",
+          "provider": "bedrock",
+          "model_id": "us.anthropic.claude-fable-5-1"
+        },
+        {
+          "harness": "opencode",
+          "provider": "amazon-bedrock",
+          "model_id": "us.anthropic.claude-fable-5-1"
+        }
+      ],
+      "label": "Fable 5.1",
+      "model_id": "us.anthropic.claude-fable-5-1",
+      "provider": "bedrock"
+    },
+    "opus48": {
+      "auth": "Anthropic login",
+      "character": "Strongest coder on the critical path.",
+      "family": "anthropic",
+      "harnesses": [
+        {
+          "harness": "claude",
+          "provider": "anthropic",
+          "model_id": "claude-opus-4-8"
+        },
+        {
+          "harness": "hermes",
+          "provider": "anthropic",
+          "model_id": "claude-opus-4-8"
+        }
+      ],
+      "label": "Opus 4.8",
+      "model_id": "claude-opus-4-8",
+      "provider": "anthropic"
+    },
+    "opus5": {
+      "auth": "Bedrock bearer token (login-free)",
+      "character": "Strong, login-free. Critical-path fallback + a strong second reviewer.",
+      "family": "anthropic",
+      "harnesses": [
+        {
+          "harness": "hermes",
+          "provider": "bedrock",
+          "model_id": "us.anthropic.claude-opus-5"
+        },
+        {
+          "harness": "opencode",
+          "provider": "amazon-bedrock",
+          "model_id": "us.anthropic.claude-opus-5"
+        }
+      ],
+      "label": "Opus 5",
+      "model_id": "us.anthropic.claude-opus-5",
+      "provider": "bedrock"
+    },
+    "sol": {
+      "auth": "Codex/ChatGPT login",
+      "character": "Different family. The cross-family reviewer. Best-effort (credit-capped).",
+      "family": "openai",
+      "harnesses": [
+        {
+          "harness": "codex",
+          "provider": "openai-codex",
+          "model_id": "gpt-5.6-sol"
+        }
+      ],
+      "label": "Sol",
+      "model_id": "gpt-5.6-sol",
+      "provider": "openai-codex"
+    }
+  },
+  "classes": {
+    "planner": {
+      "cardinality": "one",
+      "description": "The most capable model for spec, discussion, planning, and debug reasoning."
+    },
+    "executors": {
+      "cardinality": "nonempty unique set",
+      "description": "Models sharing mapping, research, implementation, and documentation lanes by weight."
+    },
+    "reviewers": {
+      "cardinality": "all or nonempty unique set",
+      "description": "Explicit review models or all reachable catalog models for plan checks, review, verification, UAT, and audits."
+    }
+  },
+  "families_min_default": 2
+}
