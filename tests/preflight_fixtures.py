@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -17,7 +19,8 @@ from typing import Final
 import unittest
 from unittest.mock import patch
 
-from resolution_fixtures import JsonObject as JsonObject, JsonValue as JsonValue, mapping, read_json, write_json
+from resolution_fixtures import JsonObject as JsonObject, JsonValue as JsonValue
+from resolution_fixtures import mapping as mapping, read_json as read_json, write_json as write_json
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 SKILL: Final = ROOT / "skills/tk-test"
@@ -76,6 +79,7 @@ class Stub:
     returncode: int = 0
     stderr: str = ""
     hang: bool = False
+    encoding: str = "utf-8"
 
 
 STUB_PROGRAM: Final = """
@@ -87,7 +91,7 @@ import sys
 with open(os.environ["PREFLIGHT_LOG"], "a", encoding="utf-8") as stream:
     stream.write(json.dumps({"argv": sys.argv, "pid": os.getpid()}) + "\\n")
 data = json.loads(Path(__file__).with_suffix(".json").read_text())
-sys.stdout.write(data["stdout"])
+sys.stdout.buffer.write(data["stdout"].encode(data["encoding"]))
 sys.stdout.flush()
 sys.stderr.write(data["stderr"])
 if data["hang"]:
@@ -120,7 +124,8 @@ class PreflightFixture(unittest.TestCase):
         executable.write_text(f"#!{sys.executable}\n" + STUB_PROGRAM, encoding="utf-8")
         executable.chmod(0o700)
         write_json(executable.with_suffix(".json"), {"stdout": response.stdout,
-                   "returncode": response.returncode, "stderr": response.stderr, "hang": response.hang})
+                   "returncode": response.returncode, "stderr": response.stderr,
+                   "hang": response.hang, "encoding": response.encoding})
         return executable
 
     def fleet(self) -> None:
@@ -151,3 +156,25 @@ class PreflightFixture(unittest.TestCase):
 
     def catalog(self) -> JsonObject:
         return read_json(self.skill / "references/models.json")
+
+    def invoke(self, api: ModuleType, arguments: Sequence[str]) -> tuple[int, str, str]:
+        output, error = io.StringIO(), io.StringIO()
+        with (patch.dict(os.environ, self.env, clear=True), patch.object(tempfile, "tempdir", str(self.sandbox)),
+              redirect_stdout(output), redirect_stderr(error)):
+            code: int = api.main(["--config", str(self.config), *arguments])
+        return code, output.getvalue(), error.getvalue()
+
+
+INVALID_CONFIGS: Final = (
+    "", "[]", "null", "{}", '{"classes":{},"classes":{}}', '{"max_layers":NaN}',
+    *(json.dumps(dict(config(), **{key: value})) for key, value in (
+        ("extra", "unsupported"), ("review_families_min", 1), ("review_families_min", True),
+        ("review_families_min", "2"), ("max_layers", 0), ("schema_version", 1),
+        ("ecosystems", ["omo", "omo"]), ("frozen_paths", ["../escape"]), ("models", {}),
+    )),
+    *(json.dumps({"classes": dict(mapping(config()["classes"]), **{key: value})}) for key, value in (
+        ("planner", "absent"), ("planner", []), ("executors", []), ("executors", "opus48"),
+        ("executors", ["opus48", "opus48"]), ("reviewers", []), ("reviewers", ["sol", "sol"]),
+        ("reviewers", True), ("extra", "unsupported"),
+    )),
+)
