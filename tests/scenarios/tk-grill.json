@@ -1,0 +1,171 @@
+{
+  "skill": "tk-grill",
+  "cases": {
+    "happy": [
+      {
+        "name": "compatible hermes planner component",
+        "operation": "interview",
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-interview",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": [
+              "fable51",
+              "opus5"
+            ],
+            "reviewers": [
+              "opus48",
+              "opus5"
+            ]
+          }
+        },
+        "sections": [
+          "Delegation",
+          "Fallback",
+          "Output contract"
+        ],
+        "frontmatter": {
+          "thunderkit-role": "interrogator",
+          "thunderkit-tier": "intake",
+          "thunderkit-delegates": "omh:ultrawork/ulw-interview",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "default operation with both peers present",
+        "operation": null,
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-interview",
+          "target_mode": "component",
+          "exit": 0
+        },
+        "sections": [
+          "Delegation",
+          "Output contract"
+        ]
+      },
+      {
+        "name": "delegation disabled keeps the owned intake",
+        "operation": "interview",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        },
+        "sections": [
+          "Fallback"
+        ]
+      },
+      {
+        "name": "no enabled ecosystems keeps the owned intake",
+        "operation": "interview",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "unsupported host falls back to owned intake",
+        "operation": "interview",
+        "config": "opencode",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "tampered interview bytes are a source mismatch",
+        "operation": "interview",
+        "config": "hermes",
+        "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-interview",
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing shared rail companion",
+        "operation": "interview",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-interview",
+          "exit": 0
+        }
+      },
+      {
+        "name": "planner slot not reported by the host",
+        "operation": "interview",
+        "config": "hermes",
+        "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-interview",
+          "exit": 0
+        }
+      },
+      {
+        "name": "requested planner disagrees with the reported planner",
+        "operation": "interview",
+        "config": "opencode",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-interview",
+          "exit": 0
+        }
+      },
+      {
+        "name": "interview without project configuration",
+        "operation": "interview",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}
