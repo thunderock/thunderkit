@@ -39,9 +39,12 @@ files or assumes another skill is installed next door.
 - **Offer the default.** Every user question carries the answer you'd pick, so "yes" is enough.
 - **Never reopen a settled row.** Answers already given, model classes already selected in
   `.thunderkit/config.json`, and scope already approved are inputs, not questions.
-- **Stop when the checklist is green**, not when you run out of curiosity. Grilling is bounded.
+- **Grilling is finite.** One pass over the checklist; a row whose answer is not in the closed
+  form gets exactly one re-ask; after that the row is recorded `unknown` and the intake ends
+  `incomplete`. Never loop until green, and never fill a row with a default the user has not
+  approved.
 
-## The intake checklist (grill until every row has a non-`unknown` value)
+## The intake checklist (one pass; aim for every row non-`unknown`)
 
 | Key | Question shape | Example answer |
 |---|---|---|
@@ -60,8 +63,9 @@ The two model rows read `classes.planner`, `classes.executors`, `classes.reviewe
 `references/models.json`. They confirm what is already selected; they never pick a model. A `no`
 answer is a finding for `tk-router`, which owns model selection and asks for consent before it
 writes. `tk-grill` never rewrites the configuration and never lists provider or wire model names
-in a question; catalog keys are the vocabulary. If the configuration is missing, record
-`unknown` and route the row to `tk-router`.
+in a question; catalog keys are the vocabulary. If the configuration is missing or malformed,
+the resolver returns `blocked` / `invalid_config` and the intake stops before any
+model-bearing question is asked (see Fallback); the report to `tk-router` is the finding.
 
 ## Harness grill (batch, answers must be one word / path / number)
 
@@ -104,7 +108,9 @@ Delegate only on `decision: delegate`, `reason_code: compatible`. The resolver a
   tool is not the tool.
 - **Planner binding.** The component runs under the project's selected `classes.planner`, proven
   from the host's live binding evidence for the Hermes harness. Prompt text naming a model is
-  not proof. A missing planner slot is `missing_evidence`; a slot bound to something outside the
+  not proof, and neither is a validated configuration: the resolver checking `classes.planner`
+  against the catalog proves the *choice* is valid, not that any running session is bound to
+  it. A missing planner slot is `missing_evidence`; a slot bound to something outside the
   selected planner is `model_mismatch`.
 - **Host set.** Only a Hermes host is in the pin's host set. OpenCode, Codex and Claude hosts get
   `unsupported_host` and the owned intake.
@@ -127,28 +133,53 @@ to make that row green.
 
 ## Fallback
 
-`owned`, `fallback` and `blocked` from the resolver all mean the same thing for the user: the
-questions above are asked by `tk-grill` itself, one closed question per turn, with the same
-stop rule. Specifically:
+The three resolver decisions are not interchangeable. `owned` and `fallback` continue the intake
+with `tk-grill` asking the questions itself; `blocked` stops it. Specifically:
 
 | Resolver result | What happens |
 |---|---|
 | `owned` / `disabled` or `owned_policy` | Delegation is off or no ecosystem is enabled. Owned intake, no native probe. |
 | `fallback` / `unsupported_host` | Host is not Hermes. Owned intake. |
 | `fallback` / `source_mismatch`, `peer_missing`, `missing_evidence`, `model_mismatch`, `capability_missing`, `unsafe_runtime_home` | A candidate exists but failed a gate. Owned intake; record the reason in BRIEF.md. |
-| `blocked` / `invalid_config` | `.thunderkit/config.json` is missing or malformed. Model rows go to `tk-router`; the rest of the intake proceeds owned. |
+| `blocked` / `invalid_config` | `.thunderkit/config.json` is missing or malformed. **Stop.** No model-bearing question is asked, owned or delegated. Report to `tk-router` that a valid model-class configuration is the prerequisite, and end the intake `incomplete`. |
 
-The owned intake is the complete procedure in this document, not a reduced one. It honors the
-same planner selection, the same closed-form rule and the same write boundary, so no gate is
-weakened by falling back. A component that returned prose, edits, or a plan is treated as a
-failed component: discard its output, record `capability_missing`, continue owned.
+### Owned intake still needs a bound planner
+
+`owned` and `fallback` do not relax the planner rule. Both the model rows and the harness grill
+are model-bearing work: whichever session answers them must be one that local delegation policy
+(`references/delegation.md`) accepts as **genuinely bound** to the selected `classes.planner`.
+A valid catalog key in the configuration is a validated *choice*; it says nothing about which
+model the current root session is actually running on. Do not proceed on the arbitrary root
+model just because the resolver accepted the configuration. If no supported channel bound to the
+selected planner is available, the intake stops as `blocked` with the binding gap reported to
+`tk-router`, exactly as if the resolver had returned `blocked`. The owned intake otherwise
+honors the same closed-form rule and the same write boundary, so no gate is weakened by
+falling back.
+
+### Uncertain native state is never a restart
+
+If a delegated component times out, is still in flight, or its outcome is unknown, do **not**
+discard it and start owned questioning in parallel. Keep the existing session and artifact
+identity (`.thunderkit/runs/<run-id>/`), inspect the captured native session, and decide from
+what it shows. Only a *known terminal failure* may enter the fallback rows above; an uncertain
+state is `blocked/unknown` until inspected. Two owners asking the same user the same checklist is
+the failure this rule prevents.
+
+### Invalid component output
+
+A component that returned prose, edits, or a plan is a failed invocation: discard its output and
+record an `invocation_failure` note in BRIEF.md alongside the route. The resolver's decision
+record is preserved unchanged; do not rewrite its `reason_code` to `capability_missing`, which
+names a routing gate, not a bad result from a route that was correctly admitted. Whether the
+intake then continues owned is governed by the bound-planner rule above.
 
 ## Output contract
 
 The controller writes `<project root>/.thunderkit/BRIEF.md` **after** the component returns (or
 after the owned intake ends), never while it runs. BRIEF.md holds:
 
-- the filled checklist, every row non-`unknown` or explicitly `default:<value>`;
+- the filled checklist, every row non-`unknown` or explicitly `default:<value>`, or, when the
+  single pass ended with open rows, `status: incomplete` and those rows left `unknown`;
 - the harness grill transcript;
 - `settled`: the rows that were already decided before grilling and were passed through
   unchanged;
@@ -164,8 +195,11 @@ record; it is not a plan and it is not execution approval. Selected model classe
 ## Degrade honestly
 
 If the user says "you decide" for a row, record `default:<value>`: the choice is visible and
-reversible, not buried. If the harness can't answer in the closed form after one retry, record
-`unknown` and move on; don't accept a paragraph as an answer.
+reversible, not buried. A default is only ever entered on that explicit say-so; `tk-grill` never
+fills a row with its own guess to finish. If the user or the harness can't answer in the closed
+form after the single re-ask, record `unknown` and move on to the next row; don't accept a
+paragraph as an answer. When the pass ends with open rows, BRIEF.md is written with
+`status: incomplete` and the intake stops there. Settled rows are never reopened to try again.
 
 ## learn mode (`tk-grill --learn`)
 
