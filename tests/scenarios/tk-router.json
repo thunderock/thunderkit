@@ -1,0 +1,131 @@
+{
+  "skill": "tk-router",
+  "cases": {
+    "happy": [
+      {
+        "name": "configless bootstrap lists choices before config",
+        "operation": "bootstrap",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        },
+        "sections": ["Delegation", "Fallback", "Output contract"],
+        "frontmatter": {
+          "thunderkit-role": "router",
+          "thunderkit-tier": "entry",
+          "thunderkit-delegates": "none",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "route keeps literal all reviewers",
+        "operation": "route",
+        "config": "opencode_all",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        },
+        "sections": ["Delegation", "Fallback"]
+      },
+      {
+        "name": "default operation preserves explicit class order",
+        "operation": null,
+        "config": "canonical",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      },
+      {
+        "name": "legacy shape previews without rewriting choices",
+        "operation": "route",
+        "config": "legacy",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      },
+      {
+        "name": "delegation off still routes locally",
+        "operation": "route",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "route without config is blocked",
+        "operation": "route",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "router refuses a stage operation it does not own",
+        "operation": "execute",
+        "config": "canonical",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}
