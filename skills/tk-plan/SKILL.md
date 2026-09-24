@@ -27,13 +27,23 @@ or retain the literal reviewers `"all"`. Backend choice never changes those sele
 `references/models.json`, `references/config.schema.json` and `scripts/tk-resolve.py` from that
 root, not the current directory, a checkout, or another installed skill.
 
-**Project root** is the actual repository being planned. Read its explicit, project-contained
-`.thunderkit/config.json`, `.thunderkit/SPEC.md`, `.thunderkit/MAP.md`, `.thunderkit/CONTEXT.md`
-and `.thunderkit/BRIEF.md` paths. Record input paths, content digests and source/base identity.
-Reject escaping paths and resolve aliases before checking containment. Supply the settled goal,
-scope, non-goals, constraints, accepted decisions, `frozen_paths`, `max_layers`, acceptance checks
-and verification requirements. A missing input, stale map or open brief unknown stops planning;
-do not silently replace it with assumptions or reopen a settled decision.
+**Project root** is the actual repository being planned. Read its required, explicit,
+project-contained `.thunderkit/config.json`, `.thunderkit/BRIEF.md` and `.thunderkit/MAP.md` inputs.
+Also read, validate and consume `.thunderkit/SPEC.md`, `.thunderkit/CONTEXT.md` and other upstream
+outputs whenever already produced or required by the approved scope/lifecycle. A full milestone
+requires the outputs of its preceding stages.
+
+For input completeness on the minimum path, config/BRIEF/MAP suffice when spec/discuss were
+intentionally omitted and no additional upstream output is required or already produced. Record
+each intentional stage omission and its reason with the input record; a missing file alone does
+not establish omission.
+
+Record input paths, content digests and source/base identity. Reject escaping paths and resolve
+aliases before checking containment. Supply the settled goal, scope, non-goals, constraints,
+accepted decisions, `frozen_paths`, `max_layers`, acceptance checks and verification requirements.
+A missing required or previously produced input, stale evidence (including optional inputs),
+contradictory artifacts or open brief unknown stops planning; do not silently ignore it, replace
+it with assumptions or reopen a settled decision.
 
 Validate all three classes through the bundled config contract before model-bearing work,
 including owned work with delegation off. Missing choices are not defaults. Complete valid legacy
