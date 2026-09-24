@@ -1,0 +1,327 @@
+{
+  "skill": "tk-map",
+  "cases": {
+    "happy": [
+      {
+        "name": "opencode selects research component among distinct peer targets",
+        "operation": "map",
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "sections": ["Delegation", "What a code map contains", "Procedure", "Output contract", "Fallback"],
+        "frontmatter": {
+          "thunderkit-role": "recon",
+          "thunderkit-tier": "prep",
+          "thunderkit-delegates": "omo:ulw-research omh:planner/omh-codebase-onboarding",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "hermes default operation selects categorized onboarding component",
+        "operation": null,
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "planner/omh-codebase-onboarding",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Delegation", "Fallback", "Output contract"]
+      },
+      {
+        "name": "codex research component preserves its supported executor selection",
+        "operation": "map",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "sol",
+            "executors": ["sol"],
+            "reviewers": ["sol"]
+          }
+        },
+        "sections": ["Delegation", "Fallback", "Output contract"]
+      },
+      {
+        "name": "empty ecosystem selection computes owned route without native evidence",
+        "operation": "map",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["sol", "opus5"]
+          }
+        },
+        "sections": ["Fallback", "Output contract"]
+      },
+      {
+        "name": "delegation off retains selected classes without native evidence",
+        "operation": "map",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        },
+        "sections": ["Fallback", "Output contract"]
+      },
+      {
+        "name": "executor component preserves unused reviewers all request",
+        "operation": "map",
+        "config": "opencode_all",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "unsupported native host leaves target unselected",
+        "operation": "map",
+        "config": "opencode",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing research peer is not rescued by a ready claim",
+        "operation": "map",
+        "config": "opencode",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "peer_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "modified research bytes fail pinned source qualification",
+        "operation": "map",
+        "config": "opencode",
+        "capabilities": "tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "self reported digest cannot authorize modified research bytes",
+        "operation": "map",
+        "config": "opencode",
+        "capabilities": "self_hashed_tamper",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "modified onboarding bytes fail pinned source qualification",
+        "operation": "map",
+        "config": "hermes",
+        "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "planner/omh-codebase-onboarding",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "onboarding without its shared rail is unavailable",
+        "operation": "map",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "planner/omh-codebase-onboarding",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "wrong executor model denies native research",
+        "operation": "map",
+        "config": "opencode",
+        "capabilities": "binding_mismatch",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "executor provider mapping from another host is not a binding",
+        "operation": "map",
+        "config": "opencode",
+        "capabilities": "wrong_host_bindings",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "research component requires its executor binding slot",
+        "operation": "map",
+        "config": "opencode",
+        "capabilities": "missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "onboarding requires executors despite its planner category",
+        "operation": "map",
+        "config": "hermes",
+        "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omh",
+          "target_selector": "planner/omh-codebase-onboarding",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "partial executor representation cannot collapse the requested set",
+        "operation": "map",
+        "config": "canonical",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "capability_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      },
+      {
+        "name": "model bearing map without configuration is blocked",
+        "operation": "map",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "native candidates without capability evidence are blocked",
+        "operation": "map",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      }
+    ]
+  }
+}
