@@ -1,0 +1,501 @@
+{
+  "skill": "tk-learn",
+  "cases": {
+    "happy": [
+      {
+        "name": "default research selects the OMO component on OpenCode",
+        "operation": null,
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "frontmatter": {
+          "thunderkit-role": "learner",
+          "thunderkit-tier": "knowledge",
+          "thunderkit-delegates": "omo:ulw-research omh:ultrawork/ulw-research omh:operator/omh-skill-scout",
+          "thunderkit-contract": "1"
+        },
+        "sections": ["Delegation", "Model binding", "Procedure", "Fallback", "Source limits", "Discovery and creation", "Output contract"]
+      },
+      {
+        "name": "research selects the categorized OMH component on Hermes",
+        "operation": "research",
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "research supports the selected Codex executor",
+        "operation": "research",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+        }
+      },
+      {
+        "name": "discovery selects only the OMH scout component",
+        "operation": "discover",
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-skill-scout",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Discovery and creation", "Output contract"]
+      },
+      {
+        "name": "research preserves literal all without adding reviewer roles",
+        "operation": "research",
+        "config": "opencode_all",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": "all"}
+        }
+      },
+      {
+        "name": "discovery preserves unused planner and all reviewer selections",
+        "operation": "discover",
+        "config": "opencode_all",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-skill-scout",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": "all"}
+        }
+      },
+      {
+        "name": "complete legacy research choices normalize without substitution",
+        "operation": "research",
+        "config": "legacy_opencode",
+        "capabilities": "opencode_omo_legacy",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51"], "reviewers": ["fable51", "opus5"]}
+        }
+      },
+      {
+        "name": "disabled research computes an owned route without peer evidence",
+        "operation": "research",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        },
+        "sections": ["Model binding", "Fallback"]
+      },
+      {
+        "name": "disabled discovery computes an owned route without native scouting",
+        "operation": "discover",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      },
+      {
+        "name": "empty ecosystems preserve the owned research selections",
+        "operation": "research",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["opus48"], "reviewers": ["sol", "opus5"]}
+        }
+      },
+      {
+        "name": "OMO-only discovery cannot borrow its research target",
+        "operation": "discover",
+        "config": "omo_only",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "missing research peer is not rescued by a ready claim",
+        "operation": "research",
+        "config": "opencode",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "peer_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        }
+      },
+      {
+        "name": "same-name OMO research bytes cannot satisfy OMH provenance",
+        "operation": "research",
+        "config": "hermes",
+        "capabilities": "mixed_same_name",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "self-hashed research tampering cannot replace trusted bytes",
+        "operation": "research",
+        "config": "opencode",
+        "capabilities": "self_hashed_tamper",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "OMO research requires its declared companion",
+        "operation": "research",
+        "config": "opencode",
+        "capabilities": "missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "OMH research requires its shared rail",
+        "operation": "research",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "discovery requires the scout shared rail",
+        "operation": "discover",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-skill-scout",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "discovery denies modified scout bytes",
+        "operation": "discover",
+        "config": "hermes",
+        "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-skill-scout",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "research without executor evidence denies the component",
+        "operation": "research",
+        "config": "opencode",
+        "capabilities": "missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        },
+        "sections": ["Model binding", "Fallback"]
+      },
+      {
+        "name": "discovery without executor evidence denies the component",
+        "operation": "discover",
+        "config": "hermes",
+        "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-skill-scout",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "research rejects a wrong executor wire identity",
+        "operation": "research",
+        "config": "opencode",
+        "capabilities": "binding_mismatch",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "research rejects effective providers from another harness",
+        "operation": "research",
+        "config": "opencode",
+        "capabilities": "wrong_host_bindings",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-research",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "discovery does not substitute Hermes executors for selected Sol",
+        "operation": "discover",
+        "config": "sol",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-skill-scout",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+        }
+      },
+      {
+        "name": "discovery denies collapsed or reordered executor selections",
+        "operation": "discover",
+        "config": "canonical",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "capability_missing",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-skill-scout",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      },
+      {
+        "name": "unsupported research host has no native target",
+        "operation": "research",
+        "config": "opencode",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "OpenCode discovery cannot run its OMO research peer instead",
+        "operation": "discover",
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "research without model configuration blocks",
+        "operation": "research",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "metadata discovery still requires model configuration",
+        "operation": "discover",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "enabled research requires explicit capability evidence",
+        "operation": "research",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        }
+      },
+      {
+        "name": "enabled discovery requires explicit capability evidence",
+        "operation": "discover",
+        "config": "hermes",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {"planner": "opus48", "executors": ["fable51", "opus5"], "reviewers": ["opus48", "opus5"]}
+        }
+      },
+      {
+        "name": "creation is not a learning resolver operation",
+        "operation": "create",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        },
+        "sections": ["Discovery and creation"]
+      }
+    ]
+  }
+}
