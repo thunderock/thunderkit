@@ -1,0 +1,189 @@
+{
+  "skill": "tk-research",
+  "cases": {
+    "happy": [
+      {
+        "name": "opencode selects only the qualified OMO research owner",
+        "operation": "research", "config": "opencode", "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "delegate", "reason_code": "compatible",
+          "target_ecosystem": "omo", "target_selector": "ulw-research",
+          "target_mode": "handoff", "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        },
+        "sections": ["Delegation", "Fallback", "Source limits", "Output contract"],
+        "frontmatter": {
+          "thunderkit-role": "research", "thunderkit-tier": "pre-plan",
+          "thunderkit-delegates": "omo:ulw-research omh:ultrawork/ulw-research",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "hermes selects only the qualified OMH research owner",
+        "operation": null, "config": "hermes", "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate", "reason_code": "compatible",
+          "target_ecosystem": "omh", "target_selector": "ultrawork/ulw-research",
+          "target_mode": "handoff", "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["fable51", "opus5"], "reviewers": ["opus48", "opus5"]}
+        },
+        "sections": ["Delegation", "Fallback", "Source limits", "Output contract"]
+      },
+      {
+        "name": "codex represents the selected executor in the OMO handoff",
+        "operation": "research", "config": "sol", "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "delegate", "reason_code": "compatible",
+          "target_ecosystem": "omo", "target_selector": "ulw-research",
+          "target_mode": "handoff", "exit": 0,
+          "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+        }
+      },
+      {
+        "name": "delegation off computes an owned route without a peer snapshot",
+        "operation": "research", "config": "delegation_off", "capabilities": null,
+        "expect": {
+          "decision": "owned", "reason_code": "disabled",
+          "target_ecosystem": null, "target_selector": null,
+          "target_mode": null, "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["opus48", "opus5", "fable51"], "reviewers": ["opus48", "opus5", "fable51", "sol"]}
+        },
+        "sections": ["Fallback", "Source limits", "Output contract"]
+      },
+      {
+        "name": "empty ecosystems retain the owned selected executor",
+        "operation": "research", "config": "owned", "capabilities": null,
+        "expect": {
+          "decision": "owned", "reason_code": "owned_policy",
+          "target_ecosystem": null, "target_selector": null,
+          "target_mode": null, "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["opus48"], "reviewers": ["sol", "opus5"]}
+        },
+        "sections": ["Fallback", "Output contract"]
+      },
+      {
+        "name": "research checks executors without expanding the reviewer all request",
+        "operation": "research", "config": "opencode_all", "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate", "reason_code": "compatible",
+          "target_ecosystem": "omo", "target_selector": "ulw-research",
+          "target_mode": "handoff", "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": "all"}
+        }
+      },
+      {
+        "name": "configured OMH research bindings do not imply a home mutation",
+        "operation": "research", "config": "hermes", "capabilities": "hermes_omh_shared_home",
+        "expect": {
+          "decision": "delegate", "reason_code": "compatible",
+          "target_ecosystem": "omh", "target_selector": "ultrawork/ulw-research",
+          "target_mode": "handoff", "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["fable51", "opus5"], "reviewers": ["opus48", "opus5"]}
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "missing native peer permits only a separately bound owned fallback",
+        "operation": "research", "config": "opencode", "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback", "reason_code": "peer_missing",
+          "target_ecosystem": "omo", "target_selector": "ulw-research",
+          "target_mode": "handoff", "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        },
+        "sections": ["Fallback", "Source limits", "Output contract"]
+      },
+      {
+        "name": "OMO bytes cannot satisfy the same named OMH research target",
+        "operation": "research", "config": "hermes", "capabilities": "mixed_same_name",
+        "expect": {
+          "decision": "fallback", "reason_code": "source_mismatch",
+          "target_ecosystem": "omh", "target_selector": "ultrawork/ulw-research",
+          "target_mode": "handoff", "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["fable51", "opus5"], "reviewers": ["opus48", "opus5"]}
+        }
+      },
+      {
+        "name": "missing OMO executor binding blocks the research handoff",
+        "operation": "research", "config": "opencode", "capabilities": "missing_role",
+        "expect": {
+          "decision": "blocked", "reason_code": "missing_evidence",
+          "target_ecosystem": "omo", "target_selector": "ulw-research",
+          "target_mode": "handoff", "exit": 1,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        }
+      },
+      {
+        "name": "missing OMH executor binding blocks the research handoff",
+        "operation": "research", "config": "hermes", "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "blocked", "reason_code": "missing_evidence",
+          "target_ecosystem": "omh", "target_selector": "ultrawork/ulw-research",
+          "target_mode": "handoff", "exit": 1,
+          "requested_bindings": {"planner": "opus48", "executors": ["fable51", "opus5"], "reviewers": ["opus48", "opus5"]}
+        }
+      },
+      {
+        "name": "wrong effective executor identity blocks without substitution",
+        "operation": "research", "config": "opencode", "capabilities": "binding_mismatch",
+        "expect": {
+          "decision": "blocked", "reason_code": "model_mismatch",
+          "target_ecosystem": "omo", "target_selector": "ulw-research",
+          "target_mode": "handoff", "exit": 1,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        }
+      },
+      {
+        "name": "foreign host executor mapping is not a binding",
+        "operation": "research", "config": "opencode", "capabilities": "wrong_host_bindings",
+        "expect": {
+          "decision": "blocked", "reason_code": "model_mismatch",
+          "target_ecosystem": "omo", "target_selector": "ulw-research",
+          "target_mode": "handoff", "exit": 1,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        }
+      },
+      {
+        "name": "missing required research config is not defaulted",
+        "operation": "research", "config": null, "capabilities": null,
+        "expect": {
+          "decision": "blocked", "reason_code": "invalid_config",
+          "target_ecosystem": null, "target_selector": null,
+          "target_mode": null, "exit": 2, "requested_bindings": {}
+        }
+      },
+      {
+        "name": "missing native evidence input is not a source availability result",
+        "operation": "research", "config": "opencode", "capabilities": null,
+        "expect": {
+          "decision": "blocked", "reason_code": "invalid_config",
+          "target_ecosystem": null, "target_selector": null,
+          "target_mode": null, "exit": 2,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        },
+        "sections": ["Source limits", "Output contract"]
+      },
+      {
+        "name": "unsupported native host returns a fallback route not research completion",
+        "operation": "research", "config": "opencode", "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback", "reason_code": "unsupported_host",
+          "target_ecosystem": null, "target_selector": null,
+          "target_mode": null, "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        }
+      },
+      {
+        "name": "missing declared OMH research companion leaves native capability unavailable",
+        "operation": "research", "config": "hermes", "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback", "reason_code": "source_mismatch",
+          "target_ecosystem": "omh", "target_selector": "ultrawork/ulw-research",
+          "target_mode": "handoff", "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["fable51", "opus5"], "reviewers": ["opus48", "opus5"]}
+        }
+      }
+    ]
+  }
+}
