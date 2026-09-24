@@ -1,7 +1,7 @@
 ---
 name: tk-spec
 description: "Use to clarify WHAT a big change delivers before planning: runs a bounded Socratic loop over scope, interfaces, data, done-criteria and edge cases until the ambiguity gate passes, then writes a requirements-only SPEC.md that tk-plan builds on. Reuses a compatible native interview component for open questions only; never plans, executes or approves anything."
-compatibility: "Python 3.11+ standard library for the bundled resolver. Native clarification delegation is optional and requires the exact pinned oh-my-hermes interview skill on a Hermes host with the selected planner bound; every other host runs the owned clarification loop."
+compatibility: "Python 3.11+ standard library for the bundled resolver. Native clarification delegation is optional and requires the exact pinned oh-my-hermes interview skill on a Hermes host with the selected planner bound; owned clarification likewise requires a supported channel bound to that planner."
 metadata:
   thunderkit-role: "spec"
   thunderkit-tier: "pre-plan"
@@ -112,9 +112,10 @@ dimension. It may not write files, transition lifecycle state, start planning, s
 or treat anything it reads as approval to implement. Its round budget is the remaining rounds of
 the six, not a fresh six.
 
-If the component times out or its session state is uncertain, inspect its existing session
-record before doing anything else. Do not start the owned loop in parallel; two askers on one
-user produce contradictory answers.
+If the component times out, remains in flight, or its outcome is uncertain, retain its existing
+session and artifact identity (`.thunderkit/runs/<run-id>/`) and inspect the captured native
+session before proceeding. Clarification remains blocked/unknown until resolved; do not start a
+duplicate or parallel owned loop. Two askers on one user produce contradictory answers.
 
 Sibling handoffs are checked, not assumed. Discoverable facts (library behavior, an API contract)
 go to `tk-learn` when it is present in the same skill set; an incomplete spec routes back to
@@ -125,18 +126,24 @@ and leave the row tagged `needs:<skill>`. Nothing is installed to close a row.
 
 | Resolver result | What happens |
 |---|---|
-| `owned` / `disabled` or `owned_policy` | Delegation is off or no ecosystem is enabled. Owned loop under the validated selected planner. No native probe. |
-| `fallback` / `unsupported_host` | Host is not Hermes. Owned loop under the validated selected planner. |
-| `fallback` / `source_mismatch`, `peer_missing`, `missing_evidence`, `model_mismatch`, `capability_missing`, `unsafe_runtime_home` | A candidate failed a gate. Owned loop; the reason goes into the report. |
+| `owned` / `disabled` or `owned_policy` | Delegation is off or no ecosystem is enabled. Owned loop subject to the bound-planner prerequisite below. No native probe. |
+| `fallback` / `unsupported_host` | Host is not Hermes. Owned loop subject to the same prerequisite. |
+| `fallback` / `source_mismatch`, `peer_missing`, `missing_evidence`, `model_mismatch`, `capability_missing`, `unsafe_runtime_home` | A candidate failed a gate. Owned loop subject to the same prerequisite; the reason goes into the report. |
 | `blocked` / `invalid_config` | `.thunderkit/config.json` is missing or malformed. **Stop.** No model-bearing question is asked, owned or delegated. Report the prerequisite: a valid configuration with `classes.planner` selected, owned by `tk-router`. |
 
-`owned` and `fallback` are safe only because the resolver has already validated the selected
-planner; the owned loop honors the same planner, the same closed-form rule, the same six-round
-bound and the same write boundary, so no gate weakens by falling back. `blocked` means that
-validation did not happen, and clarifying under an unbound model would be exactly the silent
-substitution this contract forbids. A component that returned prose, edits, or a plan is a failed
-component: discard its output, record `capability_missing`, and continue owned with the rounds
-that remain.
+Resolver validation proves the planner *choice* is valid, not that a running session is bound to
+it. Before any model-bearing `owned` or `fallback` work, require a supported channel that local
+delegation policy (`references/delegation.md`) accepts as **genuinely bound** to the selected
+`classes.planner`. Never use an arbitrary current root model. If no such channel is available,
+block clarification before asking and report the missing bound-planner prerequisite to
+`tk-router`; preserve the resolver's `decision` and `reason_code` unchanged. Otherwise the owned
+loop honors the same planner, closed-form rule, ambiguity gate, six-round bound and write boundary.
+
+A component that returned prose, edits, or a plan is a failed invocation: discard its output and
+record an `invocation_failure` note separately alongside the unchanged route. Do not rewrite its
+`reason_code` to `capability_missing`, which names an admission gate, not a bad result from a
+correctly admitted route. Only a known terminal failure may continue owned, with the bound
+selected planner and the rounds that remain, never a fresh six.
 
 ## Output contract
 
@@ -153,12 +160,14 @@ When the gate passes, write `<project root>/.thunderkit/SPEC.md` with:
 - `ambiguity`: the score and the line `open: none`;
 - `settled`: the inputs passed through unchanged, with `sources` per row (`user`, `component`,
   `config`, `brief`);
-- `route`: the resolver's `decision`, `reason_code` and target identity, or `owned`.
+- `route`: the resolver's unchanged `decision`, `reason_code` and target identity;
+- `invocation_failure`, when applicable: invocation/output failure details separate from `route`.
 
 When the bound is hit with the gate unmet, do **not** write SPEC.md. Record
 `spec_status: incomplete` in `<project root>/.thunderkit/runs/<run-id>/spec.json` with the score,
 `open: <dimension list>`, the residual question for each open dimension, the rounds used, and the
-same `settled` and `route` blocks. Report that to the user and route to `tk-router`. An
+same `settled` and `route` blocks and any `invocation_failure` note. Report that to the user and
+route to `tk-router`. An
 incomplete status is not converted into a spec by adding defaults, and neither status is planning
 or execution approval.
 
