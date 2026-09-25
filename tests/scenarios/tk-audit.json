@@ -1,0 +1,303 @@
+{
+  "skill": "tk-audit",
+  "cases": {
+    "happy": [
+      {
+        "name": "default audit qualifies only a Hermes evidence assessment component",
+        "operation": null,
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Reviewer selection", "Delegation", "Procedure", "Archive eligibility", "Output — `.thunderkit/AUDIT.md`", "Fallback"],
+        "frontmatter": {
+          "thunderkit-role": "audit",
+          "thunderkit-tier": "deliver",
+          "thunderkit-delegates": "omh:reviewer/omh-verification-gate",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "both peers cannot introduce an OMO audit target",
+        "operation": "audit",
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "native subset preserves all request without certifying family coverage",
+        "operation": "audit",
+        "config": "opencode_all",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        },
+        "sections": ["Reviewer selection", "Archive eligibility"]
+      },
+      {
+        "name": "disabled delegation retains all explicit choices without native evidence",
+        "operation": "audit",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        },
+        "sections": ["Fallback", "Reviewer selection"]
+      },
+      {
+        "name": "empty ecosystems keep complete audit owned",
+        "operation": "audit",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["sol", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "OMO only selection has no audit delegate",
+        "operation": "audit",
+        "config": "omo_only",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "OpenCode remains fallback even with both peers installed",
+        "operation": "audit",
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "Codex cannot substitute an OMO target",
+        "operation": "audit",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+        }
+      },
+      {
+        "name": "missing peer recipe on OpenCode cannot bypass host qualification",
+        "operation": "audit",
+        "config": "opencode",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "unsupported Claude host has no selected target",
+        "operation": "audit",
+        "config": "hermes",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "reviewer selection mismatch falls back for the component",
+        "operation": "audit",
+        "config": "opencode",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "explicit reviewers cannot collapse to the Hermes native subset",
+        "operation": "audit",
+        "config": "canonical",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "capability_missing",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing reviewer role cannot qualify evidence assessment",
+        "operation": "audit",
+        "config": "hermes",
+        "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "tampered gate bytes fail source qualification",
+        "operation": "audit",
+        "config": "hermes",
+        "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing shared rail denies the native component",
+        "operation": "audit",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "audit without model config is invalid even without native inputs",
+        "operation": "audit",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "native snapshot cannot rescue absent model configuration",
+        "operation": "audit",
+        "config": null,
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "native consideration without capabilities is invalid",
+        "operation": "audit",
+        "config": "hermes",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2
+        }
+      },
+      {
+        "name": "production readiness is not an audit operation alias",
+        "operation": "omh-production-audit",
+        "config": "hermes",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}
