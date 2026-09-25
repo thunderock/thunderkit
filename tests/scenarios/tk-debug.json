@@ -1,0 +1,368 @@
+{
+  "skill": "tk-debug",
+  "cases": {
+    "happy": [
+      {
+        "name": "default general operation selects OMO handoff on OpenCode",
+        "operation": null,
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "sections": ["Delegation", "Native handoff", "Investigation component", "Fallback", "The loop", "Output contract"],
+        "frontmatter": {
+          "thunderkit-role": "debug",
+          "thunderkit-tier": "verify",
+          "thunderkit-delegates": "omo:debugging omh:reviewer/omh-native-debugging",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "explicit native fault selects OMO on OpenCode with both peers present",
+        "operation": "native-fault",
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 0
+        },
+        "sections": ["Native handoff", "Output contract"]
+      },
+      {
+        "name": "native fault on Hermes selects the categorized investigation component",
+        "operation": "native-fault",
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-native-debugging",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Investigation component", "The loop", "Output contract"]
+      },
+      {
+        "name": "general operation supports the catalog Codex planner binding",
+        "operation": "general",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "sol",
+            "executors": ["sol"],
+            "reviewers": ["sol"]
+          }
+        }
+      },
+      {
+        "name": "no enabled ecosystem computes an owned general route",
+        "operation": "general",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["sol", "opus5"]
+          }
+        },
+        "sections": ["Fallback", "The loop", "Output contract"]
+      },
+      {
+        "name": "delegation off retains selections without native capability evidence",
+        "operation": "general",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        },
+        "sections": ["Fallback", "Output contract"]
+      },
+      {
+        "name": "planner qualification preserves the unused reviewers all request",
+        "operation": "general",
+        "config": "opencode_all",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "general on Hermes has no qualified native target even with both peers",
+        "operation": "general",
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        },
+        "sections": ["Fallback", "The loop"]
+      },
+      {
+        "name": "unsupported native host cannot select either fault target",
+        "operation": "native-fault",
+        "config": "opencode",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing debugging peer is not rescued by a ready claim",
+        "operation": "general",
+        "config": "opencode",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "peer_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 0
+        }
+      },
+      {
+        "name": "planner model mismatch blocks the general handoff",
+        "operation": "general",
+        "config": "opencode",
+        "capabilities": "binding_mismatch",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 1
+        },
+        "sections": ["Native handoff", "Fallback"]
+      },
+      {
+        "name": "planner model mismatch also blocks the native fault handoff",
+        "operation": "native-fault",
+        "config": "opencode",
+        "capabilities": "binding_mismatch",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 1
+        }
+      },
+      {
+        "name": "missing planner evidence blocks the debugging handoff",
+        "operation": "general",
+        "config": "opencode",
+        "capabilities": "missing_role",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 1
+        }
+      },
+      {
+        "name": "planner provider identity from another host blocks the handoff",
+        "operation": "general",
+        "config": "opencode",
+        "capabilities": "wrong_host_bindings",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 1
+        }
+      },
+      {
+        "name": "general debugging without configuration is invalid",
+        "operation": "general",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "native fault debugging also requires explicit configuration",
+        "operation": "native-fault",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "native candidates without a capability snapshot are invalid",
+        "operation": "native-fault",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "modified debugging bytes cannot qualify a native owner",
+        "operation": "general",
+        "config": "opencode",
+        "capabilities": "tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing required debugging companion denies native ownership",
+        "operation": "native-fault",
+        "config": "opencode",
+        "capabilities": "missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "debugging",
+          "target_mode": "handoff",
+          "exit": 0
+        }
+      },
+      {
+        "name": "modified native investigation component bytes fail provenance",
+        "operation": "native-fault",
+        "config": "hermes",
+        "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-native-debugging",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "native investigation component requires its shared rail",
+        "operation": "native-fault",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-native-debugging",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "component without planner evidence returns fallback not handoff permission",
+        "operation": "native-fault",
+        "config": "hermes",
+        "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-native-debugging",
+          "target_mode": "component",
+          "exit": 0
+        },
+        "sections": ["Investigation component", "Fallback"]
+      }
+    ]
+  }
+}
