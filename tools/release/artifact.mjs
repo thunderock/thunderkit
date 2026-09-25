@@ -1,8 +1,8 @@
 // @ts-check
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exec } from "./io.mjs";
 import { decodeRequest, failure, success } from "./request.mjs";
@@ -56,13 +56,30 @@ function emptyDirectory(path) {
   const stat = lstatSync(path);
   if (!stat.isDirectory() || stat.isSymbolicLink() || readdirSync(path).length !== 0) abort("E_ARTIFACT");
 }
-/** Three distinct, non-nested directories. @param {Workspace} workspace */
-function checkWorkspace(workspace) {
-  const directories = [workspace.checkoutDir, workspace.stageDir, workspace.bundleDir].map((path) => resolve(path));
-  for (const [index, left] of directories.entries()) {
-    for (const right of directories.slice(index + 1)) {
-      if (left === right || !relative(left, right).startsWith("..") || !relative(right, left).startsWith("..")) abort("E_ARTIFACT");
+/** Resolve existing ancestors before appending missing components, preserving symlink/parent traversal order. @param {string} path @returns {string} */
+function physicalPath(path) {
+  try {
+    return realpathSync.native(path);
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT" || dirname(path) === path) throw error;
+    if (lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()) throw error;
+    return join(physicalPath(dirname(path)), basename(path));
+  }
+}
+/** Three distinct, non-nested directories, both lexically and through filesystem aliases. @param {Workspace} workspace @returns {Result<null>} */
+export function checkWorkspace(workspace) {
+  try {
+    const paths = [workspace.checkoutDir, workspace.stageDir, workspace.bundleDir];
+    for (const directories of [paths.map((path) => resolve(path)), paths.map(physicalPath)]) {
+      for (const [index, left] of directories.entries()) {
+        for (const right of directories.slice(index + 1)) {
+          if ([relative(left, right), relative(right, left)].some((path) => !isAbsolute(path) && path.split(sep)[0] !== "..")) return failure("E_ARTIFACT");
+        }
+      }
     }
+    return success(null);
+  } catch (error) {
+    return caught(error, "E_ARTIFACT");
   }
 }
 /** The package must publish as the public thunderkit CLI with no redirecting publication settings. @param {string} directory */
@@ -166,7 +183,8 @@ export async function verifyArtifact(prepared, workspace) {
     if (!decoded.ok) return decoded;
     if (decoded.value.release === null) return failure("E_RECORD");
     const { request, release } = decoded.value;
-    checkWorkspace(workspace);
+    const paths = checkWorkspace(workspace);
+    if (!paths.ok) return paths;
     const tools = checkToolchain(workspace.checkoutDir);
     if (!tools.ok) return tools;
     const tarball = join(resolve(workspace.bundleDir), "package.tgz");
@@ -224,7 +242,8 @@ export async function prepareArtifact(request, selection, workspace) {
     const provisional = { schema: 2, action: "publish", reason: "ready", request: input.value, release: { ...candidate, toolchain, tarball: { file: "package.tgz", size: 1, integrity: placeholderIntegrity } } };
     const validated = decodePlan(JSON.stringify(provisional), input.value);
     if (!validated.ok) return validated;
-    checkWorkspace(workspace);
+    const paths = checkWorkspace(workspace);
+    if (!paths.ok) return paths;
     const tools = checkToolchain(workspace.checkoutDir);
     if (!tools.ok) return tools;
     emptyDirectory(workspace.bundleDir);

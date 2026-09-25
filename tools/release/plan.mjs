@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { decodeRequest, parseRequest, failure, success } from "./request.mjs";
 import { selectCandidate, reconcile } from "./policy.mjs";
 import { decodeReservation, decodePlan } from "./record.mjs";
-import { prepareArtifact } from "./artifact.mjs";
+import { checkWorkspace, prepareArtifact } from "./artifact.mjs";
 import { createSystemTransport, exec, get } from "./io.mjs";
 
 /** @template T @typedef {import("./request.mjs").Result<T>} Result */
@@ -55,6 +55,8 @@ function skip(request, reason) { return { schema: 2, action: "skip", reason, req
 export async function planRelease(request, workspace, transport) {
   const input = decodeRequest(request);
   if (!input.ok) return input;
+  const paths = checkWorkspace(workspace);
+  if (!paths.ok) return paths;
   const git = await transport.readGit(input.value);
   if (!git.ok) return git;
   const selection = selectCandidate(input.value, git.value);
