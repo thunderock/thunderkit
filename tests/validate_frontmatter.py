@@ -1,148 +1,100 @@
 #!/usr/bin/env python3
-"""thunderkit test suite: validates every SKILL.md, the model roster, and leakage denylist.
+"""Validate public skill metadata, catalog consistency and leakage without network access."""
+from __future__ import annotations
 
-Checks (fail = non-zero exit):
-  1. Every skills/<name>/SKILL.md has valid YAML frontmatter delimited by ---.
-  2. frontmatter `name` == parent directory name.
-  3. frontmatter `description` present, non-empty, and trigger-shaped:
-       - starts with "Use when" / "Use to" (a trigger, not a noun phrase)
-       - >= 40 chars (self-contained), <= 500 chars (skill-description budget)
-  4. The shared roster names all four current fleet model ids.
-  5. No leakage: denylisted (Adobe/secret/internal) strings appear nowhere in skills/ or docs.
-
-No third-party deps — stdlib only, so `make run_tests` works offline on a fresh machine.
-"""
-import os
+from pathlib import Path
 import re
 import sys
+from typing import Final
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKILLS = os.path.join(ROOT, "skills")
-ROSTER = os.path.join(SKILLS, "references", "model-roster.md")
+ROOT: Final = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "tests"))
+from dependency_contract import json_array, json_object, json_string, validate_manifest
+from skills.references.model_config import ConfigError, JsonObject, load_json, menu
+from tools.materialize_skills import PayloadError, discover_skills
+from tools.skill_frontmatter import FrontmatterError, parse_skill_file, validate_thunderkit
 
-FLEET_IDS = [
-    "us.anthropic.claude-fable-5-1",
-    "claude-opus-4-8",
-    "us.anthropic.claude-opus-5",
-    "gpt-5.6-sol",
-]
-
-# Public-repo leakage denylist. Case-insensitive. These must never ship.
-DENYLIST = [
-    r"\badobe\b",
-    r"\bastiwari\b",
-    r"sensei-fs",
-    r"AWS_BEARER",
-    r"\.internal\b",
-    r"\bcorp\.",
-    r"firefly",
-    r"\borion\b",
-]
-
-errors = []
+DENYLIST: Final = (r"\badobe\b", r"\bastiwari\b", r"sensei-fs", r"AWS_BEARER", r"\.internal\b",
+                  r"\bcorp\.", r"firefly", r"\borion\b")
+PUBLIC_DOCS: Final = ("README.md", "NORTH_STAR.md", "DEPENDENCIES.md", "CHANGELOG.md",
+                     ".thunderkit/NORTH_STAR.md", ".thunderkit/PHILOSOPHY.md", ".thunderkit/config.json")
 
 
-def fail(msg):
-    errors.append(msg)
+def check_skill(skill: Path, definition: JsonObject) -> None:
+    fm = parse_skill_file(skill / "SKILL.md")
+    validate_thunderkit(fm, skill.name)
+    delegates = [f"{json_string(target['ecosystem'])}:{json_string(target['selector'])}"
+                 for raw in json_array(definition["targets"]) for target in (json_object(raw),)]
+    expected = {"thunderkit-role": json_string(definition["role"]),
+                "thunderkit-delegates": " ".join(delegates) or "none"}
+    for key, value in expected.items():
+        if fm.metadata[key] != value:
+            raise FrontmatterError(str(skill / "SKILL.md"), 1, f"{key} does not match dependencies.json")
+    if not fm.compatibility or re.fullmatch(r"[a-z][a-z0-9-]*", fm.metadata["thunderkit-tier"]) is None:
+        raise FrontmatterError(str(skill / "SKILL.md"), 1, "compatibility and a slug-shaped tier are required")
 
 
-def parse_frontmatter(text, path):
-    """Return dict of top-level scalar frontmatter keys, or None if malformed."""
-    if not text.startswith("---"):
-        fail(f"{path}: no frontmatter (must start with ---)")
-        return None
-    m = re.match(r"^---\s*\n(.*?)\n---\s*\n", text, re.S)
-    if not m:
-        fail(f"{path}: frontmatter not closed with ---")
-        return None
-    fm = {}
-    for line in m.group(1).splitlines():
-        # only care about top-level scalars name: / description:
-        km = re.match(r"^([a-zA-Z_]+):\s*(.*)$", line)
-        if km:
-            key, val = km.group(1), km.group(2).strip()
-            val = val.strip('"').strip("'")
-            fm[key] = val
-    return fm
+def check_roster(root: Path, catalog: JsonObject) -> None:
+    rows = menu(catalog)
+    models = json_object(catalog["models"])
+    expected = {row["key"]: (row["model_id"], tuple(json_string(json_object(item)["harness"])
+                for item in json_array(json_object(models[row["key"]])["harnesses"]))) for row in rows}
+    roster = (root / "skills/references/model-roster.md").read_text(encoding="utf-8")
+    actual = re.findall(r"^\|[^|\n]+\| `([a-z][a-z0-9_-]*)` \| `([^`\n]+)`[^|\n]*\| ([^|\n]+) \|",
+                        roster, re.MULTILINE)
+    if (len(actual) != len(expected)
+            or {key: (model_id, tuple(harnesses.split(", "))) for key, model_id, harnesses in actual} != expected):
+        raise ConfigError("model-roster.md: table keys, model IDs or harness mappings differ from models.json")
 
 
-def check_skill(skill_dir):
-    name = os.path.basename(skill_dir)
-    path = os.path.join(skill_dir, "SKILL.md")
-    if not os.path.isfile(path):
-        fail(f"{name}: missing SKILL.md")
-        return
-    text = open(path, encoding="utf-8").read()
-    fm = parse_frontmatter(text, f"{name}/SKILL.md")
-    if fm is None:
-        return
-    # name matches dir
-    if fm.get("name") != name:
-        fail(f"{name}/SKILL.md: frontmatter name '{fm.get('name')}' != dir '{name}'")
-    # description trigger-shaped
-    desc = fm.get("description", "")
-    if not desc:
-        fail(f"{name}/SKILL.md: empty description")
-    else:
-        if not re.match(r"^Use \w+\b", desc):
-            fail(f"{name}/SKILL.md: description must start with 'Use <verb>' (trigger-shaped): {desc[:50]!r}")
-        if len(desc) < 40:
-            fail(f"{name}/SKILL.md: description too short ({len(desc)} chars, need >=40)")
-        if len(desc) > 500:
-            fail(f"{name}/SKILL.md: description too long ({len(desc)} chars, max 500)")
-
-
-def check_roster():
-    if not os.path.isfile(ROSTER):
-        fail("references/model-roster.md: missing")
-        return
-    text = open(ROSTER, encoding="utf-8").read()
-    for mid in FLEET_IDS:
-        if mid not in text:
-            fail(f"model-roster.md: missing fleet model id '{mid}'")
-
-
-def check_leakage():
-    for dp, dn, fn in os.walk(ROOT):
-        if os.sep + ".git" in dp:
+def check_leakage(root: Path) -> list[str]:
+    paths = [root / name for name in PUBLIC_DOCS if (root / name).exists()]
+    paths.extend(path for name in ("skills", "site", "bin") for path in (root / name).rglob("*")
+                 if path.suffix in (".md", ".html", ".js", ".py", ".json", ".yml", ".yaml", ".css")
+                 and (path.is_file() or path.is_symlink()))
+    errors: list[str] = []
+    for path in sorted(paths):
+        if path.is_symlink():
+            errors.append(f"public source is a symlink: {path.relative_to(root)}")
             continue
-        # scan skills/, site/, top-level docs, and .thunderkit/ project memory
-        rel = os.path.relpath(dp, ROOT)
-        if not (rel == "." or rel.startswith("skills") or rel.startswith("site")
-                or rel.startswith(".thunderkit")):
-            continue
-        for f in fn:
-            if not f.endswith((".md", ".html", ".js", ".py", ".json", ".yml", ".yaml", ".css")):
-                continue
-            p = os.path.join(dp, f)
+        for line, content in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for pattern in DENYLIST:
+                if re.search(pattern, content, re.IGNORECASE):
+                    errors.append(f"LEAKAGE: {path.relative_to(root)}:{line}: denylisted /{pattern}/")
+    return errors
+
+
+def check(root: Path = ROOT) -> list[str]:
+    errors: list[str] = []
+    try:
+        skills = discover_skills(root)
+        manifest = load_json(str(root / "skills/references/dependencies.json"))
+        catalog = load_json(str(root / "skills/references/models.json"))
+        validate_manifest(manifest, {skill.name for skill in skills})
+        check_roster(root, catalog)
+        entries = json_object(manifest["skills"])
+        for skill in skills:
             try:
-                text = open(p, encoding="utf-8", errors="ignore").read()
-            except OSError:
-                continue
-            for pat in DENYLIST:
-                for m in re.finditer(pat, text, re.I):
-                    fail(f"LEAKAGE: {os.path.relpath(p, ROOT)} contains denylisted /{pat}/ ('{m.group(0)}')")
+                check_skill(skill, json_object(entries[skill.name]))
+            except FrontmatterError as error:
+                errors.append(str(error))
+        errors.extend(check_leakage(root))
+    except (AssertionError, ConfigError, PayloadError, OSError, UnicodeError) as error:
+        errors.append(str(error) or type(error).__name__)
+    return errors
 
 
-def main():
-    if not os.path.isdir(SKILLS):
-        fail("skills/ directory missing")
-    else:
-        for entry in sorted(os.listdir(SKILLS)):
-            d = os.path.join(SKILLS, entry)
-            if os.path.isdir(d) and entry != "references":
-                check_skill(d)
-    check_roster()
-    check_leakage()
-
+def main() -> int:
+    errors = check()
     if errors:
         print(f"FAIL: {len(errors)} problem(s)")
-        for e in errors:
-            print(f"  - {e}")
-        sys.exit(1)
-    n = len([d for d in os.listdir(SKILLS) if os.path.isdir(os.path.join(SKILLS, d)) and d != "references"])
-    print(f"OK: {n} skills validated, roster has all {len(FLEET_IDS)} fleet ids, no leakage")
+        for error in errors:
+            print(f"  - {error}")
+        return 1
+    print("OK: strict skill metadata, dependency manifest, catalog/roster and public leakage checks")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

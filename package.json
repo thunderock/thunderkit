@@ -30,15 +30,10 @@
   "bin": {
     "thunderkit": "bin/thunderkit.js"
   },
-  "files": [
-    "skills/",
-    "bin/",
-    "NORTH_STAR.md"
-  ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
-    "test": "python3 tests/validate_frontmatter.py && python3 tests/site_drift.py"
+    "test": "make run_tests"
   }
 }

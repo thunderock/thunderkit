@@ -36,9 +36,7 @@ class SkillPayloadTests(PayloadFixture):
         self.assertEqual(snapshot(ROOT / "skills"), before)
         for name in skills:
             skill = ROOT / "skills" / name
-            allowed = {"SKILL.md", *EXPECTED} | (
-                {"scripts/tk-test.py", "scripts/preflight_protocols.py"} if name == "tk-test" else set())
-            self.assertEqual({str(path.relative_to(skill)) for path in skill.rglob("*") if path.is_file()}, allowed)
+            self.assert_inventory(skill)
             for asset in EXPECTED:
                 self.assertEqual((skill / asset).read_bytes(), (REFERENCES / Path(asset).name).read_bytes())
 

@@ -180,6 +180,12 @@ class PayloadFixture(unittest.TestCase):
         result = self.cli(root)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def assert_inventory(self, skill: Path) -> None:
+        owned = {"scripts/tk-test.py", "scripts/preflight_protocols.py"} if skill.name == "tk-test" else set()
+        actual = {path.relative_to(skill).as_posix() for path in skill.rglob("*")
+                  if path.is_symlink() or (path.is_file() and path.suffix != ".pyc")}
+        self.assertEqual(actual, {"SKILL.md", *EXPECTED, *owned})
+
     def load_module(self, path: Path) -> ModuleType:
         self.assertTrue(path.is_file(), str(path))
         spec = importlib.util.spec_from_file_location(f"payload_{path.stem}", path)
