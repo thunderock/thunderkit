@@ -242,19 +242,98 @@ Most multi-agent setups fail at scale for three reasons, and thunderkit answers 
 
 ## Releasing
 
-Versioning is automated with [release-please](https://github.com/googleapis/release-please) and
-Conventional Commits — no manual bump. Every push to `master` updates a bot PR
-(`chore(master): release X.Y.Z`) whose version is computed from the commits since the last tag.
-**Merging that PR** cuts the tag `vX.Y.Z` + a GitHub Release and, in the same run, publishes to
-npm via [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers) (no long-lived token,
-provenance attached). The publish job lives inside `release-please.yml` — a release created by
-`GITHUB_TOKEN` never fires `on: release`, so a separate release-triggered workflow would stay silent.
-`publish.yml` is a manual re-publish fallback (`workflow_dispatch` with a tag).
+The **Release** workflow automatically publishes stable releases on pushes and merged PRs to
+`master` in `thunderock/thunderkit`. Feature branches cannot publish. There is no release PR or
+version commit: canonical `v<version>` Git tags are the version authority, not the source
+`package.json`. Release history continues in [GitHub Releases](https://github.com/thunderock/thunderkit/releases).
 
-> **One-time bootstrap** (a package that doesn't exist yet can't be published by CI): the first
-> publish is manual — `npm login` then `npm publish --access public` from a clean checkout — after
-> which the trusted-publisher config on npmjs.com (workflow filename `release-please.yml`) hands
-> all future releases to CI.
+**Automatic versions.** The highest stable canonical tag is the base; prerelease tags are ignored.
+Conventional Commits in the non-merge range since that base determine the strongest bump:
+
+| Base version | Breaking change | `feat` | `fix`, docs, tests, CI, chores and other commits |
+|---|---|---|---|
+| Before 1.0.0 | minor | patch | patch |
+| 1.0.0 and later | major | minor | patch |
+
+Every nonempty non-merge range produces at least a patch; an empty range does not release.
+The base must be an ancestor of the source. Without a stable tag, the source package's canonical
+stable version is the bootstrap candidate, not an increment. If that version is occupied, release
+stops rather than guessing: choose an unused exact version after resolving initial package setup.
+Legacy tags can establish history but do not prove that old npm artifacts match this workflow.
+
+**Manual exact versions.** Dispatch the retained `release-please.yml` filename on `master` with
+an optional `version` and `npm_tag`. For example, a maintainer can request:
+
+```sh
+gh workflow run release-please.yml --ref master -f version=1.0.0
+```
+
+Any unused canonical exact stable or prerelease version is allowed, including arbitrary jumps;
+it need not be the next major. Do not include a `v` prefix, range, whitespace, leading numeric
+zeros or build metadata (`+...`). Empty `version` selects automatic stable versioning and cannot
+be combined with a nonempty `npm_tag`. A supplied version is never silently bumped on collision.
+
+Channels must match `^[a-uwyz][a-z0-9-]{0,63}$`: 1–64 lowercase characters, starting with a
+letter other than `v` or `x`, followed by lowercase letters, digits or hyphens. Examples include
+`latest`, `next`, `beta` and `maintenance-0`; `1.x`, `v1`, `x` and `Latest` are invalid.
+Stable versions default to `latest`, prereleases to `next`; prerelease + `latest` is forbidden.
+A version below the highest stable Git tag, including an older prerelease, requires an explicit
+non-`latest` channel. New explicit manual releases may intentionally move such a channel backwards.
+`latest` must never regress: writes must exceed the observed stable npm `latest` and cannot trail
+the highest stable Git tag. Git history alone is not proof of the registry's current channel.
+
+**What gets published.** Both jobs use Node 24, npm 11.19.1 and Python 3.12 on hosted runners.
+The gate checks the source SHA, validates inputs, stamps a clean copy of that exact tracked source,
+and creates a real tarball. It inspects safe archive members against the source inventory and
+exercises the packed CLI before running tests, lint and the site build on the stamped source.
+The repository's package version stays unchanged; the npm package and its CLI report the released
+version. No developer working directory is published.
+
+After checking that the tarball bytes survived the gates unchanged, the workflow uploads only
+`release-plan.json` and `package.tgz` as `release-<runId>-<attempt>`. The publisher downloads the
+exact immutable artifact ID from the same run, verifies the record's SHA-256 against the gate
+output, and checks request/source bindings, tarball size and SHA-512 integrity. It then creates
+an immutable annotated tag binding source, version, channel and tarball integrity, publishes
+that same tarball through [npm OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers)
+with provenance, and creates the GitHub Release only after registry identity checks succeed.
+Tag creation uses command-scoped bot identity; no persistent Git credentials or npm token is used.
+
+**Retries and recovery.** Rerun the original workflow run after an interruption, rather than
+dispatching today's source. A failed-publisher-only rerun reuses the successful gate artifact;
+its earlier attempt is accepted only within the same run. A full rerun must recreate bytes
+identical to the annotated reservation, preserving its original version and channel. Omitted
+`npm_tag` restores that channel; a different supplied channel fails. Each invocation stops at its
+first error, even when a write may have succeeded but its acknowledgement was lost. The next
+same-run retry reads actual state and performs only missing operations, never replacing a tag
+or republishing a version. npm presence alone is insufficient: SHA-512 must match the reservation.
+
+A matching historical npm version may finish its GitHub Release after a newer channel has
+superseded it, without moving the channel back. Missing, invalid or rewound channels stop recovery;
+there is no automatic channel repair or token fallback. Foreign packages, conflicting tags and
+inconsistent GitHub releases also stop. An unfinished managed base blocks the next automatic
+bump. A fresh stale automatic source skips; a fresh stale manual source fails. Reserved retries
+must still belong to master history and cannot publish a missing old version over newer `latest`.
+Expired artifacts require a full same-run rerun with identical bytes. Unreproducible bytes or an
+expired GitHub rerun window require separately authorized operator recovery, not today's source.
+
+**Enablement and cutover.** Keep the npm trusted-publisher binding on `release-please.yml` and
+authorize direct publish, not stage-only access. Initial npm package/trusted-publisher setup,
+public provenance eligibility and GitHub tag/ruleset permissions are maintainer prerequisites;
+a package that does not yet exist may require separately authorized initial publication before
+trusted publishing can be configured. This workflow cannot bootstrap authentication itself.
+
+Before enabling this route, drain or cancel old release runs, stop historical reruns and other
+manual publishers, remove any obsolete `publish.yml` trusted-publisher binding, and close any
+obsolete release-please PR after merge. Deleting the old workflow/config files does not cancel
+queued runs or revoke their historical definitions. This must be the sole package writer;
+uncoordinated npm maintainers or other workflows can race a registry read and channel write.
+Do not rewrite master history or release tags. Live OIDC exchange, permissions and these cutover
+conditions must be verified separately; offline tests do not certify them.
+
+The repository-wide `npm-release` concurrency group never cancels a running release. GitHub's
+default queue retains only one pending run and may replace it, including a manual dispatch;
+ordering is not a guarantee of commit order or one release per push/dispatch. The eligible source
+that actually runs covers the full non-merge range since the completed stable base.
 
 <div align="center">
 
