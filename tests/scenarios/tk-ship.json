@@ -1,0 +1,152 @@
+{
+  "skill": "tk-ship",
+  "cases": {
+    "happy": [
+      {
+        "name": "hermes qualifies read only reviewer assessment not delivery",
+        "operation": "prepare",
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate", "reason_code": "compatible",
+          "target_ecosystem": "omh", "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component", "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["fable51", "opus5"], "reviewers": ["opus48", "opus5"]}
+        },
+        "sections": ["Delegation", "Fallback", "Ship gates (all must pass, fail-closed)", "PR body from artifacts", "Output contract", "Boundary — preparation only"],
+        "frontmatter": {
+          "thunderkit-role": "ship", "thunderkit-tier": "deliver",
+          "thunderkit-delegates": "omh:reviewer/omh-verification-gate", "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "default operation remains prepare with both peers present",
+        "operation": null, "config": "hermes", "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate", "reason_code": "compatible",
+          "target_ecosystem": "omh", "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component", "exit": 0
+        }
+      },
+      {
+        "name": "empty ecosystems retains owned preparation and selected classes",
+        "operation": "prepare", "config": "owned", "capabilities": null,
+        "expect": {
+          "decision": "owned", "reason_code": "owned_policy",
+          "target_ecosystem": null, "target_selector": null, "target_mode": null, "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["opus48"], "reviewers": ["sol", "opus5"]}
+        },
+        "sections": ["Fallback", "Output contract"]
+      },
+      {
+        "name": "delegation off validates choices without native capability evidence",
+        "operation": "prepare", "config": "delegation_off", "capabilities": null,
+        "expect": {
+          "decision": "owned", "reason_code": "disabled",
+          "target_ecosystem": null, "target_selector": null, "target_mode": null, "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["opus48", "opus5", "fable51"], "reviewers": ["opus48", "opus5", "fable51", "sol"]}
+        },
+        "sections": ["Fallback", "Boundary — preparation only"]
+      },
+      {
+        "name": "omo only has no eligible preparation target",
+        "operation": "prepare", "config": "omo_only", "capabilities": null,
+        "expect": {
+          "decision": "owned", "reason_code": "owned_policy",
+          "target_ecosystem": null, "target_selector": null, "target_mode": null, "exit": 0
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "opencode cannot substitute an omo delivery workflow",
+        "operation": "prepare", "config": "opencode", "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "fallback", "reason_code": "unsupported_host",
+          "target_ecosystem": null, "target_selector": null, "target_mode": null, "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        }
+      },
+      {
+        "name": "codex retains selected models without an omo preparation target",
+        "operation": "prepare", "config": "sol", "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "fallback", "reason_code": "unsupported_host",
+          "target_ecosystem": null, "target_selector": null, "target_mode": null, "exit": 0,
+          "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+        }
+      },
+      {
+        "name": "missing peer ready claim cannot qualify an unsupported host",
+        "operation": "prepare", "config": "opencode", "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback", "reason_code": "unsupported_host",
+          "target_ecosystem": null, "target_selector": null, "target_mode": null, "exit": 0
+        }
+      },
+      {
+        "name": "unsupported host cannot qualify the reviewer component",
+        "operation": "prepare", "config": "hermes", "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback", "reason_code": "unsupported_host",
+          "target_ecosystem": null, "target_selector": null, "target_mode": null, "exit": 0
+        }
+      },
+      {
+        "name": "reviewer selection mismatch falls back without replacing choices",
+        "operation": "prepare", "config": "opencode", "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "fallback", "reason_code": "model_mismatch",
+          "target_ecosystem": "omh", "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component", "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": ["fable51", "opus5"]}
+        }
+      },
+      {
+        "name": "missing reviewer binding leaves assessment unqualified",
+        "operation": "prepare", "config": "hermes", "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "fallback", "reason_code": "missing_evidence",
+          "target_ecosystem": "omh", "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component", "exit": 0
+        }
+      },
+      {
+        "name": "tampered assessor bytes fail source qualification",
+        "operation": "prepare", "config": "hermes", "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback", "reason_code": "source_mismatch",
+          "target_ecosystem": "omh", "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component", "exit": 0
+        }
+      },
+      {
+        "name": "missing shared rail fails source qualification",
+        "operation": "prepare", "config": "hermes", "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback", "reason_code": "source_mismatch",
+          "target_ecosystem": "omh", "target_selector": "reviewer/omh-verification-gate",
+          "target_mode": "component", "exit": 0
+        }
+      },
+      {
+        "name": "preparation without config is blocked before model work",
+        "operation": "prepare", "config": null, "capabilities": null,
+        "expect": {
+          "decision": "blocked", "reason_code": "invalid_config",
+          "target_ecosystem": null, "target_selector": null, "target_mode": null, "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "enabled native consideration requires capability evidence",
+        "operation": "prepare", "config": "hermes", "capabilities": null,
+        "expect": {
+          "decision": "blocked", "reason_code": "invalid_config",
+          "target_ecosystem": null, "target_selector": null, "target_mode": null, "exit": 2,
+          "requested_bindings": {"planner": "opus48", "executors": ["fable51", "opus5"], "reviewers": ["opus48", "opus5"]}
+        }
+      }
+    ]
+  }
+}
