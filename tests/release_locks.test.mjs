@@ -17,9 +17,7 @@ function lockFor(f, version = "0.1.1") {
 /** @param {Fixture} f */
 function selectShrinkwrap(f) {
   const path = join(f.checkoutDir, "package.json");
-  const pkg = readObject(path);
-  assert.ok(Array.isArray(pkg.files));
-  writeFileSync(path, JSON.stringify({ ...pkg, files: [...pkg.files, "npm-shrinkwrap.json"] }));
+  writeFileSync(path, JSON.stringify({ ...readObject(path), files: ["skills/", "bin/", "NORTH_STAR.md", "npm-shrinkwrap.json"] }));
 }
 
 /** Wrap the allowlisted npm stub and corrupt only its stamped fixture output. @param {Fixture} f @param {string} file @param {boolean} rootVersion */
@@ -102,6 +100,8 @@ for (const file of ["package-lock.json", "npm-shrinkwrap.json"]) {
 test("preparation rejects a tracked shrinkwrap when the package file list omits it", async (t) => {
   // Given
   const f = artifactFixture(t);
+  const path = join(f.checkoutDir, "package.json");
+  writeFileSync(path, JSON.stringify({ ...readObject(path), files: ["skills/", "bin/", "NORTH_STAR.md"] }));
   writeFileSync(join(f.checkoutDir, "npm-shrinkwrap.json"), JSON.stringify(lockFor(f)));
   commit(f);
   // When
