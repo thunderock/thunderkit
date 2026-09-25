@@ -120,6 +120,43 @@ class RuntimeTests(PayloadFixture):
         self.assertFalse(started)
         self.assertIn("Python 3.12.x, Node 24.x, npm 11.19.1", result.stdout)
 
+    def test_runner_when_source_is_es_module_keeps_fixture_programs_commonjs(self) -> None:
+        # Given an ESM checkout with repository-local scratch and a CommonJS child tool.
+        source = self.sandbox / "module-source"
+        source.mkdir()
+        shutil.copyfile(ROOT / "Makefile", source / "Makefile")
+        (source / "package.json").write_text('{"type":"module"}\n', encoding="utf-8")
+        python = source / "python-pass"
+        python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        python.chmod(0o755)
+        tests = source / "tests"
+        tests.mkdir()
+        (tests / "cli.test.mjs").write_text("", encoding="utf-8")
+        (tests / "release_scope.test.mjs").write_text("""
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+test("temporary child tools retain CommonJS semantics", () => {
+  const directory = mkdtempSync(join(tmpdir(), "child-tool-"));
+  try {
+    const tool = join(directory, "fixture-tool");
+    writeFileSync(tool, 'require("node:fs");\\n');
+    const result = spawnSync(process.execPath, [tool], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+""", encoding="utf-8")
+        # When the real Make runner launches its Node suites.
+        result = self.run_cli(["make", "run_tests", f"PY={python}", f"NODE={self.node}",
+                               f"NPM={self.npm}", f"TMPDIR={source / 'scratch'}"], source)
+        # Then child tools execute without inheriting the enclosing package's module mode.
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

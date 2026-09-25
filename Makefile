@@ -45,7 +45,11 @@ run_tests: check-runtime
 	$(PY) -m unittest discover -s tests -p 'test_*.py' -v
 	$(PY) tests/skill_scenarios.py --all
 	$(PY) tools/materialize_skills.py --check
-	$(NODE) --test tests/cli.test.mjs tests/release_*.test.mjs
+# CommonJS fixture executables must not inherit this package's ESM scope.
+	@set -eu; scratch=$$(mktemp -d "$(TMPDIR)/node-tests.XXXXXX"); \
+	trap 'rm -rf "$$scratch"' EXIT; \
+	printf '%s\n' '{"type":"commonjs"}' > "$$scratch/package.json"; \
+	TMPDIR="$$scratch" $(NODE) --test tests/cli.test.mjs tests/release_*.test.mjs
 	$(PY) tests/site_drift.py
 
 # Lint is best-effort so it stays green on a fresh machine without dev tools.
