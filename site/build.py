@@ -122,14 +122,21 @@ def render_table(rows: list[str], link: Callable[[str], str]) -> str:
 def inline(s: str, link: Callable[[str], str] = safe_url) -> str:
     out = []
     end = 0
-    for m in re.finditer(r"`([^`]+)`|\*\*([^*]+)\*\*|\[([^\]]+)\]\(([^)]+)\)", s):
+    pattern = (r"`([^`]+)`|\*\*([^*]+)\*\*|"
+               r"\[(!\[[^\]]*\]\([^)]+\)|[^\]]+)\]\(([^)]+)\)")
+    for m in re.finditer(pattern, s):
         out.append(html.escape(s[end:m.start()]))
         if m[1] is not None:
             out.append(f"<code>{html.escape(m[1])}</code>")
         elif m[2] is not None:
             out.append(f"<strong>{inline(m[2], link)}</strong>")
         else:
-            out.append(f'<a href="{html.escape(link(m[4]))}">{inline(m[3], link)}</a>')
+            label = m[3]
+            badge = re.fullmatch(r"!\[([^\]]*)\]\(([^)]+)\)", label)
+            if badge:
+                link(badge[2])
+                label = badge[1]
+            out.append(f'<a href="{html.escape(link(m[4]))}">{inline(label, link)}</a>')
         end = m.end()
     return "".join(out) + html.escape(s[end:])
 
@@ -177,7 +184,10 @@ def build(out: str | Path, root: Path = ROOT) -> list[str]:
             local = (len(rel.parts) == 4 and rel.parts[0] == "skills"
                      and root / "skills" / rel.parts[1] / "SKILL.md" in skills
                      and rel.parts[2] in ("references", "scripts"))
-            if not (common or local) or target.suffix not in (".md", ".json", ".py") or target.name.startswith("."):
+            public_doc = rel.as_posix() in ("DEPENDENCIES.md", "README.md", "LICENSE")
+            asset = ((common or local) and target.suffix in (".md", ".json", ".py")
+                     and not target.name.startswith("."))
+            if not (public_doc or asset):
                 raise ValueError(f"link does not name a public source: {url}")
             sources[target] = Path(str(rel) + ".html")
             pending.append(target)

@@ -83,6 +83,98 @@ class SiteTests(unittest.TestCase):
         self.assertIn("local &lt;value&gt;", catalog.read_text())
         self.assertTrue((self.published / "skills/tk-example/scripts/model_config.py.html").is_file())
 
+    def test_public_root_links_resolve_when_reached_from_north_star(self) -> None:
+        # Given public documents with cycles, fragments and nested reference links.
+        self.put("NORTH_STAR.md", "# Public thesis\n\n[Guide](DEPENDENCIES.md#optional-peers)")
+        self.put("DEPENDENCIES.md", "# Dependencies\n\n## Optional peers\n\n"
+                 "[README](README.md?view=full&lang=en#install)\n"
+                 "[Roster](skills/references/model-roster.md#shared-roster)\n"
+                 "[Skill](skills/tk-example/SKILL.md#example)\n")
+        self.put("README.md", "# Readme\n\n## Install\n\n[License](LICENSE)\n"
+                 "[Thesis](NORTH_STAR.md#public-thesis)\n[Guide](DEPENDENCIES.md#optional-peers)")
+        self.put("LICENSE", "<license>")
+        self.put("skills/tk-example/references/delegation.md",
+                 "# Policy\n[Guide](../../../DEPENDENCIES.md#optional-peers)")
+        # When the existing entry points discover their linked documents.
+        self.render()
+        # Then generated destinations preserve relative paths, queries and anchors.
+        expected = {
+            "north-star.html": "DEPENDENCIES.md.html#optional-peers",
+            "DEPENDENCIES.md.html": "README.md.html?view=full&amp;lang=en#install",
+            "README.md.html": "LICENSE.html",
+            "skills/tk-example/references/delegation.md.html": "../../../DEPENDENCIES.md.html#optional-peers",
+        }
+        for name, href in expected.items():
+            with self.subTest(page=name):
+                self.assertIn(f'href="{href}"', (self.published / name).read_text())
+        self.assertIn("<pre><code>&lt;license&gt;</code></pre>", (self.published / "LICENSE.html").read_text())
+        self.assertEqual(site_drift.validate_links(self.published), [])
+
+    def test_root_license_link_resolves_when_label_is_a_badge(self) -> None:
+        # Given the linked-badge form used by public documentation.
+        self.put("NORTH_STAR.md", "[README](README.md)")
+        self.put("README.md", "[![<License>](https://example.com/badge.svg)](LICENSE)")
+        self.put("LICENSE", "MIT")
+        # When rendering the referenced README.
+        self.render()
+        # Then the escaped alt text links to the license, not the badge image.
+        page = (self.published / "README.md.html").read_text()
+        self.assertIn('href="LICENSE.html">&lt;License&gt;</a>', page)
+        self.assertEqual(site_drift.validate_links(self.published), [])
+
+    def test_root_documents_stay_unpublished_when_unreferenced(self) -> None:
+        # Given optional public files that no entry point links.
+        for name in ("DEPENDENCIES.md", "README.md", "LICENSE"):
+            self.put(name, "UNREFERENCED")
+        # When rendering the ordinary entry points.
+        self.render()
+        # Then the allowlist does not eagerly publish unused documents.
+        for name in ("DEPENDENCIES.md.html", "README.md.html", "LICENSE.html"):
+            self.assertFalse((self.published / name).exists())
+
+    def test_root_document_dependencies_fail_when_not_explicitly_public(self) -> None:
+        # Given a public guide linking private files or nested public-name lookalikes.
+        self.put("NORTH_STAR.md", "[Guide](DEPENDENCIES.md)")
+        for name in ("PRIVATE.md", "notes.md", "docs/README.md", "docs/DEPENDENCIES.md",
+                     "docs/LICENSE", ".thunderkit/PRIVATE.md"):
+            for label in ("source", "![source](https://example.com/badge.svg)"):
+                with self.subTest(target=name, label=label):
+                    self.put(name, "PRIVATE_SENTINEL")
+                    self.put("DEPENDENCIES.md", f"[{label}]({name})")
+                    # When rendering, then reject the dependency before publishing any page.
+                    with self.assertRaisesRegex(ValueError, "public source"):
+                        self.render()
+                    self.assertFalse(self.published.exists())
+
+    def test_root_documents_fail_when_symlinked_to_private_content(self) -> None:
+        for name in ("DEPENDENCIES.md", "README.md", "LICENSE"):
+            with self.subTest(target=name):
+                # Given an allowed filename aliasing a private source.
+                self.put("NORTH_STAR.md", f"[source]({name})")
+                (self.root / name).symlink_to(self.root / ".thunderkit/PRIVATE.md")
+                # When rendering, then refuse the symlink rather than expose its target.
+                with self.assertRaisesRegex(ValueError, "regular public source"):
+                    self.render()
+
+    def test_root_documents_fail_when_referenced_but_missing(self) -> None:
+        for name in ("DEPENDENCIES.md", "README.md", "LICENSE"):
+            with self.subTest(target=name):
+                # Given a link to an absent public document.
+                self.put("NORTH_STAR.md", f"[source]({name})")
+                # When rendering, then refuse a generated destination without a source.
+                with self.assertRaisesRegex(ValueError, "regular public source"):
+                    self.render()
+
+    def test_root_document_anchor_validation_fails_when_heading_missing(self) -> None:
+        # Given a valid public path with an invalid fragment.
+        self.put("NORTH_STAR.md", "[Guide](DEPENDENCIES.md#missing)")
+        self.put("DEPENDENCIES.md", "# Dependencies\n")
+        self.render()
+        # When checking the complete generated link graph.
+        errors = site_drift.validate_links(self.published)
+        # Then the missing fragment is reported against its generated destination.
+        self.assertIn("missing link anchor: north-star.html: DEPENDENCIES.md.html#missing", errors)
+
     def test_escaping_does_not_create_markup_or_reparse_code(self) -> None:
         self.skill.write_text(HEADER.replace('"planner"', "'<img src=x>'") +
                               '# <script>\n\n`[x](javascript:bad)` **<svg>**\n\n'
@@ -97,10 +189,12 @@ class SiteTests(unittest.TestCase):
     def test_unsafe_source_links_fail_closed(self) -> None:
         for url in ("javascript:alert(1)", "JaVaScRiPt:bad", "data:text/html,bad", "vbscript:bad",
                     "file:///etc/passwd", "//example.com", "java\tscript:bad", "javascript&colon;bad"):
-            with self.subTest(url=url):
-                self.skill.write_text(HEADER + f"[source]({url})\n", encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "unsafe link"):
-                    self.render()
+            for body in (f"[source]({url})", f"[![source]({url})](../../README.md)",
+                         f"[![source](https://example.com/badge.svg)]({url})"):
+                with self.subTest(url=url, body=body):
+                    self.skill.write_text(HEADER + body + "\n", encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "unsafe link"):
+                        self.render()
 
     def test_legacy_and_malformed_headers_fail_closed(self) -> None:
         for header in (HEADER.replace('  thunderkit-role: "planner"', '  thunderkit:\n    role: "planner"'),
