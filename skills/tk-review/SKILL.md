@@ -26,10 +26,6 @@ A native review is one read-only reviewer component, never the panel or its fina
   existence, plus native acceptance when applicable. Select operation `plan`; keep it owned,
   not aliased to a code-review target. Check acceptance coverage and frozen paths as well.
 
-Use `NORTH_STAR.md`, existing philosophy guidance and current explicit user requirements for
-design direction. Operational records supply only their scoped approval, identity and evidence;
-they are not authority for unrelated improvements or a new planning cycle.
-
 Before dispatch, freeze one common target for every reviewer of the lane or plan:
 
 - Actual project/worktree, operation, scope and excluded paths, constraints and acceptance criteria.
@@ -200,8 +196,7 @@ certify completion. Diff verification, plan approval and delivery authorization 
 
 Write the consolidated diff result to `.thunderkit/REVIEW.md` or the plan result to
 `.thunderkit/PLAN-REVIEW.md`, with supporting run evidence in the project's local runtime area.
-Verify these destinations remain local and untracked; never commit, package or publish
-operational plan/review/verification reports. Keep native artifacts at their real paths and
+Keep native artifacts at their real paths and
 reference their SHA-256 values; do not rename or mirror native state into a competing workflow.
 
 Include, per lane or plan:
@@ -222,6 +217,4 @@ Include, per lane or plan:
   disagreement; required commands with actual cwd/status/results; pass/fail/blocked reasons.
 
 Roll up reviewed, passed and blocked lanes plus unresolved blocker **and major** findings and
-the selected owner of each required correction. Keep operational report contents and process
-receipts out of public summaries; describe only underlying engineering facts there. Only
-north-star/philosophy guidance is durable internal design authority, not these run records.
+the selected owner of each required correction.
