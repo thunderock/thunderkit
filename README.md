@@ -9,11 +9,11 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/ci.yml?branch=master&style=for-the-badge&logo=github&label=CI)](https://github.com/thunderock/thunderkit/actions/workflows/ci.yml)
 [![Pages](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/pages.yml?branch=master&style=for-the-badge&logo=githubpages&label=Docs)](https://thunderock.github.io/thunderkit/)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
-[![harnesses](https://img.shields.io/badge/harnesses-77%2B-181717?style=for-the-badge&logo=anthropic&logoColor=white)](#install--every-harness-one-command)
+[![format](https://img.shields.io/badge/format-Agent_Skills-181717?style=for-the-badge&logo=markdown&logoColor=white)](#install)
 
-**Claude · Codex · opencode · hermes · Cursor · Gemini · Windsurf · Zed · Kilo · Goose · +67 more**
+**Portable skill files · Host-qualified native workflows · User-selected models**
 
-[Install](#install--every-harness-one-command) · [The loop](#how-it-works--the-phase-loop-made-parallel) · [Model classes](#the-three-model-classes) · [Docs site](https://thunderock.github.io/thunderkit/) · [North Star](NORTH_STAR.md)
+[Install](#install) · [The loop](#how-it-works--the-phase-loop-made-parallel) · [Model classes](#the-three-model-classes) · [Dependencies](DEPENDENCIES.md) · [Docs site](https://thunderock.github.io/thunderkit/) · [North Star](NORTH_STAR.md)
 
 </div>
 
@@ -22,9 +22,9 @@
 > **Big work in big repos is won by decomposition + heterogeneity, not by one smart model.**
 
 thunderkit is an *opinionated* skill pack. It takes a large change in a large repo and:
-**decomposes** it into disjoint, dependency-layered lanes → **routes** each lane to the best model
-*and* harness → **runs** them in parallel across a heterogeneous fleet (Bedrock Fable 5.1, Claude
-Opus, Codex Sol) → **reviews** the result across every model family → **remembers** the project's
+**decomposes** it into disjoint, dependency-layered lanes → **routes** each lane within your chosen
+model classes and supported harness mappings → **runs** independent work in parallel across the
+reachable fleet → **reviews** the result across the required model families → **remembers** the project's
 intent as a committed artifact.
 
 It's deliberately opinionated — see [`NORTH_STAR.md`](NORTH_STAR.md):
@@ -39,10 +39,10 @@ It's deliberately opinionated — see [`NORTH_STAR.md`](NORTH_STAR.md):
 
 ## How it works — the phase loop, made parallel
 
-Like [GSD](https://github.com/open-gsd/gsd-core) drives a coding agent through a disciplined
-*discuss → plan → execute → verify → ship* loop, thunderkit runs that same loop — but every stage
-is **parallel and cross-model**, and a large repo is decomposed so it never has to fit in one
-context window.
+The loop is **discuss → plan → plan review → execute → verify → prepare delivery**.
+Independent lanes run in parallel; dependency and approval gates stay ordered. A large repo is
+decomposed so it never has to fit in one context window. Cross-family plan review must cover the
+current plan before execution, and diff review must cover the actual changes afterward.
 
 ```
   intake        plan            execute (parallel)      review           ship
@@ -54,11 +54,36 @@ context window.
  └────────┘    planner        executors (a set)      reviewers (all)
 ```
 
-Each lane is **file-disjoint** (two lanes never touch the same file), runs in its **own git
-worktree**, on its **own model**, via **portable CLI dispatch** (`claude -p --output-format json`,
-`codex exec --json`) with a **captured resumable session id**. Lanes merge without conflict *by
-construction* — if a merge conflicts, the plan's disjointness was violated, and that's a bug in
-the plan, not something to paper over.
+Each lane is **file-disjoint**, with its own worktree and a model from the selected executor
+class. The workflow records genuine resume IDs when available, explicitly marking missing IDs
+as unavailable. A merge conflict stops integration for a fresh ownership check; it is not an
+excuse to overwrite another lane.
+
+### Policy stays here; native implementation is optional
+
+Thunderkit owns model choice, lifecycle routing, portable project context, cross-family review,
+and completion gates. Stage skills may reuse a separately installed, pinned native peer:
+
+| Active host | Eligible native peer | Without a qualified peer |
+|---|---|---|
+| OpenCode | OMO (`oh-my-openagent`) | Thunderkit-owned portable procedure |
+| Codex | OMO (`oh-my-openagent`) | Thunderkit-owned portable procedure |
+| Hermes | OMH (`oh-my-hermes`) | Thunderkit-owned portable procedure |
+| Claude Code or another skill-compatible host | None declared | Thunderkit-owned portable procedure |
+
+This is the host filter from [`dependencies.json`](skills/references/dependencies.json), not a
+claim that every operation or selected model works on each host. A native route also requires
+the exact version, loaded source fingerprints, required tools, enforceable model bindings, and
+safety controls. A missing peer produces a named fallback, not a native success. If the owned
+procedure cannot meet the same model, review, or safety requirements, the stage stays blocked.
+
+A native planning or execution handoff has **one workflow owner** until it returns. Thunderkit
+does not start a second execution loop alongside it. Native artifacts stay in their native
+locations; Thunderkit references them and checks their identity. A timeout with uncertain
+in-flight work blocks a duplicate launch. Delivery still needs separate user approval.
+
+See [Dependencies](DEPENDENCIES.md) for exact pins, licenses, installation boundaries and
+qualification details. Set `delegation: "off"` to use owned procedures without invoking peers.
 
 ## The three model classes
 
@@ -66,16 +91,33 @@ thunderkit's core opinion: one model can't be planner, coder, and reviewer at on
 if the work is decomposed to feed it. So `tk-router` asks you to choose **three classes** (once
 per project, then it remembers in `.thunderkit/config.json`):
 
-| Class | Cardinality | Does | Default |
+| Class | Cardinality | Does | Example choice — requires confirmation |
 |---|---|---|---|
 | 🧠 **Planner** | exactly **one** — the most capable model | spec, discuss, plan, root-cause | `Opus 4.8` |
 | 🔨 **Executors** | a **set** — lanes spread by weight | map, research, implement, docs | `Opus 4.8 · Opus 5 · Fable 5.1` |
-| 🔍 **Reviewers + verifiers** | **all** authed families | plan-check, review, verify, UAT, audit | `everyone` |
+| 🔍 **Reviewers + verifiers** | `"all"` or a nonempty unique model list | plan-check, review, verify, UAT, audit | `"all"` |
 
 *Planning is a single point of failure → one best brain. Execution is a throughput problem → many
 hands matched to lane weight. Review is a blind-spot problem → every family looks, so no one
 family's blind spot survives.* A model can be in more than one class — the strongest model plans,
 takes the heaviest lane, and reviews.
+
+The three classes have **no automatic defaults**. `reviewers: "all"` considers every catalog
+model, not just the planner and executors; preflight forms the reviewer set from successful
+responses and reports unavailable optional candidates. Every explicitly selected model must
+respond, and at least `review_families_min` distinct families must answer independently.
+`opus48`, `opus5` and `fable51` are one Anthropic family; `sol` is the OpenAI family.
+
+Canonical configuration uses `schema_version: 2` and `classes.planner`, `classes.executors`,
+and `classes.reviewers`. Missing operational fields default **in memory** to
+`review_families_min: 2`, `max_layers: 3`, `frozen_paths: []`, `ecosystems: ["omo", "omh"]`, and
+`delegation: "auto"`. Existing versionless `classes` files remain readable without rewriting.
+A supplied `decided_at` is preserved; readers never invent one. See the
+[configuration contract](skills/references/config.schema.json) and
+[model roster](skills/references/model-roster.md) for validation and approved legacy migration.
+
+A backend never replaces a selected model or lowers the family minimum. Unsupported host/model
+mappings are reported explicitly; changing a choice requires the user, not an automatic fallback.
 
 ## The skills (19)
 
@@ -92,53 +134,69 @@ takes the heaviest lane, and reviews.
 | **pre-plan** | `tk-research` | Parallel investigation lanes for the unknowns, consolidated. |
 | **pre-plan** | `tk-learn` | Research a topic online → source-backed knowledge note → optionally draft a new validated skill. |
 | **plan** | `tk-plan` | Decompose into **disjoint, dependency-layered lanes**, each with acceptance + a verify command. |
-| **execute** | `tk-execute` | Run lanes **in parallel** via portable CLI dispatch, own worktree + resumable id each. |
+| **execute** | `tk-execute` | One execution owner: a qualified native handoff or portable lane dispatch, with worktree and genuine session evidence. |
 | **verify** | `tk-review` | **Cross-family review + evidence gate** (also `--plan` for pre-execution plan-check). |
 | **verify** | `tk-verify-work` | Conversational UAT — walk each acceptance criterion through the real user surface. |
 | **verify** | `tk-debug` | Scientific-method debug loop with persisted, resumable state. |
-| **deliver** | `tk-ship` | Gate on review+UAT, assemble a PR body from artifacts — **never auto-pushes or merges**. |
+| **deliver** | `tk-ship` | Gate on review+UAT and prepare a PR body — no push, PR creation, publish, or merge. |
 | **deliver** | `tk-docs` | Parallel doc write, then verify every claim against the live code with a second family. |
 | **deliver** | `tk-audit` | Milestone done-ness vs original intent — orphaned/unverified requirements fail closed. |
 | **memory** | `tk-memory` | Project north star, decision log, and the router's per-project `config.json`. |
 
-Shared: [`skills/references/model-roster.md`](skills/references/model-roster.md) — the single
-source of truth for which model runs which work. Skills reference models by **short name** and
-resolve ids here, so a model rename is a one-line change.
+Shared sources: [`models.json`](skills/references/models.json) defines model IDs, families and
+supported harness mappings; [`model-roster.md`](skills/references/model-roster.md) is its human
+reference. [`dependencies.json`](skills/references/dependencies.json) defines per-operation native
+targets and fallbacks; [`delegation.md`](skills/references/delegation.md) defines their gates.
+Standalone skills include local copies of these Thunderkit-owned references and helpers.
 
-## Install — every harness, one command
+## Install
 
-thunderkit is plain [Agent Skills](https://agentskills.io) (`skills/<name>/SKILL.md`), the open
-standard read natively by Claude Code, Codex, opencode, hermes, Cursor, Gemini CLI, Windsurf,
-Zed, Goose, Kilo and 70+ others. Distribution is the [vercel `skills`](https://github.com/vercel-labs/skills)
-CLI — the same mechanism the popular packs use:
+Thunderkit distributes [Agent Skills](https://agentskills.io) (`skills/<name>/SKILL.md`) with
+small local Python helpers. The npm command is a pointer to the pinned
+[Vercel `skills`](https://github.com/vercel-labs/skills) distribution CLI, **`skills@1.7.0`**.
+Installing a skill file is not proof that the host can execute its workflow.
+
+**Toolchains:** Thunderkit help, version and dependency display require Node **≥18**.
+Install and list delegate to `skills@1.7.0` and require Node **≥22.20.0**, even though listing
+does not install skills. The local resolver/model helpers require Python **≥3.11**.
 
 ```sh
-# whole pack → every agent detected on this machine (verified: installs to 77 agents)
-npx skills add thunderock/thunderkit --all
+# whole pack through the npm pointer (Thunderkit only)
+npx thunderkit install
+
+# equivalent direct distribution command
+npx -y skills@1.7.0 add thunderock/thunderkit --all
 
 # whole pack, but only for named harnesses
-npx skills add thunderock/thunderkit -s '*' -g --agent claude-code codex opencode hermes-agent
+npx -y skills@1.7.0 add thunderock/thunderkit -s '*' -g --agent claude-code codex opencode hermes-agent
 
 # one skill
-npx skills add thunderock/thunderkit -s tk-router -g
+npx -y skills@1.7.0 add thunderock/thunderkit -s tk-router -g
 
 # what's in the repo, without installing
-npx skills add thunderock/thunderkit -l
+npx thunderkit list
 ```
 
-**How that reaches every harness.** `skills add -g` writes one canonical copy to
-`~/.agents/skills/<name>/` and **symlinks** it into each agent's own skills dir
-(`~/.claude/skills`, `~/.codex/skills`, `~/.config/opencode/skills`, hermes' external dirs, …).
-One `npx skills update -g` refreshes all of them at once. Packs that ship an npm launcher just
-wrap this same call with a fixed agent list; thunderkit skips the launcher and uses the CLI
-directly. A fresh-machine setup script can pin it with one line:
+Choose the intended agents and scope through the distribution CLI. A single-skill installation
+contains its own support files but does not install sibling `tk-*` stages. The router names a
+missing stage and stops there rather than guessing commands or installing it automatically.
+
+**Native peers are separate and optional.** Installing Thunderkit does not install or activate
+OMO or OMH, authenticate providers, or change model selections. To display the registry without
+running peer installers or doctors:
 
 ```sh
-npx -y skills add thunderock/thunderkit -s '*' -g -y --agent '*'
+npx thunderkit deps --json
+
+# from an existing checkout, without npx package retrieval
+node bin/thunderkit.js deps --json
 ```
 
-Then invoke the router by name (e.g. `tk-router: refactor the auth layer across the monorepo`)
-and it routes the rest.
+The output is information, not a live readiness test. [Dependencies](DEPENDENCIES.md) documents
+the separately approved native install, activation and doctor steps. Then invoke `tk-router`
+through your host's skill interface (e.g. `tk-router: refactor the auth layer`), choose the model
+classes, and run `tk-test` before model-bearing dispatch. A different host must recheck support;
+portable project context does not make native sessions or model mappings interchangeable.
 
 ## Project memory — `.thunderkit/`
 
@@ -167,7 +225,8 @@ make lint        # py_compile + shellcheck (best-effort)
 make site        # regenerate the static docs site → site/_site
 ```
 
-Everything is stdlib-only Python — `make run_tests` works offline on a fresh checkout. CI runs the
+The test/build helpers use stdlib-only Python; the npm pointer uses Node built-ins.
+`make run_tests` works offline on a fresh checkout. CI runs the
 tests, a secrets/leakage denylist grep, and the site build on every push; a separate workflow
 publishes the docs site to GitHub Pages.
 
