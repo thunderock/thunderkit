@@ -1,5 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,6 +18,15 @@ const pins = {
   upload: 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
   download: 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
 };
+const temporaryPaths = {
+  npm_config_userconfig: 'npm-userconfig', npm_config_globalconfig: 'npm-globalconfig',
+  npm_config_cache: 'npm-cache', GH_CONFIG_DIR: 'gh-config',
+};
+const environmentCommand = [
+  "printf '%s\\n' \\",
+  ...Object.entries(temporaryPaths).map(([key, path]) => `  "${key}=$RUNNER_TEMP/${path}" \\`),
+  '  >> "$GITHUB_ENV"',
+].join('\n');
 
 // Only this workflow's indentation maps, step lists and literal blocks are supported.
 function extract(text) {
@@ -90,10 +100,7 @@ function permissions(w) {
     npm_config_registry: 'https://registry.npmjs.org', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1',
   });
   for (const [name, job] of Object.entries(w.jobs)) {
-    assert.deepEqual(job.env, {
-      npm_config_userconfig: '${{ runner.temp }}/npm-userconfig', npm_config_globalconfig: '${{ runner.temp }}/npm-globalconfig',
-      npm_config_cache: '${{ runner.temp }}/npm-cache', GH_CONFIG_DIR: '${{ runner.temp }}/gh-config',
-    });
+    assert.equal(job.env, undefined, `${name} runner paths must be initialized in a step`);
     for (const s of job.steps) {
       assert.notEqual(Boolean(s.uses), Boolean(s.run), `${name}.${s.id} has one executor`);
       for (const key of Object.keys(s)) assert.ok(['id', 'name', 'if', ...(s.uses ? ['uses', 'with'] : ['run', 'env'])].includes(key), key);
@@ -105,12 +112,14 @@ function permissions(w) {
       if (!['plan', 'verify', 'handoff', 'publish'].includes(s.id)) assert.equal(s.env, undefined);
       assert.doesNotMatch(JSON.stringify(s), /NODE_AUTH_TOKEN|NPM_TOKEN|secrets\.|--force|"overwrite":"true"/);
       if (s.run) assert.doesNotMatch(s.run, /\$\{\{|npm (?:publish|pack|version)|git (?:push|tag|config)|\beval\b/);
+      if (s.run && s.id !== 'environment') assert.doesNotMatch(s.run, /\bGITHUB_ENV\b/);
     }
   }
 }
 function tools(w) {
   assert.deepEqual(w.defaults, { run: { shell: 'bash' } });
   for (const job of ['gate', 'publish']) {
+    assert.equal(step(w, job, 'environment').run, environmentCommand);
     assert.equal(w.jobs[job]['runs-on'], 'ubuntu-24.04');
     assert.ok(Number(w.jobs[job]['timeout-minutes']) <= 30);
     for (const id of ['checkout', 'node', 'python']) assert.equal(step(w, job, id).uses, pins[id]);
@@ -136,8 +145,8 @@ function tools(w) {
   }
 }
 function handoff(w) {
-  assert.deepEqual(w.jobs.gate.steps.map((s) => s.id), ['checkout', 'node', 'python', 'npm', 'tools', 'plan', 'tests', 'verify', 'upload']);
-  assert.deepEqual(w.jobs.publish.steps.map((s) => s.id), ['checkout', 'node', 'python', 'npm', 'tools', 'handoff', 'download', 'publish']);
+  assert.deepEqual(w.jobs.gate.steps.map((s) => s.id), ['environment', 'checkout', 'node', 'python', 'npm', 'tools', 'plan', 'tests', 'verify', 'upload']);
+  assert.deepEqual(w.jobs.publish.steps.map((s) => s.id), ['environment', 'checkout', 'node', 'python', 'npm', 'tools', 'handoff', 'download', 'publish']);
   assert.deepEqual(w.jobs.gate.outputs, { action: '${{ steps.plan.outputs.action }}', record_sha256: '${{ steps.plan.outputs.record_sha256 }}', artifact_id: '${{ steps.upload.outputs.artifact-id }}' });
   assert.equal(step(w, 'gate', 'plan').run, 'node tools/release/plan.mjs --workspace "$RUNNER_TEMP/release"');
   assert.deepEqual(step(w, 'gate', 'plan').env, { GH_TOKEN: '${{ github.token }}' });
@@ -174,6 +183,22 @@ for (const check of [guards, permissions, tools, handoff]) {
 test('Given the replacement, when checking legacy routes, then all three retired files are absent', () => {
   for (const path of ['.github/workflows/publish.yml', '.release-please-config.json', '.release-please-manifest.json']) assert.equal(existsSync(new URL(path, root)), false);
 });
+for (const job of ['gate', 'publish']) {
+  test(`Given ${job} initialization, when run with a quoted runner path, then only configuration paths are exported`, () => {
+    const output = join(sandbox, `${job}.env`);
+    writeFileSync(output, '', { mode: 0o600 });
+    const runnerTemp = join(sandbox, 'runner temp % $HOME');
+    const command = step(extract(original), job, 'environment').run;
+    assert.equal(command, environmentCommand);
+    const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', command], {
+      cwd: sandbox, encoding: 'utf8', env: { PATH: '/usr/bin:/bin', RUNNER_TEMP: runnerTemp, GITHUB_ENV: output },
+    });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, '');
+    assert.equal(readFileSync(output, 'utf8'), Object.entries(temporaryPaths).map(([key, path]) => `${key}=${runnerTemp}/${path}\n`).join(''));
+  });
+}
 
 function mutation(name, check, change) {
   test(`Given ${name}, when checking ${check.name}, then the mutated workflow is rejected`, () => {
@@ -197,10 +222,15 @@ for (const job of ['gate', 'publish']) {
   mutation(`${job} checkout changes source`, tools, (s) => inJob(s, job, (j) => j.replace('ref: ${{ github.sha }}', 'ref: master')));
   mutation(`${job} HEAD check becomes a comment`, tools, (s) => inJob(s, job, (j) => j.replace('test "$(git rev-parse HEAD)"', '# test "$(git rev-parse HEAD)"')));
   mutation(`${job} token moves to another step`, permissions, (s) => inJob(s, job, (j) => j.replace('          GH_TOKEN: ${{ github.token }}\n', '').replace('      - id: tools\n', '      - id: tools\n        env:\n          GH_TOKEN: ${{ github.token }}\n')));
+  mutation(`${job} runner context enters job environment despite valid initialization`, permissions, (s) => inJob(s, job, (j) => j.replace('    steps:\n', '    env:\n      npm_config_cache: ${{ runner.temp }}/npm-cache\n    steps:\n')));
+  mutation(`${job} initializer exports a token`, tools, (s) => inJob(s, job, (j) => j.replace('"GH_CONFIG_DIR=$RUNNER_TEMP/gh-config"', '"GH_TOKEN=$GH_TOKEN"')));
+  mutation(`${job} initializer uses a non-runner path`, tools, (s) => inJob(s, job, (j) => j.replace('"npm_config_cache=$RUNNER_TEMP/npm-cache"', '"npm_config_cache=$HOME/npm-cache"')));
+  mutation(`${job} initialization follows consumers`, handoff, (s) => inJob(s, job, (j) => j.replace(/(      - id: environment\n[\s\S]*?)(      - id: checkout\n[\s\S]*?)(?=      - id: node\n)/, '$2$1')));
 }
 mutation('OIDC permission moves to gate', permissions, (s) => s.replace('      id-token: write\n', '').replace('      contents: read\n', '      contents: read\n      id-token: write\n'));
 mutation('OIDC permission moves to workflow', permissions, (s) => s.replace('      id-token: write\n', '').replace('permissions: {}', 'permissions:\n  id-token: write'));
 mutation('token moves to workflow environment', permissions, (s) => s.replace('          GH_TOKEN: ${{ github.token }}\n', '').replace('\nenv:\n', '\nenv:\n  GH_TOKEN: ${{ github.token }}\n'));
+mutation('runner context enters workflow environment despite valid initialization', permissions, (s) => s.replace('\nenv:\n', '\nenv:\n  npm_config_cache: ${{ runner.temp }}/npm-cache\n'));
 for (const id of ['tests', 'verify', 'upload']) mutation(`${id} loses success guard`, handoff, (s) => s.replace(new RegExp(`(- id: ${id}[\\s\\S]*?if: )[^\\n]+`), '$1${{ always() }}'));
 for (const [from, to] of [['overwrite: false', 'overwrite: true'], ['artifact-ids:', 'name:'], ['steps.plan.outputs.record_sha256', 'steps.other.outputs.record_sha256'], ['steps.upload.outputs.artifact-id', 'steps.other.outputs.artifact-id'], ['make site', '# make site'], ["assert.equal(tarball.length, record.release.tarball.size);", '// removed']])
   mutation(`handoff alters ${from}`, handoff, (s) => s.replace(from, to));
