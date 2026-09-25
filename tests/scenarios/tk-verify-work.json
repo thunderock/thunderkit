@@ -1,0 +1,418 @@
+{
+  "skill": "tk-verify-work",
+  "cases": {
+    "happy": [
+      {
+        "name": "opencode visual selects one source qualified component",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "sections": ["Delegation", "Procedure", "Output contract", "Fallback", "Boundary"],
+        "frontmatter": {
+          "thunderkit-role": "uat",
+          "thunderkit-tier": "verify",
+          "thunderkit-delegates": "omo:visual-qa omh:operator/omh-visual-qa",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "hermes visual selects the categorized assessment component",
+        "operation": "visual",
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-visual-qa",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Delegation", "Fallback", "Output contract"]
+      },
+      {
+        "name": "codex visual preserves its supported reviewer selection",
+        "operation": "visual",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "sol",
+            "executors": ["sol"],
+            "reviewers": ["sol"]
+          }
+        }
+      },
+      {
+        "name": "default cli computes an owned route without native evidence",
+        "operation": null,
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "sections": ["Procedure", "Fallback", "Output contract"]
+      },
+      {
+        "name": "explicit cli does not borrow a visual target from installed peers",
+        "operation": "cli",
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "explicit api stays owned with both peers reported",
+        "operation": "api",
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Procedure", "Fallback", "Output contract"]
+      },
+      {
+        "name": "delegation off retains model selections without native evidence",
+        "operation": "visual",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        },
+        "sections": ["Fallback", "Output contract"]
+      },
+      {
+        "name": "empty ecosystems compute an owned visual route",
+        "operation": "visual",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["sol", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "reviewers all remains literal when a native subset is compatible",
+        "operation": "visual",
+        "config": "opencode_all",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "unsupported native host leaves the visual target unselected",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing visual peer cannot be rescued by a ready claim",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "peer_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "wrong reviewer model denies the visual component",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "binding_mismatch",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "hermes assessment cannot substitute another reviewer selection",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "reviewer provider mapping from another host is not a binding",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "wrong_host_bindings",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "modified visual assessor bytes fail source qualification",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "self reported digest cannot authorize modified visual bytes",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "self_hashed_tamper",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "visual component requires every pinned companion",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "modified hermes assessment bytes fail source qualification",
+        "operation": "visual",
+        "config": "hermes",
+        "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "hermes visual assessment requires its shared rail",
+        "operation": "visual",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "visual component requires its reviewer binding slot",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": "missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omo",
+          "target_selector": "visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "hermes visual assessment requires reviewers despite its operator category",
+        "operation": "visual",
+        "config": "hermes",
+        "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omh",
+          "target_selector": "operator/omh-visual-qa",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "default cli without configuration is blocked",
+        "operation": null,
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "api without configuration is blocked",
+        "operation": "api",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "visual without configuration is blocked",
+        "operation": "visual",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "native visual candidates without capability evidence are blocked",
+        "operation": "visual",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      }
+    ]
+  }
+}
