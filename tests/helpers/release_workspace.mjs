@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { exec } from "../../tools/release/io.mjs";
 import { requestFacts } from "./release_facts.mjs";
@@ -18,6 +18,7 @@ import { requestFacts } from "./release_facts.mjs";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 const evidenceRoot = process.env.RELEASE_TEST_EVIDENCE ?? "";
+const devCaches = new Set(["__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"]);
 const secretKeys = ["GH_TOKEN", "GITHUB_TOKEN", "NODE_AUTH_TOKEN", "NPM_TOKEN", "NPM_CONFIG_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"];
 /** @param {string} name */
 function binary(name) {
@@ -66,15 +67,22 @@ require("node:fs").appendFileSync(${JSON.stringify(journal)}, JSON.stringify({ n
 process.stderr.write("fixture: rejected gh invocation\\n"); process.exit(97);
 `, { mode: 0o755 });
 }
-/** A fresh committed copy of the distributable source with an isolated stub PATH. */
-export function createFixture() {
+/** A fresh committed copy of the distributable source with an isolated stub PATH. @param {string} [sourceDir] */
+export function createFixture(sourceDir = repoRoot) {
   const root = mkdtempSync(join(tmpdir(), "release-case-"));
   chmodSync(root, 0o700);
   const checkoutDir = join(root, "checkout");
   mkdirSync(checkoutDir);
   for (const name of ["bin", "skills", "package.json", ".npmignore", "NORTH_STAR.md", "README.md", "LICENSE", "CHANGELOG.md"]) {
-    cpSync(join(repoRoot, name), join(checkoutDir, name), { recursive: true });
+    cpSync(join(sourceDir, name), join(checkoutDir, name), {
+      recursive: true,
+      filter: (path) => !devCaches.has(basename(path)) && !/\.py[co]$/.test(path),
+    });
   }
+  const manifest = join(checkoutDir, "package.json");
+  /** @type {unknown} */ const pkg = JSON.parse(readFileSync(manifest, "utf8"));
+  assert.ok(pkg !== null && typeof pkg === "object" && !Array.isArray(pkg));
+  writeFileSync(manifest, `${JSON.stringify({ ...pkg, version: "0.1.1" }, null, 2)}\n`);
   git(checkoutDir, ["init", "--quiet", "--initial-branch=master"]);
   git(checkoutDir, ["add", "--", "."]);
   git(checkoutDir, ["commit", "--quiet", "-m", "feat: initial package"]);
