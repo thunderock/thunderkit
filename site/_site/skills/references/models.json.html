@@ -1,0 +1,124 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>models — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="../../index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="../../index.html">Home</a><a href="../../north-star.html">North Star</a><a href="../../roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<pre><code>{
+  &quot;schema_version&quot;: 1,
+  &quot;models&quot;: {
+    &quot;fable51&quot;: {
+      &quot;auth&quot;: &quot;Bedrock bearer token (login-free)&quot;,
+      &quot;character&quot;: &quot;Fast, cheap, wide. Breadth, retrieval, cleanup, exploration.&quot;,
+      &quot;family&quot;: &quot;anthropic&quot;,
+      &quot;harnesses&quot;: [
+        {
+          &quot;harness&quot;: &quot;hermes&quot;,
+          &quot;provider&quot;: &quot;bedrock&quot;,
+          &quot;model_id&quot;: &quot;us.anthropic.claude-fable-5-1&quot;
+        },
+        {
+          &quot;harness&quot;: &quot;opencode&quot;,
+          &quot;provider&quot;: &quot;amazon-bedrock&quot;,
+          &quot;model_id&quot;: &quot;us.anthropic.claude-fable-5-1&quot;
+        }
+      ],
+      &quot;label&quot;: &quot;Fable 5.1&quot;,
+      &quot;model_id&quot;: &quot;us.anthropic.claude-fable-5-1&quot;,
+      &quot;provider&quot;: &quot;bedrock&quot;
+    },
+    &quot;opus48&quot;: {
+      &quot;auth&quot;: &quot;Anthropic login&quot;,
+      &quot;character&quot;: &quot;Strongest coder on the critical path.&quot;,
+      &quot;family&quot;: &quot;anthropic&quot;,
+      &quot;harnesses&quot;: [
+        {
+          &quot;harness&quot;: &quot;claude&quot;,
+          &quot;provider&quot;: &quot;anthropic&quot;,
+          &quot;model_id&quot;: &quot;claude-opus-4-8&quot;
+        },
+        {
+          &quot;harness&quot;: &quot;hermes&quot;,
+          &quot;provider&quot;: &quot;anthropic&quot;,
+          &quot;model_id&quot;: &quot;claude-opus-4-8&quot;
+        }
+      ],
+      &quot;label&quot;: &quot;Opus 4.8&quot;,
+      &quot;model_id&quot;: &quot;claude-opus-4-8&quot;,
+      &quot;provider&quot;: &quot;anthropic&quot;
+    },
+    &quot;opus5&quot;: {
+      &quot;auth&quot;: &quot;Bedrock bearer token (login-free)&quot;,
+      &quot;character&quot;: &quot;Strong, login-free. Critical-path fallback + a strong second reviewer.&quot;,
+      &quot;family&quot;: &quot;anthropic&quot;,
+      &quot;harnesses&quot;: [
+        {
+          &quot;harness&quot;: &quot;hermes&quot;,
+          &quot;provider&quot;: &quot;bedrock&quot;,
+          &quot;model_id&quot;: &quot;us.anthropic.claude-opus-5&quot;
+        },
+        {
+          &quot;harness&quot;: &quot;opencode&quot;,
+          &quot;provider&quot;: &quot;amazon-bedrock&quot;,
+          &quot;model_id&quot;: &quot;us.anthropic.claude-opus-5&quot;
+        }
+      ],
+      &quot;label&quot;: &quot;Opus 5&quot;,
+      &quot;model_id&quot;: &quot;us.anthropic.claude-opus-5&quot;,
+      &quot;provider&quot;: &quot;bedrock&quot;
+    },
+    &quot;sol&quot;: {
+      &quot;auth&quot;: &quot;Codex/ChatGPT login&quot;,
+      &quot;character&quot;: &quot;Different family. The cross-family reviewer. Best-effort (credit-capped).&quot;,
+      &quot;family&quot;: &quot;openai&quot;,
+      &quot;harnesses&quot;: [
+        {
+          &quot;harness&quot;: &quot;codex&quot;,
+          &quot;provider&quot;: &quot;openai-codex&quot;,
+          &quot;model_id&quot;: &quot;gpt-5.6-sol&quot;
+        }
+      ],
+      &quot;label&quot;: &quot;Sol&quot;,
+      &quot;model_id&quot;: &quot;gpt-5.6-sol&quot;,
+      &quot;provider&quot;: &quot;openai-codex&quot;
+    }
+  },
+  &quot;classes&quot;: {
+    &quot;planner&quot;: {
+      &quot;cardinality&quot;: &quot;one&quot;,
+      &quot;description&quot;: &quot;The most capable model for spec, discussion, planning, and debug reasoning.&quot;
+    },
+    &quot;executors&quot;: {
+      &quot;cardinality&quot;: &quot;nonempty unique set&quot;,
+      &quot;description&quot;: &quot;Models sharing mapping, research, implementation, and documentation lanes by weight.&quot;
+    },
+    &quot;reviewers&quot;: {
+      &quot;cardinality&quot;: &quot;all or nonempty unique set&quot;,
+      &quot;description&quot;: &quot;Explicit review models or all reachable catalog models for plan checks, review, verification, UAT, and audits.&quot;
+    }
+  },
+  &quot;families_min_default&quot;: 2
+}
+</code></pre>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

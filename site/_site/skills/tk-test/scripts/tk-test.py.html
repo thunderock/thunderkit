@@ -1,0 +1,257 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-test — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="../../../index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="../../../index.html">Home</a><a href="../../../north-star.html">North Star</a><a href="../../../roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<pre><code>#!/usr/bin/env python3
+&quot;&quot;&quot;Probe configured models; exit 0 for verified readiness, 1 for failure, 2 for invalid input.&quot;&quot;&quot;
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
+import json
+from math import isfinite
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+from typing import Final, NoReturn
+
+
+def failure(reason: str, json_mode: bool) -&gt; int:
+    print(f&quot;preflight: {reason}; check arguments, model classes and skill-local support files&quot;, file=sys.stderr)
+    if json_mode:
+        print(json.dumps({&quot;schema_version&quot;: 1, &quot;status&quot;: &quot;invalid&quot;, &quot;reason_code&quot;: reason,
+                          &quot;models&quot;: {}, &quot;classes&quot;: {}, &quot;reviewer_families&quot;: [], &quot;reviewer_family_count&quot;: 0}))
+    else:
+        print(f&quot;FAIL: {reason}&quot;)
+    return 2
+
+
+try:
+    for _name in (&quot;model_config&quot;, &quot;preflight_protocols&quot;):
+        _path = Path(__file__).absolute().with_name(f&quot;{_name}.py&quot;)
+        if not _path.is_file() or _path.is_symlink():
+            raise ImportError(_name)
+    import model_config
+    import preflight_protocols
+    from model_config import ConfigError, JsonObject, JsonValue, distinct_families, load_json, normalize_config, selected_models
+    from preflight_protocols import Harness, Outcome, ProtocolError, Wire, command, decode, integer, mapping, text
+    if any(Path(module.__file__ or &quot;&quot;).absolute().parent != Path(__file__).absolute().parent
+           for module in (model_config, preflight_protocols)):
+        raise ImportError(&quot;local support required&quot;)
+except (ImportError, OSError, SyntaxError, UnicodeError):
+    if __name__ == &quot;__main__&quot;:
+        sys.exit(failure(&quot;invalid_assets&quot;, &quot;--json&quot; in sys.argv[1:]))
+    raise
+
+OUTPUT_LIMIT: Final = 1_048_576
+
+
+class _Arguments(argparse.Namespace):
+    config: str = &quot;.thunderkit/config.json&quot;
+    timeout: float = 120.0
+    json: bool = False
+    help: bool = False
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message: str) -&gt; NoReturn:
+        raise argparse.ArgumentError(None, &quot;invalid_cli&quot;)
+
+
+def catalog_wires(catalog: JsonObject) -&gt; dict[str, tuple[Wire, ...]]:
+    result = {}
+    for key, raw in mapping(catalog.get(&quot;models&quot;)).items():
+        model = mapping(raw)
+        if not re.fullmatch(r&quot;[a-z][a-z0-9_-]{0,63}&quot;, key) or not re.fullmatch(r&quot;[a-z][a-z0-9_-]{0,63}&quot;, text(model[&quot;family&quot;])):
+            raise ProtocolError()
+        entries = model[&quot;harnesses&quot;]
+        if not isinstance(entries, list):
+            raise ProtocolError()
+        wires = []
+        for raw_entry in entries:
+            entry = mapping(raw_entry)
+            wire = Wire(Harness(text(entry.get(&quot;harness&quot;))), text(entry.get(&quot;provider&quot;)), text(entry.get(&quot;model_id&quot;)))
+            if (not re.fullmatch(r&quot;[A-Za-z0-9][A-Za-z0-9._-]{0,127}&quot;, wire.provider)
+                    or not re.fullmatch(r&quot;[A-Za-z0-9][A-Za-z0-9._/-]{0,199}&quot;, wire.model_id)):
+                raise ProtocolError()
+            wires.append(wire)
+        result[key] = tuple(wires)
+    return result
+
+
+def probe(wire: Wire, timeout: float) -&gt; Outcome:
+    if not isfinite(timeout) or timeout &lt;= 0:
+        raise ProtocolError(&quot;invalid_timeout&quot;)
+    try:
+        with tempfile.TemporaryFile() as output:
+            try:
+                child = subprocess.Popen(command(wire, timeout), stdin=subprocess.DEVNULL, stdout=output,
+                                         stderr=subprocess.DEVNULL, start_new_session=True)
+            except FileNotFoundError:
+                return Outcome(wire, &quot;not-installed&quot;, &quot;executable_missing&quot;)
+            try:
+                child.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                return Outcome(wire, &quot;timeout&quot;, &quot;deadline_exceeded&quot;)
+            finally:
+                with suppress(ProcessLookupError):
+                    os.killpg(child.pid, signal.SIGKILL)
+                child.wait(timeout=2)
+            if child.returncode != 0:
+                return Outcome(wire, &quot;unreachable&quot;, &quot;process_exit&quot;)
+            output.seek(0)
+            content = output.read(OUTPUT_LIMIT + 1)
+        if len(content) &gt; OUTPUT_LIMIT:
+            return Outcome(wire, &quot;malformed&quot;, &quot;output_limit&quot;)
+        return decode(wire, content.decode(&quot;utf-8&quot;))
+    except subprocess.TimeoutExpired:
+        return Outcome(wire, &quot;timeout&quot;, &quot;cleanup_timeout&quot;)
+    except OSError:
+        return Outcome(wire, &quot;unreachable&quot;, &quot;process_error&quot;)
+    except UnicodeError:
+        return Outcome(wire, &quot;malformed&quot;, &quot;invalid_encoding&quot;)
+
+
+def report_row(outcome: Outcome, known_ids: set[str]) -&gt; JsonObject:
+    wire, session = outcome.wire, outcome.session_id
+    observed: JsonValue = [{&quot;model_id&quot;: name, &quot;provider&quot;: None} for name in outcome.observed_models if name in known_ids]
+    resume: JsonValue = None
+    if session is not None:
+        prefixes = {Harness.CLAUDE: [&quot;claude&quot;, &quot;-p&quot;, &quot;--resume&quot;], Harness.CODEX: [&quot;codex&quot;, &quot;exec&quot;, &quot;resume&quot;],
+                    Harness.HERMES: [&quot;hermes&quot;, &quot;chat&quot;, &quot;--resume&quot;], Harness.OPENCODE: [&quot;opencode&quot;, &quot;run&quot;, &quot;-s&quot;]}
+        resume = [*prefixes[wire.harness], session]
+        if wire.harness == Harness.CODEX:
+            resume.append(&quot;--skip-git-repo-check&quot;)
+    return {&quot;harness&quot;: wire.harness.value, &quot;status&quot;: outcome.status, &quot;reason_code&quot;: outcome.reason_code,
+            &quot;requested&quot;: {&quot;provider&quot;: wire.provider, &quot;model_id&quot;: wire.model_id}, &quot;observed&quot;: observed or None,
+            &quot;session_id&quot;: session, &quot;resumable&quot;: session is not None, &quot;resume&quot;: resume}
+
+
+def aggregate(cfg: JsonObject, catalog: JsonObject, outcomes: Mapping[str, Outcome]) -&gt; JsonObject:
+    selection = selected_models(cfg, catalog)
+    reviewers, explicit = selection[&quot;reviewers&quot;], selection[&quot;explicit&quot;]
+    planner, executors = selection[&quot;planner&quot;], selection[&quot;executors&quot;]
+    mode = selection[&quot;reviewers_mode&quot;]
+    assert isinstance(reviewers, list) and isinstance(explicit, list)
+    assert isinstance(planner, str) and isinstance(executors, list) and isinstance(mode, str)
+    verified = {key for key, row in outcomes.items()
+                if row.status == &quot;reachable&quot; and row.observed_models == (row.wire.model_id,)}
+    ready_reviewers = [key for key in reviewers if key in verified]
+    required_failures = [key for key in explicit if key not in verified]
+    optional_failures = [key for key in reviewers if key not in explicit and key not in verified]
+    families = sorted(distinct_families(ready_reviewers, catalog))
+    minimum = integer(cfg[&quot;review_families_min&quot;])
+    family_gate = len(families) &gt;= minimum
+    passed = bool(outcomes) and not required_failures and family_gate
+    known_ids = {wire.model_id for wires in catalog_wires(catalog).values() for wire in wires}
+    resolved: JsonObject = {&quot;planner&quot;: planner, &quot;executors&quot;: [*executors], &quot;reviewers&quot;: [*ready_reviewers]}
+    return {&quot;schema_version&quot;: 1, &quot;status&quot;: &quot;passed&quot; if passed else &quot;failed&quot;,
+            &quot;reason_code&quot;: &quot;ready&quot; if passed else &quot;required_models_unavailable&quot; if required_failures else &quot;insufficient_review_families&quot;,
+            &quot;models&quot;: {key: report_row(row, known_ids) for key, row in outcomes.items()},
+            &quot;classes&quot;: cfg[&quot;classes&quot;], &quot;resolved_classes&quot;: resolved,
+            &quot;reviewer_candidates&quot;: [*reviewers], &quot;reviewers_mode&quot;: mode,
+            &quot;required_failures&quot;: [*required_failures], &quot;unavailable_candidates&quot;: [*optional_failures],
+            &quot;reviewer_families&quot;: [*families], &quot;reviewer_family_count&quot;: len(families),
+            &quot;review_families_min&quot;: minimum, &quot;family_gate&quot;: family_gate}
+
+
+def main(argv: Sequence[str] | None = None) -&gt; int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    json_mode = &quot;--json&quot; in arguments
+    parser = _Parser(add_help=False, allow_abbrev=False)
+    parser.add_argument(&quot;--config&quot;, default=&quot;.thunderkit/config.json&quot;)
+    parser.add_argument(&quot;--timeout&quot;, type=float, default=120.0)
+    parser.add_argument(&quot;--json&quot;, action=&quot;store_true&quot;)
+    parser.add_argument(&quot;-h&quot;, &quot;--help&quot;, action=&quot;store_true&quot;)
+    args = _Arguments()
+    try:
+        parser.parse_args(arguments, namespace=args)
+        if not isfinite(args.timeout) or args.timeout &lt;= 0:
+            raise argparse.ArgumentError(None, &quot;invalid_timeout&quot;)
+    except argparse.ArgumentError:
+        return failure(&quot;invalid_cli&quot;, json_mode)
+    if args.help:
+        print(json.dumps({&quot;usage&quot;: parser.format_help()}) if json_mode else parser.format_help(), end=&quot;\n&quot;)
+        return 0
+    catalog_path = Path(__file__).absolute().parent.parent / &quot;references/models.json&quot;
+    try:
+        if not catalog_path.is_file() or catalog_path.is_symlink():
+            return failure(&quot;invalid_assets&quot;, json_mode)
+        catalog = load_json(str(catalog_path))
+        distinct_families((), catalog)
+        wires = catalog_wires(catalog)
+    except (ConfigError, ProtocolError, ValueError, RecursionError):
+        return failure(&quot;invalid_assets&quot;, json_mode)
+    try:
+        if not Path(args.config).is_file():
+            return failure(&quot;invalid_config&quot;, json_mode)
+        cfg, warnings = normalize_config(load_json(args.config), catalog)
+        selection = selected_models(cfg, catalog)
+    except (ConfigError, ProtocolError, ValueError, RecursionError):
+        return failure(&quot;invalid_config&quot;, json_mode)
+    planner, executors, reviewers = selection[&quot;planner&quot;], selection[&quot;executors&quot;], selection[&quot;reviewers&quot;]
+    assert isinstance(planner, str) and isinstance(executors, list) and isinstance(reviewers, list)
+    wanted = list(dict.fromkeys([planner, *executors, *reviewers]))
+    outcomes = {}
+    for key in wanted:
+        choices = wires[key]
+        wire = next((item for item in choices if shutil.which(item.harness.value)), choices[0])
+        outcomes[key] = probe(wire, args.timeout)
+    report = aggregate(cfg, catalog, outcomes)
+    report[&quot;warnings&quot;] = list(warnings)
+    for key, outcome in outcomes.items():
+        if outcome.status != &quot;reachable&quot;:
+            print(f&quot;preflight: {key}: {outcome.reason_code}&quot;, file=sys.stderr)
+    for warning in warnings:
+        print(f&quot;preflight: {warning}&quot;, file=sys.stderr)
+    if json_mode:
+        print(json.dumps(report))
+    else:
+        print(f&quot;classes: {json.dumps(report[&#x27;classes&#x27;])}&quot;)
+        for key, raw_row in mapping(report[&quot;models&quot;]).items():
+            row = mapping(raw_row)
+            print(f&quot;{key}: {row[&#x27;harness&#x27;]} {row[&#x27;status&#x27;]} ({row[&#x27;reason_code&#x27;]})&quot;)
+            print(f&quot;  requested: {json.dumps(row[&#x27;requested&#x27;])}; observed: {json.dumps(row[&#x27;observed&#x27;])}&quot;)
+            if row[&quot;resume&quot;]:
+                print(f&quot;  resume argv: {json.dumps(row[&#x27;resume&#x27;])}&quot;)
+        print(f&quot;required failures: {json.dumps(report[&#x27;required_failures&#x27;])}&quot;)
+        print(f&quot;unavailable optional candidates: {json.dumps(report[&#x27;unavailable_candidates&#x27;])}&quot;)
+        print(f&quot;reviewer families verified: {report[&#x27;reviewer_family_count&#x27;]}; required: {report[&#x27;review_families_min&#x27;]}&quot;)
+        print(f&quot;{report[&#x27;status&#x27;]}: {report[&#x27;reason_code&#x27;]}&quot;)
+    return 0 if report[&quot;status&quot;] == &quot;passed&quot; else 1
+
+
+if __name__ == &quot;__main__&quot;:
+    sys.exit(main())
+</code></pre>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

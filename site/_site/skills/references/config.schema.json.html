@@ -1,0 +1,197 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>config.schema — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="../../index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="../../index.html">Home</a><a href="../../north-star.html">North Star</a><a href="../../roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<pre><code>{
+  &quot;schema_version&quot;: 2,
+  &quot;type&quot;: &quot;object&quot;,
+  &quot;additionalProperties&quot;: false,
+  &quot;required&quot;: [
+    &quot;classes&quot;
+  ],
+  &quot;properties&quot;: {
+    &quot;classes&quot;: {
+      &quot;type&quot;: &quot;object&quot;,
+      &quot;additionalProperties&quot;: false,
+      &quot;required&quot;: [
+        &quot;planner&quot;,
+        &quot;executors&quot;,
+        &quot;reviewers&quot;
+      ],
+      &quot;properties&quot;: {
+        &quot;executors&quot;: {
+          &quot;type&quot;: &quot;array&quot;,
+          &quot;minItems&quot;: 1,
+          &quot;uniqueItems&quot;: true,
+          &quot;items&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;model_key&quot;: true
+          }
+        },
+        &quot;planner&quot;: {
+          &quot;type&quot;: &quot;string&quot;,
+          &quot;model_key&quot;: true
+        },
+        &quot;reviewers&quot;: {
+          &quot;anyOf&quot;: [
+            {
+              &quot;type&quot;: &quot;string&quot;,
+              &quot;enum&quot;: [
+                &quot;all&quot;
+              ]
+            },
+            {
+              &quot;type&quot;: &quot;array&quot;,
+              &quot;minItems&quot;: 1,
+              &quot;uniqueItems&quot;: true,
+              &quot;items&quot;: {
+                &quot;type&quot;: &quot;string&quot;,
+                &quot;model_key&quot;: true
+              }
+            }
+          ]
+        }
+      }
+    },
+    &quot;decided_at&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;description&quot;: &quot;Optional date recorded by the choice writer; readers preserve a supplied string and never fabricate one.&quot;
+    },
+    &quot;delegation&quot;: {
+      &quot;type&quot;: &quot;string&quot;,
+      &quot;enum&quot;: [
+        &quot;auto&quot;,
+        &quot;off&quot;
+      ]
+    },
+    &quot;ecosystems&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;uniqueItems&quot;: true,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;enum&quot;: [
+          &quot;omo&quot;,
+          &quot;omh&quot;
+        ]
+      }
+    },
+    &quot;frozen_paths&quot;: {
+      &quot;type&quot;: &quot;array&quot;,
+      &quot;items&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;minLength&quot;: 1,
+        &quot;pattern&quot;: &quot;^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f\\u007f]+(?![\\s\\S])&quot;,
+        &quot;description&quot;: &quot;Nonempty repository-relative path using forward slashes; no absolute path, drive prefix, parent traversal, backslash, or ASCII control character (U+0000-U+001F or U+007F).&quot;
+      }
+    },
+    &quot;max_layers&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 1
+    },
+    &quot;review_families_min&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;minimum&quot;: 2
+    },
+    &quot;schema_version&quot;: {
+      &quot;type&quot;: &quot;integer&quot;,
+      &quot;const&quot;: 2
+    }
+  },
+  &quot;legacy&quot;: {
+    &quot;root&quot;: &quot;models&quot;,
+    &quot;type&quot;: &quot;object&quot;,
+    &quot;additionalProperties&quot;: false,
+    &quot;required&quot;: [
+      &quot;plan&quot;,
+      &quot;critical_path&quot;,
+      &quot;review&quot;
+    ],
+    &quot;properties&quot;: {
+      &quot;critical_path&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;model_key&quot;: true
+      },
+      &quot;plan&quot;: {
+        &quot;type&quot;: &quot;string&quot;,
+        &quot;model_key&quot;: true
+      },
+      &quot;review&quot;: {
+        &quot;anyOf&quot;: [
+          {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;enum&quot;: [
+              &quot;all&quot;
+            ]
+          },
+          {
+            &quot;type&quot;: &quot;array&quot;,
+            &quot;minItems&quot;: 1,
+            &quot;uniqueItems&quot;: true,
+            &quot;items&quot;: {
+              &quot;type&quot;: &quot;string&quot;,
+              &quot;model_key&quot;: true
+            }
+          }
+        ]
+      }
+    },
+    &quot;mapping&quot;: {
+      &quot;critical_path&quot;: &quot;classes.executors&quot;,
+      &quot;plan&quot;: &quot;classes.planner&quot;,
+      &quot;review&quot;: &quot;classes.reviewers&quot;
+    },
+    &quot;wrap_in_array&quot;: [
+      &quot;critical_path&quot;
+    ]
+  },
+  &quot;defaults&quot;: {
+    &quot;schema_version&quot;: 2,
+    &quot;review_families_min&quot;: 2,
+    &quot;max_layers&quot;: 3,
+    &quot;frozen_paths&quot;: [],
+    &quot;ecosystems&quot;: [
+      &quot;omo&quot;,
+      &quot;omh&quot;
+    ],
+    &quot;delegation&quot;: &quot;auto&quot;
+  },
+  &quot;notes&quot;: [
+    &quot;This catalog-aware contract uses model_key: true for membership in models.json.models, not a hardcoded enum. model_config.py owns runtime validation; generic JSON Schema validation alone cannot enforce model membership or raw JSON parsing rules.&quot;,
+    &quot;Canonical writes use schema_version: 2. A classes config may omit schema_version; readers assume 2 without rewriting the file. An explicit version other than 2 is invalid for classes.&quot;,
+    &quot;All three model classes are required user selections and have no defaults. Missing operational fields receive only the defaults listed here, in memory. Explicit values are preserved or rejected, never replaced with defaults.&quot;,
+    &quot;decided_at is optional for readers. Preserve a supplied string, including an empty string; never fabricate a date or placeholder.&quot;,
+    &quot;ecosystems is a unique list containing only omo and/or omh. An empty list selects neither ecosystem; it is not replaced by the default.&quot;,
+    &quot;The only recognized legacy shape is models.{plan,critical_path,review}: plan becomes classes.planner, critical_path becomes a singleton classes.executors array, and review becomes classes.reviewers, retaining all or a nonempty unique catalog-key list. No other aliases are recognized.&quot;,
+    &quot;Legacy input may omit schema_version or specify 1 or 2. Only a complete valid legacy object produces a normalized preview with a migration warning; saving requires user approval. Preserve known operational fields and decided_at. Mixed models/classes or incomplete legacy shapes are invalid.&quot;,
+    &quot;Reject unknown object keys at the config root and within classes or legacy models. The legacy root permits models in place of classes plus the same operational fields and optional decided_at.&quot;,
+    &quot;Reject duplicate JSON object keys before constructing dictionaries and reject non-finite numbers, including NaN, Infinity, -Infinity and numeric overflow. Integers exclude booleans and floating-point values.&quot;,
+    &quot;Reject repeated model keys within each class array, duplicate ecosystems and escaping/nonportable frozen paths. Frozen paths are literal repository-relative POSIX paths; do not expand home directories or environment variables.&quot;,
+    &quot;reviewers: all draws candidates from every catalog model, not merely the planner and executors. Preflight forms the reachable reviewer set from successful responses and reports unavailable optional candidates. Explicit model selections must succeed without substitution; the distinct-family minimum is an independent gate.&quot;,
+    &quot;defaults.review_families_min matches models.json.families_min_default. Three Anthropic variants still count as one family.&quot;
+  ]
+}
+</code></pre>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

@@ -1,0 +1,285 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-resolve — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="../../../index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="../../../index.html">Home</a><a href="../../../north-star.html">North Star</a><a href="../../../roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<pre><code>&quot;&quot;&quot;Compute a route without dispatch, network access or configuration writes.
+
+resolve(argv) returns one record; main(argv) emits it, with detail on stderr.
+JSON mode exits 0 for computed routes, 1 for blocked, 2 for malformed input.
+Native evidence uses the snapshot schema documented in capability_gates.py.
+&quot;&quot;&quot;
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+import json
+import os
+from pathlib import Path
+import sys
+from typing import Final, NoReturn, TypeAlias
+
+_BYTECODE_POLICY: Final = sys.dont_write_bytecode
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import model_config
+import capability_gates
+sys.dont_write_bytecode = _BYTECODE_POLICY
+
+from capability_gates import (Decision, Reason, Request, digest, expect_list, expect_object,
+                              expect_strings, expect_text, path_text)
+
+JsonObject: TypeAlias = model_config.JsonObject
+JsonValue: TypeAlias = model_config.JsonValue
+CLASSES: Final = (&quot;planner&quot;, &quot;executors&quot;, &quot;reviewers&quot;)
+TARGET_FIELDS: Final = (&quot;ecosystem&quot;, &quot;package&quot;, &quot;version&quot;, &quot;skill_name&quot;, &quot;selector&quot;, &quot;mode&quot;)
+MODEL_FREE: Final = frozenset({(&quot;tk-ask&quot;, &quot;validate&quot;), (&quot;tk-memory&quot;, &quot;view&quot;),
+                              (&quot;tk-router&quot;, &quot;bootstrap&quot;), (&quot;tk-handoff&quot;, &quot;save&quot;)})
+
+
+class _Arguments(argparse.Namespace):
+    skill: str = &quot;&quot;
+    operation: str | None = None
+    config: str | None = None
+    capabilities: str | None = None
+    catalog: str | None = None
+    manifest: str | None = None
+    project_root: str | None = None
+    json: bool = False
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message: str) -&gt; NoReturn:
+        raise model_config.ConfigError(message)
+
+
+def _relative(value: JsonValue, field: str) -&gt; str:
+    result = path_text(value, field)
+    if &quot;:&quot; in result or &quot;\\&quot; in result or any(part in (&quot;&quot;, &quot;.&quot;, &quot;..&quot;) for part in result.split(&quot;/&quot;)):
+        raise model_config.ConfigError(f&quot;{field} must be a portable root-relative path&quot;)
+    return result
+
+
+def validate_candidate(candidate: JsonObject, pin: JsonObject) -&gt; None:
+    for field in TARGET_FIELDS:
+        if not expect_text(candidate.get(field), f&quot;target.{field}&quot;):
+            raise model_config.ConfigError(f&quot;target.{field} must not be empty&quot;)
+    for field in (&quot;package&quot;, &quot;version&quot;, &quot;source&quot;):
+        if not expect_text(pin.get(field), f&quot;pin.{field}&quot;):
+            raise model_config.ConfigError(f&quot;pin.{field} must not be empty&quot;)
+    if &quot;source_commit&quot; in pin:
+        expect_text(pin[&quot;source_commit&quot;], &quot;pin.source_commit&quot;)
+    expect_strings(pin.get(&quot;hosts&quot;), &quot;pin.hosts&quot;)
+    if candidate.get(&quot;mode&quot;) not in (&quot;handoff&quot;, &quot;component&quot;):
+        raise model_config.ConfigError(&quot;target.mode must be handoff or component&quot;)
+    identity = expect_object(pin.get(&quot;provenance_root&quot;), &quot;provenance_root&quot;)
+    _relative(identity.get(&quot;identity_file&quot;), &quot;identity_file&quot;)
+    identity_fields = expect_object(identity.get(&quot;identity_fields&quot;), &quot;identity_fields&quot;)
+    if not identity_fields or any(type(value) not in (str, int) for value in identity_fields.values()):
+        raise model_config.ConfigError(&quot;identity_fields must contain string or integer values, not booleans&quot;)
+    provenance = expect_object(candidate.get(&quot;provenance&quot;), &quot;provenance&quot;)
+    if set(provenance) != {&quot;root_kind&quot;, &quot;entrypoint&quot;, &quot;files&quot;} or provenance.get(&quot;root_kind&quot;) != identity.get(&quot;root_kind&quot;):
+        raise model_config.ConfigError(&quot;provenance must have exactly root_kind, entrypoint and files matching the pin&quot;)
+    entrypoint = _relative(provenance.get(&quot;entrypoint&quot;), &quot;entrypoint&quot;)
+    files = expect_object(provenance.get(&quot;files&quot;), &quot;provenance.files&quot;)
+    if entrypoint not in files:
+        raise model_config.ConfigError(&quot;provenance.files must include the entrypoint&quot;)
+    for relative, fingerprint in files.items():
+        _relative(relative, &quot;provenance.files key&quot;)
+        if not digest(fingerprint):
+            raise model_config.ConfigError(&quot;provenance.files values must be lowercase SHA-256 digests&quot;)
+    selector = _relative(candidate.get(&quot;selector&quot;), &quot;selector&quot;)
+    name = _relative(candidate.get(&quot;skill_name&quot;), &quot;skill_name&quot;)
+    if &quot;/&quot; in name:
+        raise model_config.ConfigError(&quot;skill_name must be a single path segment&quot;)
+    match provenance.get(&quot;root_kind&quot;):
+        case &quot;package&quot;:
+            expected: JsonObject = {&quot;name&quot;: pin[&quot;package&quot;], &quot;version&quot;: pin[&quot;version&quot;]}
+            if selector != name or entrypoint != f&quot;dist/skills/{name}/SKILL.md&quot; or &quot;canonical_name&quot; in candidate:
+                raise model_config.ConfigError(&quot;Package selector must identify its exact skill entrypoint&quot;)
+        case &quot;omh&quot;:
+            expected = {&quot;schema_version&quot;: 1, &quot;package&quot;: pin[&quot;package&quot;], &quot;version&quot;: pin[&quot;version&quot;]}
+            if (selector.count(&quot;/&quot;) != 1 or entrypoint != f&quot;skills/{selector}/SKILL.md&quot;
+                    or not expect_text(candidate.get(&quot;canonical_name&quot;), &quot;canonical_name&quot;)
+                    or identity.get(&quot;manifest_record_fields&quot;) != [&quot;name&quot;, &quot;path&quot;, &quot;sha256&quot;, &quot;source&quot;]
+                    or not expect_strings(identity.get(&quot;manifest_source_values&quot;), &quot;manifest_source_values&quot;)):
+                raise model_config.ConfigError(&quot;OMH selector and installer identity must be fully qualified&quot;)
+        case _:
+            raise model_config.ConfigError(&quot;root_kind must be package or omh&quot;)
+    if identity_fields != expected:
+        raise model_config.ConfigError(&quot;Root identity fields must match exact package metadata&quot;)
+    required: set[str] = set()
+    for requirement in expect_strings(candidate.get(&quot;requires&quot;), &quot;target.requires&quot;):
+        match requirement.partition(&quot;:&quot;):
+            case (&quot;model-binding&quot;, &quot;:&quot;, cls) if cls in CLASSES:
+                required.add(cls)
+            case (&quot;tool&quot;, &quot;:&quot;, tool) if tool:
+                pass
+            case (&quot;runtime_home&quot;, &quot;:&quot;, &quot;isolated&quot;) | (&quot;delivery&quot;, &quot;:&quot;, &quot;disabled&quot;) | (&quot;user-request&quot;, &quot;:&quot;, &quot;explicit&quot;):
+                pass
+            case _:
+                raise model_config.ConfigError(&quot;Unknown target requirement&quot;)
+    if &quot;native_roles&quot; in candidate:
+        roles = expect_object(candidate[&quot;native_roles&quot;], &quot;native_roles&quot;)
+        values = [expect_text(value, &quot;role class&quot;) for value in roles.values()]
+        if not roles or any(not key for key in roles) or set(values) != required or not required:
+            raise model_config.ConfigError(&quot;native_roles must cover exactly the required model classes&quot;)
+
+
+def _resource(name: str, override: str | None) -&gt; str:
+    if override is not None:
+        return override
+    directory = Path(os.path.abspath(__file__)).parent
+    for path in (directory / name, directory.parent / &quot;references&quot; / name):
+        if path.is_file():
+            return str(path)
+    raise model_config.ConfigError(f&quot;{name} missing beside the script and in ../references/&quot;)
+
+
+def resolve(argv: Sequence[str]) -&gt; JsonObject:
+    &quot;&quot;&quot;Compute one decision from CLI-style arguments; print nothing and write nothing.&quot;&quot;&quot;
+    args = _Arguments()
+    parser = _Parser(add_help=False, allow_abbrev=False)
+    for name in (&quot;skill&quot;, &quot;config&quot;, &quot;capabilities&quot;, &quot;operation&quot;, &quot;catalog&quot;, &quot;manifest&quot;, &quot;project-root&quot;):
+        parser.add_argument(f&quot;--{name}&quot;, required=name == &quot;skill&quot;)
+    parser.add_argument(&quot;--json&quot;, action=&quot;store_true&quot;)
+    argument_error: model_config.ConfigError | None = None
+    try:
+        parser.parse_args(argv, namespace=args)
+    except model_config.ConfigError as exc:
+        argument_error = exc
+    bindings: JsonObject = {&quot;requested&quot;: {}, &quot;effective&quot;: {}, &quot;observed&quot;: None}
+    evidence_paths: list[JsonValue] = []
+    record: JsonObject = {&quot;schema_version&quot;: 1, &quot;skill&quot;: args.skill, &quot;operation&quot;: args.operation,
+                          &quot;decision&quot;: &quot;blocked&quot;, &quot;reason_code&quot;: &quot;invalid_config&quot;, &quot;detail&quot;: &quot;&quot;,
+                          &quot;target&quot;: None, &quot;bindings&quot;: bindings, &quot;runtime_home&quot;: None, &quot;evidence_paths&quot;: evidence_paths}
+
+    def finish(decision: Decision, reason: Reason, detail: str) -&gt; JsonObject:
+        return {**record, &quot;decision&quot;: decision, &quot;reason_code&quot;: reason, &quot;detail&quot;: detail}
+
+    try:
+        if argument_error is not None:
+            raise argument_error
+        try:
+            project = Path(path_text(args.project_root or os.getcwd(), &quot;project-root&quot;)).resolve(strict=True)
+        except RuntimeError:
+            raise model_config.ConfigError(&quot;--project-root cannot be resolved&quot;) from None
+        if not project.is_dir():
+            raise model_config.ConfigError(&quot;--project-root must be an existing directory&quot;)
+
+        def consume(value: str | None, field: str) -&gt; JsonObject:
+            if value is None:
+                raise model_config.ConfigError(f&quot;--{field} is required for this operation&quot;)
+            try:
+                path = Path(path_text(value, field)).resolve(strict=True)
+                relative = path.relative_to(project).as_posix()
+                if not path.is_file():
+                    raise model_config.ConfigError(f&quot;--{field} must be a regular file&quot;)
+            except (OSError, RuntimeError, ValueError):
+                raise model_config.ConfigError(f&quot;--{field} must be inside --project-root; evidence paths are repository-relative&quot;) from None
+            with path.open(&quot;rb&quot;) as stream:
+                stream.read(1)
+                evidence_paths.append(relative)
+            return model_config.load_json(str(path))
+
+        manifest = model_config.load_json(_resource(&quot;dependencies.json&quot;, args.manifest))
+        if type(manifest.get(&quot;schema_version&quot;)) is not int or manifest.get(&quot;schema_version&quot;) != 1:
+            raise model_config.ConfigError(&quot;manifest.schema_version must be 1&quot;)
+        skills = expect_object(manifest.get(&quot;skills&quot;), &quot;manifest.skills&quot;)
+        if args.skill not in skills:
+            raise model_config.ConfigError(f&quot;Unknown skill {args.skill!r}&quot;)
+        skill = expect_object(skills[args.skill], &quot;skill&quot;)
+        operation = args.operation if args.operation is not None else expect_text(skill.get(&quot;default_operation&quot;), &quot;default_operation&quot;)
+        record[&quot;operation&quot;] = operation
+        if operation not in expect_strings(skill.get(&quot;operations&quot;), &quot;skill.operations&quot;):
+            raise model_config.ConfigError(f&quot;Unknown operation {operation!r} for {args.skill}&quot;)
+        if (args.skill, operation) in MODEL_FREE:
+            return finish(&quot;owned&quot;, &quot;owned_policy&quot;, &quot;Model-free Thunderkit-owned operation; no model configuration read&quot;)
+        if args.config is None:
+            raise model_config.ConfigError(f&quot;--config is required for model-bearing operation {args.skill} {operation}&quot;)
+        raw_config = consume(args.config, &quot;config&quot;)
+        catalog = model_config.load_json(_resource(&quot;models.json&quot;, args.catalog))
+        cfg, _warnings = model_config.normalize_config(raw_config, catalog)
+        selected: JsonObject = {key: [item for item in value] if isinstance(value, list) else value
+                                for key, value in model_config.selected_models(cfg, catalog).items()}
+        bindings[&quot;requested&quot;] = expect_object(cfg.get(&quot;classes&quot;), &quot;classes&quot;)
+        if cfg.get(&quot;delegation&quot;) == &quot;off&quot;:
+            return finish(&quot;owned&quot;, &quot;disabled&quot;, &quot;Native delegation is disabled&quot;)
+        ecosystems = expect_object(manifest.get(&quot;ecosystems&quot;), &quot;manifest.ecosystems&quot;)
+        allowed = expect_strings(cfg.get(&quot;ecosystems&quot;), &quot;ecosystems&quot;)
+        candidates: list[JsonObject] = []
+        for raw_target in expect_list(skill.get(&quot;targets&quot;), &quot;skill.targets&quot;):
+            target = expect_object(raw_target, &quot;target&quot;)
+            ecosystem = expect_text(target.get(&quot;ecosystem&quot;), &quot;target.ecosystem&quot;)
+            if operation not in expect_strings(target.get(&quot;operations&quot;), &quot;target.operations&quot;) or ecosystem not in allowed:
+                continue
+            pin = expect_object(ecosystems.get(ecosystem), f&quot;ecosystems.{ecosystem}&quot;)
+            candidate: JsonObject = {**target, &quot;package&quot;: pin.get(&quot;package&quot;), &quot;version&quot;: pin.get(&quot;version&quot;),
+                                     &quot;hosts&quot;: pin.get(&quot;hosts&quot;), &quot;pin&quot;: pin}
+            validate_candidate(candidate, pin)
+            candidates.append(candidate)
+        if not candidates:
+            return finish(&quot;owned&quot;, &quot;owned_policy&quot;, &quot;No native target is enabled for this operation&quot;)
+        snapshot = consume(args.capabilities, &quot;capabilities&quot;)
+        if type(snapshot.get(&quot;schema_version&quot;)) is not int or snapshot.get(&quot;schema_version&quot;) != 1:
+            raise model_config.ConfigError(&quot;capabilities.schema_version must be 1&quot;)
+        host = expect_text(snapshot.get(&quot;host&quot;), &quot;host&quot;)
+        compatible = [target for target in candidates if host in expect_strings(target.get(&quot;hosts&quot;), &quot;hosts&quot;)]
+        if not compatible:
+            return finish(&quot;fallback&quot;, &quot;unsupported_host&quot;, f&quot;No enabled target supports host {host!r}&quot;)
+        request = Request(host, project, selected, catalog)
+        failures: list[JsonObject] = []
+        for candidate in compatible:
+            record[&quot;target&quot;] = {field: candidate[field] for field in TARGET_FIELDS}
+            verdict = capability_gates.qualify(candidate, snapshot, request)
+            if verdict.decision == &quot;delegate&quot;:
+                bindings[&quot;effective&quot;] = verdict.effective
+                record[&quot;runtime_home&quot;] = verdict.runtime_home
+                return finish(verdict.decision, verdict.reason, verdict.detail)
+            failures.append(finish(verdict.decision, verdict.reason, verdict.detail))
+        return failures[0]
+    except (model_config.ConfigError, ValueError, OSError) as exc:
+        return finish(&quot;blocked&quot;, &quot;invalid_config&quot;, str(exc))
+
+
+def main(argv: Sequence[str] | None = None) -&gt; int:
+    &quot;&quot;&quot;Emit one routing result, keeping JSON stdout separate from diagnostics.&quot;&quot;&quot;
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    result = resolve(arguments)
+    if &quot;--json&quot; in arguments:
+        print(json.dumps(result))
+    else:
+        print(f&quot;{result[&#x27;skill&#x27;]} {result[&#x27;operation&#x27;]}: {result[&#x27;decision&#x27;]} ({result[&#x27;reason_code&#x27;]})&quot;)
+    print(result[&quot;detail&quot;], file=sys.stderr)
+    if result[&quot;reason_code&quot;] == &quot;invalid_config&quot;:
+        return 2
+    return 1 if result[&quot;decision&quot;] == &quot;blocked&quot; else 0
+
+
+if __name__ == &quot;__main__&quot;:
+    raise SystemExit(main())
+</code></pre>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

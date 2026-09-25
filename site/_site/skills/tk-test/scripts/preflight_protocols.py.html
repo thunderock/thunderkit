@@ -1,0 +1,286 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>preflight_protocols — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="../../../index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="../../../index.html">Home</a><a href="../../../north-star.html">North Star</a><a href="../../../roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<pre><code>&quot;&quot;&quot;Decode completion evidence without treating configuration as serving identity.&quot;&quot;&quot;
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import StrEnum
+import json
+from math import ceil, isfinite
+import re
+from typing import Final, Literal, TypeAlias, assert_never
+
+from model_config import JsonObject, JsonValue
+
+Status: TypeAlias = Literal[&quot;reachable&quot;, &quot;unverified&quot;, &quot;unreachable&quot;, &quot;substituted&quot;, &quot;malformed&quot;, &quot;not-installed&quot;, &quot;timeout&quot;]
+PING: Final = &quot;Reply with exactly one word: pong&quot;
+
+
+class Harness(StrEnum):
+    CLAUDE = &quot;claude&quot;
+    CODEX = &quot;codex&quot;
+    HERMES = &quot;hermes&quot;
+    OPENCODE = &quot;opencode&quot;
+
+
+@dataclass(frozen=True, slots=True)
+class Wire:
+    harness: Harness
+    provider: str
+    model_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class Outcome:
+    wire: Wire
+    status: Status
+    reason_code: str
+    observed_models: tuple[str, ...] = ()
+    session_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Reply:
+    text: str
+    session: JsonValue
+    models: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ProtocolError(ValueError):
+    reason_code: str = &quot;malformed&quot;
+
+    def __str__(self) -&gt; str:
+        return self.reason_code
+
+
+def mapping(value: JsonValue) -&gt; JsonObject:
+    if not isinstance(value, dict):
+        raise ProtocolError()
+    return value
+
+
+def text(value: JsonValue) -&gt; str:
+    if not isinstance(value, str):
+        raise ProtocolError()
+    return value
+
+
+def integer(value: JsonValue) -&gt; int:
+    if not isinstance(value, int) or isinstance(value, bool) or value &lt; 0:
+        raise ProtocolError()
+    return value
+
+
+def _pairs(pairs: list[tuple[str, JsonValue]]) -&gt; JsonObject:
+    result: JsonObject = {}
+    for key, value in pairs:
+        if key in result:
+            raise ProtocolError()
+        result[key] = value
+    return result
+
+
+def _finite(number: str) -&gt; float:
+    value = float(number)
+    if not isfinite(value):
+        raise ProtocolError()
+    return value
+
+
+def command(wire: Wire, timeout: float) -&gt; list[str]:
+    match wire.harness:
+        case Harness.CLAUDE:
+            return [&quot;claude&quot;, &quot;-p&quot;, PING, &quot;--model&quot;, wire.model_id, &quot;--output-format&quot;, &quot;json&quot;, &quot;--tools&quot;, &quot;&quot;, &quot;--max-turns&quot;, &quot;1&quot;]
+        case Harness.CODEX:
+            return [&quot;codex&quot;, &quot;exec&quot;, &quot;--json&quot;, &quot;--skip-git-repo-check&quot;, &quot;--sandbox&quot;, &quot;read-only&quot;, &quot;-m&quot;, wire.model_id, PING]
+        case Harness.HERMES:
+            return [&quot;hermes&quot;, &quot;chat&quot;, &quot;-q&quot;, PING, &quot;--oneshot&quot;, &quot;--format&quot;, &quot;stream-json&quot;, &quot;--provider&quot;, wire.provider,
+                    &quot;-m&quot;, wire.model_id, &quot;--max-turns&quot;, &quot;1&quot;, &quot;--run-budget&quot;, str(ceil(timeout)), &quot;--source&quot;, &quot;tool&quot;]
+        case Harness.OPENCODE:
+            return [&quot;opencode&quot;, &quot;run&quot;, &quot;--format&quot;, &quot;json&quot;, &quot;-m&quot;, f&quot;{wire.provider}/{wire.model_id}&quot;, PING]
+        case unreachable:
+            assert_never(unreachable)
+
+
+def _session(harness: Harness, value: JsonValue) -&gt; str | None:
+    pattern = {Harness.CLAUDE: r&quot;[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}&quot;,
+               Harness.CODEX: r&quot;[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}&quot;,
+               Harness.HERMES: r&quot;[A-Za-z0-9][A-Za-z0-9_-]{0,127}&quot;, Harness.OPENCODE: r&quot;ses_[A-Za-z0-9]{1,128}&quot;}
+    return value if isinstance(value, str) and re.fullmatch(pattern[harness], value) else None
+
+
+def _claude(record: JsonObject) -&gt; Reply:
+    if record[&quot;type&quot;] != &quot;result&quot; or type(record.get(&quot;is_error&quot;)) is not bool:
+        raise ProtocolError()
+    if record[&quot;is_error&quot;] or text(record.get(&quot;subtype&quot;)) != &quot;success&quot; or record.get(&quot;errors&quot;):
+        raise ProtocolError(&quot;terminal_error&quot;)
+    models = tuple(model for model, usage in mapping(record.get(&quot;modelUsage&quot;, {})).items()
+                   if integer(mapping(usage).get(&quot;outputTokens&quot;)) &gt; 0)
+    return Reply(text(record.get(&quot;result&quot;)), record.get(&quot;session_id&quot;), models)
+
+
+def _codex(events: list[JsonObject]) -&gt; Reply:
+    if any(event[&quot;type&quot;] == &quot;turn.failed&quot; for event in events) or events[-1][&quot;type&quot;] == &quot;error&quot;:
+        raise ProtocolError(&quot;terminal_error&quot;)
+    if events[0][&quot;type&quot;] != &quot;thread.started&quot;:
+        raise ProtocolError()
+    session = text(events[0].get(&quot;thread_id&quot;))
+    active, completed, answer = False, False, &quot;&quot;
+    for event in events[1:]:
+        match event[&quot;type&quot;]:
+            case &quot;turn.started&quot;:
+                if active or completed:
+                    raise ProtocolError()
+                active = True
+            case &quot;turn.completed&quot;:
+                if not active or completed:
+                    raise ProtocolError()
+                mapping(event.get(&quot;usage&quot;))
+                active, completed = False, True
+            case &quot;error&quot;:
+                text(event.get(&quot;message&quot;))
+                if not active:
+                    raise ProtocolError(&quot;terminal_error&quot;)
+            case &quot;item.started&quot; | &quot;item.updated&quot; | &quot;item.completed&quot;:
+                if not active:
+                    raise ProtocolError()
+                item = mapping(event.get(&quot;item&quot;))
+                match text(item.get(&quot;type&quot;)):
+                    case &quot;agent_message&quot;:
+                        content = text(item.get(&quot;text&quot;))
+                        if event[&quot;type&quot;] == &quot;item.completed&quot;:
+                            answer = content
+                    case &quot;reasoning&quot;:
+                        text(item.get(&quot;text&quot;))
+                    case &quot;error&quot;:
+                        if text(item.get(&quot;message&quot;)).casefold().startswith(&quot;model rerouted:&quot;):
+                            raise ProtocolError(&quot;model_mismatch&quot;)
+                    case &quot;command_execution&quot; | &quot;mcp_tool_call&quot; | &quot;web_search&quot; | &quot;todo_list&quot;:
+                        raise ProtocolError(&quot;tool_activity&quot;)
+                    case _:
+                        raise ProtocolError()
+            case _:
+                raise ProtocolError()
+    if not completed or not answer:
+        raise ProtocolError(&quot;missing_completion&quot;)
+    return Reply(answer, session)
+
+
+def _hermes(events: list[JsonObject]) -&gt; Reply:
+    terminal = events[-1]
+    if any(event[&quot;type&quot;] in (&quot;tool_use&quot;, &quot;tool_result&quot;) for event in events):
+        raise ProtocolError(&quot;tool_activity&quot;)
+    if any(event[&quot;type&quot;] == &quot;result&quot; and (integer(event.get(&quot;exit_code&quot;)) != 0 or event.get(&quot;error&quot;)) for event in events):
+        raise ProtocolError(&quot;terminal_error&quot;)
+    if events[0][&quot;type&quot;] != &quot;system&quot; or events[0].get(&quot;subtype&quot;) != &quot;init&quot;:
+        raise ProtocolError()
+    text(events[0].get(&quot;model&quot;))
+    if terminal[&quot;type&quot;] != &quot;result&quot;:
+        raise ProtocolError(&quot;missing_completion&quot;)
+    for event in events[1:-1]:
+        if event[&quot;type&quot;] != &quot;text&quot;:
+            raise ProtocolError()
+        text(event.get(&quot;text&quot;))
+    if terminal.get(&quot;session_id&quot;) != events[0].get(&quot;session_id&quot;):
+        raise ProtocolError()
+    return Reply(text(terminal.get(&quot;text&quot;)), terminal.get(&quot;session_id&quot;))
+
+
+def _opencode(events: list[JsonObject]) -&gt; Reply:
+    if any(event[&quot;type&quot;] == &quot;error&quot; for event in events):
+        raise ProtocolError(&quot;terminal_error&quot;)
+    if any(event[&quot;type&quot;] == &quot;tool_use&quot; for event in events):
+        raise ProtocolError(&quot;tool_activity&quot;)
+    session = text(events[0].get(&quot;sessionID&quot;))
+    message, answer, completed = &quot;&quot;, &quot;&quot;, False
+    for event in events:
+        part = mapping(event.get(&quot;part&quot;))
+        if event.get(&quot;sessionID&quot;) != session or part.get(&quot;sessionID&quot;) != session:
+            raise ProtocolError()
+        if event[&quot;type&quot;] == &quot;step_start&quot;:
+            message = text(part.get(&quot;messageID&quot;))
+            answer, completed = &quot;&quot;, False
+        if not message or part.get(&quot;messageID&quot;) != message:
+            raise ProtocolError()
+        match event[&quot;type&quot;]:
+            case &quot;step_start&quot;:
+                if part.get(&quot;type&quot;) != &quot;step-start&quot;:
+                    raise ProtocolError()
+            case &quot;text&quot;:
+                if completed or part.get(&quot;type&quot;) != &quot;text&quot;:
+                    raise ProtocolError()
+                integer(mapping(part.get(&quot;time&quot;)).get(&quot;end&quot;))
+                answer = text(part.get(&quot;text&quot;))
+            case &quot;step_finish&quot;:
+                if completed or part.get(&quot;type&quot;) != &quot;step-finish&quot;:
+                    raise ProtocolError()
+                completed = text(part.get(&quot;reason&quot;)) == &quot;stop&quot;
+            case &quot;reasoning&quot;:
+                text(part.get(&quot;text&quot;))
+            case _:
+                raise ProtocolError()
+    if not completed or not answer:
+        raise ProtocolError(&quot;missing_completion&quot;)
+    return Reply(answer, session)
+
+
+def decode(wire: Wire, output: str) -&gt; Outcome:
+    try:
+        chunks = [output] if wire.harness == Harness.CLAUDE else output.splitlines()
+        events = [mapping(json.loads(chunk, object_pairs_hook=_pairs, parse_constant=_finite, parse_float=_finite))
+                  for chunk in chunks]
+        if not events or any(not text(event.get(&quot;type&quot;)) for event in events):
+            raise ProtocolError()
+        match wire.harness:
+            case Harness.CLAUDE:
+                reply = _claude(events[0])
+            case Harness.CODEX:
+                reply = _codex(events)
+            case Harness.HERMES:
+                reply = _hermes(events)
+            case Harness.OPENCODE:
+                reply = _opencode(events)
+            case unreachable:
+                assert_never(unreachable)
+        session = _session(wire.harness, reply.session)
+        if reply.models and reply.models != (wire.model_id,):
+            return Outcome(wire, &quot;substituted&quot;, &quot;model_mismatch&quot;, reply.models, session)
+        if reply.text.strip().casefold() != &quot;pong&quot;:
+            return Outcome(wire, &quot;unreachable&quot;, &quot;unexpected_response&quot;, reply.models, session)
+        if not reply.models:
+            return Outcome(wire, &quot;unverified&quot;, &quot;identity_unavailable&quot;, session_id=session)
+        return Outcome(wire, &quot;reachable&quot;, &quot;verified&quot;, reply.models, session)
+    except ProtocolError as exc:
+        statuses: dict[str, Status] = {&quot;malformed&quot;: &quot;malformed&quot;, &quot;model_mismatch&quot;: &quot;substituted&quot;}
+        return Outcome(wire, statuses.get(exc.reason_code, &quot;unreachable&quot;), exc.reason_code)
+    except (ValueError, RecursionError):
+        return Outcome(wire, &quot;malformed&quot;, &quot;malformed&quot;)
+</code></pre>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

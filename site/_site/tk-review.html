@@ -24,45 +24,84 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
-<span class="tag">skill</span><h2>tk-review</h2><p class="mut">Use to review and verify completed big-repo work: fans a diff to two-plus model families for cross-family review, consolidates findings by severity, and runs each lane&#x27;s verification command so done means evidence, not intent.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-review -g</code></p><hr><h1>tk-review — cross-family review + evidence gate</h1>
-<h2>Two modes</h2>
-<ul><li><strong><code>tk-review</code> (default)</strong> — review a completed diff (post-execute). Both jobs below.</li><li><strong><code>tk-review --plan</code></strong> — review the *plan* before execution (the plan-check gate, lifecycle</li></ul>
-<p>  stage 8). Fan <code>PLAN.md</code>/<code>plan.json</code> to the reviewer families and check: are lanes truly   disjoint, does every lane have a runnable verify, are the dependency layers acyclic, do lanes   cite real symbols (not hallucinated names)? Output <code>.thunderkit/PLAN-REVIEW.md</code>. <code>tk-execute</code>   refuses to start when <code>review_families_min ≥ 2</code> and no <code>PLAN-REVIEW.md</code> exists.</p>
-<h2>The two jobs (default mode)</h2>
-<p><code>tk-review</code> does two inseparable jobs (merged by design):</p>
-<ol><li><strong>Cross-family review</strong> — fan the change to <strong>≥2 model families</strong> and consolidate. A model</li></ol>
-<p>   family reviewing its own output is not review; the author&#x27;s family cannot be the only reviewer.</p>
-<ol><li><strong>Evidence gate</strong> — run each lane&#x27;s <code>verify</code> command. A lane without a passing verification is</li></ol>
-<p>   <strong>not done</strong> — it&#x27;s blocked. Done means evidence, never intent.</p>
-<p>Preferred reviewers: <strong>Sol + Opus 5</strong> (at least one different from whoever authored the lane). Verification runs on <strong>Fable 5.1</strong> (running commands is cheap). See <code>../references/model-roster.md</code>.</p>
-<h2>Cross-family review procedure</h2>
-<ol><li><strong>Identify the author family</strong> per lane (from <code>.thunderkit/runs/&lt;lane-id&gt;</code>). Choose reviewers</li></ol>
-<p>   from *other* families — if Opus authored, review with Sol (+ Opus 5 as the strong same-lineage    second, but never Opus alone).</p>
-<ol><li><strong>Fan the diff</strong> to each reviewer via portable dispatch (roster dispatch table). Send the lane</li></ol>
-<p>   diff, its acceptance criteria, and the goal. Ask each for findings with severity    (blocker / major / minor / nit) and a file:line anchor.</p>
-<ol><li><strong>Consolidate</strong> — merge reviewer outputs, dedupe overlapping findings, keep the highest</li></ol>
-<p>   severity when they disagree, and record *which reviewer* raised each (families disagree — that    disagreement is signal, preserve it).</p>
-<ol><li><strong>Show each reviewer&#x27;s model</strong> inline: <code>(Sol)</code>, <code>(Opus 5)</code>. Best-effort reviewers (Sol is</li></ol>
-<p>   credit-capped) that fail are dropped with a note, not silently omitted.</p>
-<h2>Evidence gate procedure</h2>
-<p>For every lane in the plan:</p>
-<ol><li>Run its <code>verify</code> command from <code>plan.json</code>.</li><li>Record pass / fail / blocked with the actual command output (truncated), not a summary.</li><li>A lane is <strong>done</strong> only if: verify passes <strong>and</strong> it has no unresolved blocker-severity review</li></ol>
-<p>   finding. Otherwise it&#x27;s <code>blocked</code> — name what&#x27;s needed.</p>
-<h2>Output contract — <code>.thunderkit/REVIEW.md</code></h2>
-<pre><code>## Lane L0-auth-token-refresh
-- Author: Opus 4.8 | Reviewers: Sol, Opus 5
-- Verify: `cargo test -p auth token::` → PASS (12 passed)
-- Findings:
-  - [major] (Sol) src/auth/token.rs:88 — backoff not jittered; thundering herd on mass expiry
-  - [nit] (Opus 5) src/auth/token.rs:40 — name `t` → `token`
-- Status: BLOCKED (1 major unresolved)</code></pre>
-<p>Plus a roll-up: N lanes, X done, Y blocked, and the consolidated blocker list that must clear before the change is shippable.</p>
-<h2>Opinions this skill enforces</h2>
-<ul><li><strong>≥2 families or it&#x27;s not a review.</strong> If only one family is available/authed, say the review is</li></ul>
-<p>  single-family (reduced confidence) and name what to install for a real cross-family pass —   don&#x27;t quietly downgrade.</p>
-<ul><li><strong>No verify, not done.</strong> A lane whose verify can&#x27;t run is blocked, full stop.</li><li><strong>Preserve disagreement.</strong> When families split on a finding, record both positions; don&#x27;t</li></ul>
-<p>  average them into mush.</p>
-<h2>Degrade honestly</h2>
-<p>Sol credit-capped (429) and no other second family authed? Report the review as best-effort single-family, list the specific blocker findings you *could* get, and recommend the login that restores a cross-family gate. Never present a single-family pass as a full review.</p>
+<span class="tag">reviewer</span><span class="tag">review</span><h2>tk-review</h2><p class="mut">Use for independent cross-family review of a plan before execution or a completed diff: preserve selected reviewers, consolidate evidence-backed findings and disagreements, and block approval on insufficient actual families, stale targets, unresolved blocker or major findings, or missing verification.</p><p>Delegates: omh:reviewer/omh-code-review</p><p>Contract: 1</p><p>Python 3.11+ for the bundled read-only resolver; explicit project model choices and supported, model-bound read-only reviewer channels. Optional native diff component requires the pinned Hermes peer and every operation-specific provenance, tool and binding gate.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-review -g</code></p><hr><h1 id="tk-review--cross-family-review--evidence-gate">tk-review — cross-family review + evidence gate</h1>
+<p>Thunderkit owns reviewer selection, independence, family coverage, consolidation and completion. A native review is one read-only reviewer component, never the panel or its final authority.</p>
+<h2 id="two-modes">Two modes</h2>
+<ul><li><strong><code>tk-review</code></strong> selects operation <code>diff</code> (the default): independently review the completed</li></ul>
+<p>  source/diff and run every required lane verification on the actual reviewed tree.</p>
+<ul><li><strong><code>tk-review --plan</code></strong> — review the *plan* before execution (the plan-check gate, lifecycle</li></ul>
+<p>  stage 8). Fan <code>PLAN.md</code>/<code>plan.json</code> to the reviewer families and check: are lanes truly   disjoint, does every lane have a runnable verify, are the dependency layers acyclic, do lanes   cite real symbols (not hallucinated names)? Output <code>.thunderkit/PLAN-REVIEW.md</code>. <code>tk-execute</code>   requires the current identity-bound independent plan-review gate below, not mere report   existence, plus native acceptance when applicable. Select operation <code>plan</code>; keep it owned,   not aliased to a code-review target. Check acceptance coverage and frozen paths as well.</p>
+<p>Before dispatch, freeze one common target for every reviewer of the lane or plan:</p>
+<ul><li>Actual project/worktree, operation, scope and excluded paths, constraints and acceptance criteria.</li><li>For <code>diff</code>: base and head commit/tree identities, the exact diff&#x27;s SHA-256, and the content</li></ul>
+<p>  identities of any included staged, unstaged or untracked changes. Name excluded local changes.   Bind the approved plan and relevant model/config snapshot to the review as well.</p>
+<ul><li>For <code>plan</code>: exact paths and SHA-256 values for <strong>both plan artifacts defined above</strong>, the</li></ul>
+<p>  referenced source revision/tree, model/config snapshot, and any native plan plus its real acceptance evidence.   Preserve native plan paths and bytes; a normalized summary cannot replace their identity.</p>
+<p>Missing identity blocks approval. A plan pass applies only to that plan and its constraints, not implementation correctness; a diff pass cannot retroactively approve a plan. Native plan acceptance and the independent plan review are separate prerequisites to execution. Check both for the current target, not merely whether a report file exists.</p>
+<h2 id="reviewer-selection">Reviewer selection</h2>
+<p>Read this skill&#x27;s <a href="skills/tk-review/references/model-roster.md.html">model-roster.md</a>, <a href="skills/tk-review/references/models.json.html">models.json</a> and <a href="skills/tk-review/references/config.schema.json.html">config.schema.json</a>. Validate the actual project config using the bundled <a href="skills/tk-review/scripts/model_config.py.html">model_config.py</a>; preserve all selected classes, list order, literal reviewers <code>&quot;all&quot;</code>, <code>review_families_min</code> (integer at least 2) and <code>frozen_paths</code>. Recognized legacy input produces only an in-memory preview/warning, never an automatic rewrite.</p>
+<ul><li>Every explicitly selected reviewer must return independent, identity-verified evidence for</li></ul>
+<p>  the same target. Preferred models or cheap verification never override the selected class.</p>
+<ul><li><code>&quot;all&quot;</code> considers every catalog model, not just planner/executor choices or the current host&#x27;s</li></ul>
+<p>  native subset. Keep each unavailable optional candidate and its actual failure visible.   A candidate explicitly required elsewhere remains required; do not make it optional here.</p>
+<ul><li>Count distinct <strong>catalog families of actual verified responding reviewers</strong>, not configured</li></ul>
+<p>  labels, providers, harnesses, native roles or successful preflight requests. Opus 4.8, Opus 5   and Fable 5.1 are one <code>anthropic</code> family, even on different providers; Sol is <code>openai</code>.</p>
+<ul><li>Establish the author&#x27;s actual family per lane, or the planner-author&#x27;s family for plan review,</li></ul>
+<p>  from genuine run evidence. At least one responding reviewer family must differ from the author.   Missing author/reviewer identity is unverified, not an inferred match from configuration.</p>
+<ul><li>Quota, timeout or lost second-family access never lowers the minimum, removes an explicit</li></ul>
+<p>  reviewer, or turns single-family findings into a pass. Retain useful partial findings and block.</p>
+<p>The current preflight adapters cannot establish two verified families from their native formats. Do not convert requested IDs, initialization fields, a pong, or synthetic fixture results into observed serving identity. Review completion needs its own genuine identity-bound evidence.</p>
+<h2 id="delegation">Delegation</h2>
+<p>Follow <a href="skills/tk-review/references/delegation.md.html">delegation.md</a> and the exact operation map in <a href="skills/tk-review/references/dependencies.json.html">dependencies.json</a>. Resolve <code>TK_REVIEW_ROOT</code> to the directory containing this loaded skill, and <code>PROJECT_ROOT</code> to the actual reviewed project/worktree, not the skill installation or an arbitrary directory that makes a path check pass. Use only bundled resources; missing assets are a blocked prerequisite, not a reason to borrow a checkout copy.</p>
+<p>For native diff consideration, <code>CAPABILITIES</code> must name a real, project-contained snapshot of current host descriptors, loaded provenance, tools and effective reviewer bindings. Config and capability paths must resolve inside the explicit project root without escaping via symlinks.</p>
+<pre><code>python3 &quot;$TK_REVIEW_ROOT/scripts/tk-resolve.py&quot; \
+  --skill tk-review --operation diff --project-root &quot;$PROJECT_ROOT&quot; \
+  --config &quot;$PROJECT_ROOT/.thunderkit/config.json&quot; --capabilities &quot;$CAPABILITIES&quot; --json</code></pre>
+<p>Plan review has no native target and needs no native capability snapshot:</p>
+<pre><code>python3 &quot;$TK_REVIEW_ROOT/scripts/tk-resolve.py&quot; \
+  --skill tk-review --operation plan --project-root &quot;$PROJECT_ROOT&quot; \
+  --config &quot;$PROJECT_ROOT/.thunderkit/config.json&quot; --json</code></pre>
+<p>Only <code>diff</code> may use <code>omh:reviewer/omh-code-review</code>, in registry mode <strong><code>component</code></strong> on Hermes. Its package is <code>oh-my-hermes@2.0.3</code>, selector <code>reviewer/omh-code-review</code>, bare skill name <code>omh-code-review</code>, and manifest canonical name <code>code-review</code>. These identify different fields, not interchangeable invocation aliases. Require <code>tool:skill</code> and <code>model-binding:reviewers</code>. Verify the pinned package/source/root identity, loaded entrypoint and SHA-256 of <strong>every</strong> file in the registry provenance map, including <code>references/review-dispatch.md</code>, <code>review-response.md</code>, <code>smell-baseline.md</code> under that native skill and <code>guide/omh-routing/references/skill-common-rail.md</code> under the peer&#x27;s skills root. The bundle root containing <code>manifest.json</code> is not <code>HERMES_HOME</code>. Present, loaded, source-compatible, model-bound and result-verified are separate checks; a quarantined skill, self-reported checksum or missing companion is not eligible.</p>
+<p>On <code>delegate</code>, invoke only the verified categorized selector through the host&#x27;s actual supported skill/reviewer channel, bound to the particular selected reviewer, with the common immutable target and read-only constraints. Preserve all requested selections and per-member associations; do not narrow the config to qualify a component. Hermes has no catalog Sol mapping. A compatible same-family native subset, including under <code>&quot;all&quot;</code>, cannot supply the missing independent family. Do not alias OMO <code>review-work</code>&#x27;s single gate-reviewer workflow to this panel or to plan review.</p>
+<p>Binding is required on <strong>every</strong> route, including owned/off/fallback. Verify a real read-only channel&#x27;s effective provider/wire-model and supported effort against the selected catalog member before dispatch; a valid config or arbitrary root session is not binding. OMO <code>task()</code> has no model argument and <code>load_skills</code> only injects text; use proven effective agent/category mappings, not a prompt asking for a different model. Do not assume a live root changes after a config edit. Never change global settings, auth, providers, effort or fallback chains to make a route succeed.</p>
+<p>If an OMH channel uses <code>omh_delegate_route</code>, apply the common existing task-owned local-disk home, identical actual parent/dispatcher home, plugin, consent and set → dispatch → clear rules. Passing a different path does not rebind a running dispatcher. The controller owns routing; the read-only reviewer cannot reconfigure it. Otherwise use an already-proven nonmutating binding. If the host cannot enforce the component&#x27;s read-only boundary, do not invoke it.</p>
+<p>Keep the resolver&#x27;s fixed decision record unchanged, including requested/effective bindings, null pre-invocation observation, target, reason and evidence paths. Exit 0 is only a computed route; <code>blocked</code> or malformed input stops dispatch. Record later invocation failures/results separately rather than rewriting a <code>delegate</code> decision into a claimed completion.</p>
+<h2 id="fallback">Fallback</h2>
+<ul><li><code>plan</code>, no enabled target, or <code>delegation: off</code>: use the owned independent-review procedure.</li></ul>
+<p>  Off still validates choices but omits native capability discovery and peer invocation,   installation, doctor and native routing tools; the local resolver itself dispatches nothing.</p>
+<ul><li>A named native denial permits owned diff review only through proven selected read-only</li></ul>
+<p>  channels with the same scope, evidence and family gates. Missing configuration, binding,   required reviewer or family remains blocked even if the resolver can compute an owned route.</p>
+<ul><li>Missing peer/runtime/tools/provenance: preserve the exact reason; provide operator guidance</li></ul>
+<p>  without installations, logins, config repairs, guessed aliases or automatic substitutions.</p>
+<ul><li>On uncertain timeout/in-flight work, preserve captured session IDs, artifacts and partial</li></ul>
+<p>  output as unknown/unverified. Inspect the original session and reconcile ownership before   any retry, replacement reviewer or fallback dispatch; do not create duplicate owners.</p>
+<p>Before transitions to <code>tk-router</code>, <code>tk-plan</code>, <code>tk-execute</code> or another sibling, check that the skill is actually available. If absent, name the missing prerequisite; never read a presumed sibling checkout path or install it implicitly. A component invocation adds no write, fix or ship authority.</p>
+<h2 id="independent-review">Independent review</h2>
+<ol><li>Give each selected reviewer a separate read-only session with the same source/diff or plan</li></ol>
+<p>   snapshot, goal, acceptance criteria, model/scope constraints and frozen paths. Do not share    another reviewer&#x27;s conclusions as authority or reuse the author&#x27;s session as a reviewer.</p>
+<ol><li>Collect findings with severity <code>blocker / major / minor / nit</code>, source file:line (or exact</li></ol>
+<p>   plan section), concrete evidence, impact and an actionable fix. Keep genuine no-finding    responses as well as failures, partial outputs, identities and native artifact references.</p>
+<ol><li>Consolidate only after independent responses. Dedupe the same issue while retaining every</li></ol>
+<p>   originating reviewer, evidence and disagreement. Use the highest <strong>supported</strong> severity,    not a majority vote or the loudest unsupported claim. Request concrete evidence before    retaining a severe claim; keep pending/disputed claims visible and do not pass an unresolved    assessment. Record evidence-based resolution rather than erasing contrary findings.</p>
+<ol><li>Return code fixes to the selected executor and plan revisions to the selected planner;</li></ol>
+<p>   reviewers do not patch, weaken tests, alter scope/frozen paths, change thresholds or ship.    Stay within the caller&#x27;s approved correction/review budget; absent one, return after this    review round rather than start an automatic fix loop. Re-review affected targets after a    correction with fresh independent evidence; exhausted budgets leave an explicit block.</p>
+<h2 id="evidence-gate">Evidence gate</h2>
+<p>For <code>diff</code>, run <strong>every</strong> required lane <code>verify</code> command from <code>plan.json</code> on the actual reviewed tree, using a proven selected reviewer/verifier channel rather than a hardcoded cheap model. Record command/argv, cwd, source/tree/diff identity, exit status, pass/fail/blocked and actual sanitized output/results. Keep full local evidence and clearly label truncated excerpts. Do not run destructive or out-of-scope commands; missing safe authorization/tooling is blocked, not a skipped check or a weakened replacement test. Keep generated caches/output in allowed local runtime paths without altering reviewed source or frozen paths.</p>
+<p>For <code>plan</code>, check every lane has a real runnable verification command and run required plan validation checks against the referenced tree with the same cwd/status/result evidence. Do not claim unexecuted implementation checks passed, or run implementation/fix work to produce a plan approval. Preserve any applicable native acceptance and explicit user approval separately.</p>
+<p>A lane or plan passes only when <strong>all</strong> required reviewers supplied independent verified evidence, actual family coverage meets the unchanged minimum with a family different from the author, all required checks succeeded for this operation, and no unresolved <strong>blocker or major</strong> finding or assessment remains. Minor/nit findings remain visible. Report partial/single-family coverage as blocked, never as reduced-confidence completion.</p>
+<p>Recheck identities before accepting: any target bytes, source/diff, native plan/acceptance, relevant model binding/selection or scope/constraint change invalidates the affected gate. A stale report, file existence, process exit 0, one native PASS or missing identity cannot certify completion. Diff verification, plan approval and delivery authorization stay distinct.</p>
+<h2 id="output-contract">Output contract</h2>
+<p>Write the consolidated diff result to <code>.thunderkit/REVIEW.md</code> or the plan result to <code>.thunderkit/PLAN-REVIEW.md</code>, with supporting run evidence in the project&#x27;s local runtime area. Keep native artifacts at their real paths and reference their SHA-256 values; do not rename or mirror native state into a competing workflow.</p>
+<p>Include, per lane or plan:</p>
+<ul><li>Operation and common immutable target, approved scope/constraints, relevant config snapshot</li></ul>
+<p>  and current native acceptance where applicable; plan approval is not diff verification.</p>
+<ul><li>Author and reviewer requested catalog model/family, effective host/provider/model/effort and</li></ul>
+<p>  catalog family, and separately observed serving model and its catalog family. Never infer   observed provider or family from requested settings. Unknown facts remain null/unverified.</p>
+<ul><li>Preserved resolver decision plus separate invocation records using the common delegated-run</li></ul>
+<p>  fields: <code>lane_id</code>, <code>ecosystem</code>, <code>package_version</code>, <code>skill_name</code>, <code>requested_model</code>,   <code>effective_model</code>, <code>observed_model</code>, <code>observed_family</code>, <code>artifact</code>, <code>artifact_sha256</code>,   <code>session_id</code>, <code>status</code>, <code>evidence_paths</code>. Capture genuine IDs/hashes, not placeholders or   guessed resume commands; a captured ID does not prove a session remains runnable.</p>
+<ul><li>Explicit reviewer order or the unchanged <code>&quot;all&quot;</code> request and candidate outcomes, actual</li></ul>
+<p>  verified family count versus the minimum, author-family comparison and all missing evidence.</p>
+<ul><li>Findings with attribution, locations, supporting evidence, actionable fixes, resolution and</li></ul>
+<p>  disagreement; required commands with actual cwd/status/results; pass/fail/blocked reasons.</p>
+<p>Roll up reviewed, passed and blocked lanes plus unresolved blocker <strong>and major</strong> findings and the selected owner of each required correction.</p>
 <footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
 </div></body></html>
