@@ -5,6 +5,7 @@ import { chmodSync, cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync 
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { prepareArtifact, verifyArtifact, checkToolchain, hashTarball } from "../tools/release/artifact.mjs";
+import { readObject } from "./helpers/release_artifact.mjs";
 import { child, createFixture, destroyFixture, git, isolated, journalOf, manual, moveSource, programs, saveEvidence, commit } from "./helpers/release_workspace.mjs";
 
 /** @typedef {import("./helpers/release_workspace.mjs").Fixture} Fixture */
@@ -41,7 +42,9 @@ test("preparing a manual candidate packs exactly the tracked payload at the stam
   assert.equal(release.tarball.integrity, sha512(tarball));
   assert.equal(release.tarball.size, readFileSync(tarball).length);
   assert.deepEqual(release.toolchain, { nodeMajor: 24, npm: "11.19.1", pythonMinor: "3.12" });
-  const tracked = git(f.checkoutDir, ["ls-files"]).split("\n").filter((path) => /^(skills\/|bin\/|NORTH_STAR\.md$|package\.json$|README\.md$|LICENSE$)/.test(path));
+  const selected = readObject(join(f.checkoutDir, "package.json")).files;
+  const tracked = git(f.checkoutDir, ["ls-files"]).split("\n").filter((path) => /^(skills\/|bin\/|NORTH_STAR\.md$|package\.json$|README\.md$|LICENSE$)/.test(path)
+    || (path === "DEPENDENCIES.md" && Array.isArray(selected) && selected.includes(path)));
   assert.deepEqual(memberNames(tarball), tracked.map((path) => `package/${path}`).sort());
   assert.equal(JSON.parse(readFileSync(join(f.workspace.stageDir, "package.json"), "utf8")).version, "0.1.2");
   assert.equal(JSON.parse(readFileSync(join(f.checkoutDir, "package.json"), "utf8")).version, "0.1.1");

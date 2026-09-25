@@ -72,7 +72,7 @@ function packageIdentity(directory) {
       || !isObject(pkg.repository) || pkg.repository.url !== "git+https://github.com/thunderock/thunderkit.git"
       || !isObject(pkg.bin) || Object.keys(pkg.bin).length !== 1 || pkg.bin.thunderkit !== "bin/thunderkit.js"
       || (pkg.publishConfig !== undefined && (!isObject(pkg.publishConfig) || Object.keys(pkg.publishConfig).length !== 0))) abort("E_ARTIFACT");
-  return pkg.version;
+  return pkg;
 }
 /** Confirm the pinned release tools before any stamping or packing. @param {string} cwd @returns {Result<typeof toolchain>} */
 export function checkToolchain(cwd) {
@@ -111,11 +111,11 @@ function materializeSource(request, checkoutDir, destination) {
     rmSync(scratch, { recursive: true, force: true });
   }
 }
-/** Independently derived payload allowlist over tracked source paths. @param {string} path */
-function payloadPath(path) {
+/** Independently derived payload allowlist over tracked source paths. @param {string} path @param {boolean} dependencies */
+function payloadPath(path, dependencies) {
   if (/(^|\/)(\.[^/]*|node_modules|__pycache__)(\/|$)/.test(path) || /\.(?:pyc|pem|key|tgz|log)$/.test(path)) return false;
   return path.startsWith("skills/") || path.startsWith("bin/") || path === "NORTH_STAR.md" || path === "package.json"
-    || path === "npm-shrinkwrap.json" || /^(?:readme|licen[cs]e)(?:\.[^/]*)?$/i.test(path);
+    || (dependencies && path === "DEPENDENCIES.md") || path === "npm-shrinkwrap.json" || /^(?:readme|licen[cs]e)(?:\.[^/]*)?$/i.test(path);
 }
 /** Hash the exact bytes; npm output is never the only integrity proof. @param {string} path @returns {Digest} */
 export function hashTarball(path) {
@@ -126,7 +126,7 @@ export function hashTarball(path) {
 }
 /** @param {string} directory @param {string} version */
 function checkStamped(directory, version) {
-  if (packageIdentity(directory) !== version) abort("E_ARTIFACT");
+  if (packageIdentity(directory).version !== version) abort("E_ARTIFACT");
   for (const name of ["package-lock.json", "npm-shrinkwrap.json"]) {
     if (!readdirSync(directory).includes(name)) continue;
     const lock = readJson(join(directory, name));
@@ -179,7 +179,10 @@ export async function verifyArtifact(prepared, workspace) {
     const root = join(unpacked, "package");
     if (evidence.name !== "thunderkit" || evidence.version !== release.version || evidence.files.some((file) => !file.path.startsWith("package/"))) abort("E_ARTIFACT");
     checkStamped(root, release.version);
-    const expected = inventory.files.filter((file) => payloadPath(file.path));
+    const selected = packageIdentity(original).files;
+    const dependencies = Array.isArray(selected) && selected.includes("DEPENDENCIES.md");
+    const expected = inventory.files.filter((file) => payloadPath(file.path, dependencies));
+    if (dependencies && !expected.some((file) => file.path === "DEPENDENCIES.md")) abort("E_ARTIFACT");
     if (JSON.stringify(expected.map((file) => `package/${file.path}`).sort()) !== JSON.stringify(evidence.files.map((file) => file.path).sort())) abort("E_ARTIFACT");
     for (const file of expected) {
       const actual = evidence.files.find((candidate) => candidate.path === `package/${file.path}`);
