@@ -1,4 +1,4 @@
-# Changelog
+# Changelog — history continues in [GitHub Releases](https://github.com/thunderock/thunderkit/releases)
 
 ## [0.1.1](https://github.com/thunderock/thunderkit/compare/v0.1.0...v0.1.1) (2026-09-07)
 
