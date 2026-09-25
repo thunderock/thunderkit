@@ -2,6 +2,9 @@
 # Everything below is belt-and-suspenders so repo/dev cruft never reaches npm.
 .github/
 .thunderkit/
+.omo/
+.omo-tmp/
+.omc/
 .omh/
 site/
 tests/
