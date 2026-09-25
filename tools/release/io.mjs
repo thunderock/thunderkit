@@ -75,9 +75,9 @@ export function exec(program, argv, options) {
 /** Read public registry metadata over verified TLS with a total deadline, size bound and host-bound redirects. @param {string} url @returns {Promise<Readonly<{status:number, body:string}>>} */
 export async function get(url) {
   const deadline = Date.now() + 20_000;
-  /** @param {string} address @param {number} hops @returns {Promise<Readonly<{status:number, body:string}>>} */
-  const visit = (address, hops) => new Promise((accept, reject) => {
-    const target = new URL(address);
+  /** @param {string} address @param {number} hops @param {URL} [base] @returns {Promise<Readonly<{status:number, body:string}>>} */
+  const visit = (address, hops, base) => new Promise((accept, reject) => {
+    const target = new URL(address, base);
     if (target.protocol !== "https:" || target.host !== "registry.npmjs.org" || target.username || target.password || hops > 3) return reject(new Error("Registry destination rejected"));
     const remaining = deadline - Date.now();
     if (remaining <= 0) return reject(new Error("Registry deadline exceeded"));
@@ -86,7 +86,7 @@ export async function get(url) {
       if (redirects.has(status)) {
         response.resume();
         const location = response.headers.location;
-        return location === undefined ? reject(new Error("Redirect without location")) : accept(visit(new URL(location, target).href, hops + 1));
+        return location === undefined ? reject(new Error("Redirect without location")) : accept(visit(location, hops + 1, target));
       }
       let size = 0;
       /** @type {Buffer[]} */ const chunks = [];
