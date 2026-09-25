@@ -29,6 +29,7 @@ BODY = '''# Example
 [Roster](references/model-roster.md) and [catalog](references/models.json).
 [Schema](references/config.schema.json) and [policy](references/delegation.md).
 [Dependencies](references/dependencies.json) and [helper](scripts/model_config.py).
+[Local README](references/README.md).
 '''
 
 
@@ -44,6 +45,7 @@ class SiteTests(unittest.TestCase):
         self.put("skills/references/models.json", '{"key": "shared"}')
         self.put("skills/tk-example/SKILL.md", HEADER + BODY)
         for name, text in {
+            "README.md": "# Local README\n",
             "model-roster.md": "# Local roster\n[catalog](models.json)",
             "models.json": '{"key": "local <value>"}',
             "config.schema.json": '{"type": "object"}',
@@ -78,6 +80,7 @@ class SiteTests(unittest.TestCase):
     def test_links_resolve_to_local_payload_not_shared_copy(self) -> None:
         page = self.render()
         self.assertIn('href="skills/tk-example/references/models.json.html"', page)
+        self.assertIn('href="skills/tk-example/references/README.md.html"', page)
         self.assertEqual(site_drift.validate_links(self.published), [])
         catalog = self.published / "skills/tk-example/references/models.json.html"
         self.assertIn("local &lt;value&gt;", catalog.read_text())
@@ -95,30 +98,34 @@ class SiteTests(unittest.TestCase):
         self.put("LICENSE", "<license>")
         self.put("skills/tk-example/references/delegation.md",
                  "# Policy\n[Guide](../../../DEPENDENCIES.md#optional-peers)")
+        self.put("skills/tk-example/references/model-roster.md",
+                 '[README](../../../%52EADME.md?quote="yes"&value=%26#remote-only)')
         # When the existing entry points discover their linked documents.
         self.render()
         # Then generated destinations preserve relative paths, queries and anchors.
         expected = {
             "north-star.html": "DEPENDENCIES.md.html#optional-peers",
-            "DEPENDENCIES.md.html": "README.md.html?view=full&amp;lang=en#install",
-            "README.md.html": "LICENSE.html",
+            "DEPENDENCIES.md.html": "https://github.com/thunderock/thunderkit/blob/master/README.md?view=full&amp;lang=en#install",
+            "skills/tk-example/references/model-roster.md.html":
+                "https://github.com/thunderock/thunderkit/blob/master/README.md?quote=&quot;yes&quot;&amp;value=%26#remote-only",
             "skills/tk-example/references/delegation.md.html": "../../../DEPENDENCIES.md.html#optional-peers",
         }
         for name, href in expected.items():
             with self.subTest(page=name):
                 self.assertIn(f'href="{href}"', (self.published / name).read_text())
-        self.assertIn("<pre><code>&lt;license&gt;</code></pre>", (self.published / "LICENSE.html").read_text())
+        for name in ("README.md.html", "LICENSE.html"):
+            self.assertFalse((self.published / name).exists())
         self.assertEqual(site_drift.validate_links(self.published), [])
 
     def test_root_license_link_resolves_when_label_is_a_badge(self) -> None:
         # Given the linked-badge form used by public documentation.
-        self.put("NORTH_STAR.md", "[README](README.md)")
-        self.put("README.md", "[![<License>](https://example.com/badge.svg)](LICENSE)")
+        self.put("NORTH_STAR.md", "[Guide](DEPENDENCIES.md)")
+        self.put("DEPENDENCIES.md", "[![<License>](https://example.com/badge.svg)](LICENSE)")
         self.put("LICENSE", "MIT")
-        # When rendering the referenced README.
+        # When rendering the referenced guide.
         self.render()
         # Then the escaped alt text links to the license, not the badge image.
-        page = (self.published / "README.md.html").read_text()
+        page = (self.published / "DEPENDENCIES.md.html").read_text()
         self.assertIn('href="LICENSE.html">&lt;License&gt;</a>', page)
         self.assertEqual(site_drift.validate_links(self.published), [])
 

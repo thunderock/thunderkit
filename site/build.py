@@ -178,21 +178,24 @@ def build(out: str | Path, root: Path = ROOT) -> list[str]:
         if parts.scheme or not parts.path:
             return safe_url(url)
         target = Path(os.path.abspath(source.parent / unquote(parts.path)))
+        if not target.is_file() or target.resolve() != target:
+            raise ValueError(f"link does not name a regular public source: {url}")
+        if target == root / "README.md":
+            return urlunsplit(("https", "github.com", "/thunderock/thunderkit/blob/master/README.md",
+                               parts.query, parts.fragment))
         if target not in sources:
             rel = target.relative_to(root) if target.is_relative_to(root) else Path(".")
             common = len(rel.parts) == 3 and rel.parts[:2] == ("skills", "references")
             local = (len(rel.parts) == 4 and rel.parts[0] == "skills"
                      and root / "skills" / rel.parts[1] / "SKILL.md" in skills
                      and rel.parts[2] in ("references", "scripts"))
-            public_doc = rel.as_posix() in ("DEPENDENCIES.md", "README.md", "LICENSE")
+            public_doc = rel.as_posix() in ("DEPENDENCIES.md", "LICENSE")
             asset = ((common or local) and target.suffix in (".md", ".json", ".py")
                      and not target.name.startswith("."))
             if not (public_doc or asset):
                 raise ValueError(f"link does not name a public source: {url}")
             sources[target] = Path(str(rel) + ".html")
             pending.append(target)
-        if not target.is_file() or target.resolve() != target:
-            raise ValueError(f"link does not name a regular public source: {url}")
         mapped = quote(os.path.relpath(sources[target], sources[source].parent).replace(os.sep, "/"))
         return urlunsplit(("", "", mapped, parts.query, parts.fragment))
 
