@@ -198,7 +198,8 @@ export async function verifyArtifact(prepared, workspace) {
     if (evidence.name !== "thunderkit" || evidence.version !== release.version || evidence.files.some((file) => !file.path.startsWith("package/"))) abort("E_ARTIFACT");
     checkStamped(root, release.version);
     const selected = packageIdentity(original).files;
-    const dependencies = Array.isArray(selected) && selected.includes("DEPENDENCIES.md");
+    const dependencies = Array.isArray(selected) ? selected.includes("DEPENDENCIES.md")
+      : selected === undefined && readFileSync(join(original, ".npmignore"), "utf8").split(/\r?\n/).includes("!/DEPENDENCIES.md");
     const expected = inventory.files.filter((file) => payloadPath(file.path, dependencies));
     if (dependencies && !expected.some((file) => file.path === "DEPENDENCIES.md")) abort("E_ARTIFACT");
     if (JSON.stringify(expected.map((file) => `package/${file.path}`).sort()) !== JSON.stringify(evidence.files.map((file) => file.path).sort())) abort("E_ARTIFACT");
