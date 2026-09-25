@@ -73,7 +73,9 @@ export function createFixture(sourceDir = repoRoot) {
   chmodSync(root, 0o700);
   const checkoutDir = join(root, "checkout");
   mkdirSync(checkoutDir);
-  for (const name of ["bin", "skills", "package.json", ".npmignore", "NORTH_STAR.md", "README.md", "LICENSE", "CHANGELOG.md"]) {
+  const names = ["bin", "skills", "package.json", ".npmignore", "NORTH_STAR.md", "README.md", "LICENSE", "CHANGELOG.md"];
+  if (existsSync(join(sourceDir, "DEPENDENCIES.md"))) names.push("DEPENDENCIES.md");
+  for (const name of names) {
     cpSync(join(sourceDir, name), join(checkoutDir, name), {
       recursive: true,
       filter: (path) => !devCaches.has(basename(path)) && !/\.py[co]$/.test(path),

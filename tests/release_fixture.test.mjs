@@ -55,6 +55,18 @@ test("fixture version is 0.1.1 when the source package has already been stamped"
   assert.deepEqual(readFileSync(manifest), bytes);
 });
 
+test("fixture copying preserves the public dependency document when present in source", () => {
+  // Given
+  const source = fixture();
+  const document = Buffer.from("public dependency requirements\n");
+  writeFileSync(join(source.checkoutDir, "DEPENDENCIES.md"), document);
+  // When
+  const copied = fixture(source.checkoutDir);
+  // Then
+  assert.deepEqual(readFileSync(join(copied.checkoutDir, "DEPENDENCIES.md")), document);
+  assert.deepEqual(readFileSync(join(source.checkoutDir, "DEPENDENCIES.md")), document);
+});
+
 test("planning packs successfully when fixture source contains newly compiled Python caches", async () => {
   // Given
   const source = fixture();
