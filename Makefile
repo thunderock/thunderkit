@@ -21,18 +21,18 @@ export PYTHONPATH := $(CURDIR)/tests:$(CURDIR)
 .PHONY: setup setup-dev run_tests lint site site-verify clean private-temp check-runtime
 
 setup: check-runtime
-	@echo "Offline development: Python >=3.12, Node >=24, npm 11.19.1; no project dependencies."
+	@echo "Offline development: Python 3.12.x, Node 24.x, npm 11.19.1; no project dependencies."
 	@echo "Agent installation is separate: skills@1.7.0 requires Node >=22.20.0."
 
 private-temp:
 	@umask 077; mkdir -p "$(TMPDIR)" "$(THUNDERKIT_TEST_TMPDIR)" "$(PYTHONPYCACHEPREFIX)"
 
 check-runtime: private-temp
-	@command -v "$(PY)" >/dev/null || { echo "MISSING: python3 (Python >=3.12 required)"; exit 1; }
-	@command -v "$(NODE)" >/dev/null || { echo "MISSING: node (Node >=24 required)"; exit 1; }
+	@command -v "$(PY)" >/dev/null || { echo "MISSING: python3 (Python 3.12.x required)"; exit 1; }
+	@command -v "$(NODE)" >/dev/null || { echo "MISSING: node (Node 24.x required)"; exit 1; }
 	@command -v "$(NPM)" >/dev/null || { echo "MISSING: npm (npm 11.19.1 required)"; exit 1; }
-	@$(PY) -c 'import sys; sys.exit("Tests require Python >=3.12" if sys.version_info < (3, 12) else 0)'
-	@$(NODE) -e 'if (Number(process.versions.node.split(".")[0]) < 24) { console.error("Tests require Node >=24"); process.exit(1); }'
+	@$(PY) -c 'import sys; sys.exit("Tests require Python 3.12.x" if sys.version_info[:2] != (3, 12) else 0)'
+	@$(NODE) -e 'if (Number(process.versions.node.split(".")[0]) !== 24) { console.error("Tests require Node 24.x"); process.exit(1); }'
 	@test "$$($(NPM) --version)" = "11.19.1" || { echo "Tests require npm 11.19.1"; exit 1; }
 
 setup-dev:
