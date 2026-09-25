@@ -5,6 +5,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { planRelease } from "../tools/release/plan.mjs";
 import { createSystemTransport } from "../tools/release/io.mjs";
+import { readObject } from "./helpers/release_artifact.mjs";
 import { child, commit, createFixture, destroyFixture, git, isolated, journalOf, manual, programs, systemDrivers } from "./helpers/release_workspace.mjs";
 
 /** @type {import("./helpers/release_workspace.mjs").Fixture[]} */ const fixtures = [];
@@ -91,6 +92,8 @@ for (const file of ["skills/tk-ask/scripts/__pycache__/packaged.pyc", "skills/tk
   test(`production rejects forbidden bytes when ${file} is deliberately tracked`, async () => {
     // Given
     const f = fixture();
+    const manifest = join(f.checkoutDir, "package.json");
+    writeFileSync(manifest, JSON.stringify({ ...readObject(manifest), files: ["skills/", "bin/", "NORTH_STAR.md"] }));
     mkdirSync(dirname(join(f.checkoutDir, file)), { recursive: true });
     writeFileSync(join(f.checkoutDir, file), "forbidden package bytes");
     commit(f);

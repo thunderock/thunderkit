@@ -32,8 +32,11 @@ function memberNames(tarball) {
 /** @param {string} path */
 const sha512 = (path) => `sha512-${createHash("sha512").update(readFileSync(path)).digest("base64")}`;
 
-test("preparing a manual candidate packs exactly the tracked payload at the stamped version without touching the checkout", async () => {
+test("preparing an explicit files-array candidate packs exactly the tracked payload without touching the checkout", async () => {
   const f = fixture();
+  const path = join(f.checkoutDir, "package.json");
+  writeFileSync(path, JSON.stringify({ ...readObject(path), files: ["skills/", "bin/", "NORTH_STAR.md"] }));
+  commit(f);
   const result = await prepare(f, "0.1.2");
   assert.ok(result.ok, JSON.stringify(result));
   const { release } = result.value;
@@ -42,9 +45,7 @@ test("preparing a manual candidate packs exactly the tracked payload at the stam
   assert.equal(release.tarball.integrity, sha512(tarball));
   assert.equal(release.tarball.size, readFileSync(tarball).length);
   assert.deepEqual(release.toolchain, { nodeMajor: 24, npm: "11.19.1", pythonMinor: "3.12" });
-  const selected = readObject(join(f.checkoutDir, "package.json")).files;
-  const tracked = git(f.checkoutDir, ["ls-files"]).split("\n").filter((path) => /^(skills\/|bin\/|NORTH_STAR\.md$|package\.json$|README\.md$|LICENSE$)/.test(path)
-    || (path === "DEPENDENCIES.md" && Array.isArray(selected) && selected.includes(path)));
+  const tracked = git(f.checkoutDir, ["ls-files"]).split("\n").filter((path) => /^(skills\/|bin\/|NORTH_STAR\.md$|package\.json$|README\.md$|LICENSE$)/.test(path));
   assert.deepEqual(memberNames(tarball), tracked.map((path) => `package/${path}`).sort());
   assert.equal(JSON.parse(readFileSync(join(f.workspace.stageDir, "package.json"), "utf8")).version, "0.1.2");
   assert.equal(JSON.parse(readFileSync(join(f.checkoutDir, "package.json"), "utf8")).version, "0.1.1");
