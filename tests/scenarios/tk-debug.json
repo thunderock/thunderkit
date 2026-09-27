@@ -24,7 +24,7 @@
         "frontmatter": {
           "thunderkit-role": "debug",
           "thunderkit-tier": "verify",
-          "thunderkit-delegates": "omo:debugging omh:reviewer/omh-native-debugging",
+          "thunderkit-delegates": "omo:debugging omh:reviewer/omh-native-debugging gsd:gsd-debug",
           "thunderkit-contract": "1"
         }
       },
@@ -64,15 +64,15 @@
         "sections": ["Investigation component", "The loop", "Output contract"]
       },
       {
-        "name": "Codex host falls back from the OpenCode-only OMO debugging target",
+        "name": "Codex host without GSD reports the missing debugging peer",
         "operation": "general",
         "config": "sol",
         "capabilities": "codex_omo_full",
         "expect": {
           "decision": "fallback",
-          "reason_code": "unsupported_host",
-          "target_ecosystem": null,
-          "target_selector": null,
+          "reason_code": "peer_missing",
+          "target_ecosystem": "gsd",
+          "target_selector": "gsd-debug",
           "exit": 0,
           "requested_bindings": {
             "planner": "sol",
@@ -158,16 +158,16 @@
         "sections": ["Fallback", "The loop"]
       },
       {
-        "name": "unsupported native host cannot select either fault target",
+        "name": "Claude host without GSD reports the missing debugging peer",
         "operation": "native-fault",
         "config": "opencode",
         "capabilities": "unsupported_host",
         "expect": {
           "decision": "fallback",
-          "reason_code": "unsupported_host",
-          "target_ecosystem": null,
-          "target_selector": null,
-          "target_mode": null,
+          "reason_code": "peer_missing",
+          "target_ecosystem": "gsd",
+          "target_selector": "gsd-debug",
+          "target_mode": "handoff",
           "exit": 0
         }
       },

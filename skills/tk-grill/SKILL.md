@@ -5,7 +5,7 @@ compatibility: "Python 3.11+ standard library for the bundled resolver. Native i
 metadata:
   thunderkit-role: "interrogator"
   thunderkit-tier: "intake"
-  thunderkit-delegates: "omh:ultrawork/ulw-interview"
+  thunderkit-delegates: "omh:ultrawork/ulw-interview gsd:gsd-explore"
   thunderkit-contract: "1"
 ---
 

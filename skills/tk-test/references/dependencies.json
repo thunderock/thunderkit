@@ -79,7 +79,7 @@
       "source": "https://github.com/gsd-build/get-shit-done",
       "license": "MIT",
       "hosts": [
-        "claude-code",
+        "claude",
         "codex",
         "copilot",
         "gemini",
@@ -92,7 +92,14 @@
       "install_hint": "npx get-shit-done-cc@latest --<runtime> --global (non-interactive: runtime flag plus location flag); Thunderkit never runs this installation.",
       "skill_prefix": "gsd-",
       "invocation": "host skill tool; installer converts commands/gsd/<name>.md into gsd-<name>/SKILL.md per host",
-      "notes": "Only project-free commands are targets (gsd-fast, gsd-debug, gsd-explore); provenance_root is defined in L3c."
+      "notes": "Only project-free commands are targets (gsd-fast, gsd-debug, gsd-explore); commands that need a .planning/ project are never delegated.",
+      "provenance_root": {
+        "root_kind": "gsd",
+        "identity_file": "gsd-file-manifest.json",
+        "identity_fields": {},
+        "entrypoint_pattern": "skills/gsd-<name>/SKILL.md",
+        "note": "The host config directory (for example ~/.claude) is the root; its gsd-file-manifest.json version must equal the lock version."
+      }
     }
   },
   "distribution_cli": {
@@ -157,6 +164,27 @@
             "files": [
               "skills/guide/omh-routing/references/skill-common-rail.md",
               "skills/ultrawork/ulw-interview/SKILL.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "gsd",
+          "skill_name": "gsd-explore",
+          "selector": "gsd-explore",
+          "mode": "component",
+          "operations": [
+            "interview"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Return bounded Socratic questions without roadmap writes; Thunderkit owns the interview and user decisions.",
+          "provenance": {
+            "root_kind": "gsd",
+            "entrypoint": "skills/gsd-explore/SKILL.md",
+            "files": [
+              "skills/gsd-explore/SKILL.md"
             ]
           }
         }
@@ -753,6 +781,28 @@
               "skills/guide/omh-routing/references/skill-common-rail.md",
               "skills/reviewer/omh-native-debugging/SKILL.md",
               "skills/reviewer/omh-native-debugging/references/native-debug-loop.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "gsd",
+          "skill_name": "gsd-debug",
+          "selector": "gsd-debug",
+          "mode": "handoff",
+          "operations": [
+            "general",
+            "native-fault"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Hand the investigation to GSD debugging on GSD hosts; Thunderkit keeps the planner binding and never treats a native fix as verified evidence.",
+          "provenance": {
+            "root_kind": "gsd",
+            "entrypoint": "skills/gsd-debug/SKILL.md",
+            "files": [
+              "skills/gsd-debug/SKILL.md"
             ]
           }
         }

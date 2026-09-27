@@ -105,7 +105,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
       &quot;source&quot;: &quot;https://github.com/gsd-build/get-shit-done&quot;,
       &quot;license&quot;: &quot;MIT&quot;,
       &quot;hosts&quot;: [
-        &quot;claude-code&quot;,
+        &quot;claude&quot;,
         &quot;codex&quot;,
         &quot;copilot&quot;,
         &quot;gemini&quot;,
@@ -118,7 +118,14 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
       &quot;install_hint&quot;: &quot;npx get-shit-done-cc@latest --&lt;runtime&gt; --global (non-interactive: runtime flag plus location flag); Thunderkit never runs this installation.&quot;,
       &quot;skill_prefix&quot;: &quot;gsd-&quot;,
       &quot;invocation&quot;: &quot;host skill tool; installer converts commands/gsd/&lt;name&gt;.md into gsd-&lt;name&gt;/SKILL.md per host&quot;,
-      &quot;notes&quot;: &quot;Only project-free commands are targets (gsd-fast, gsd-debug, gsd-explore); provenance_root is defined in L3c.&quot;
+      &quot;notes&quot;: &quot;Only project-free commands are targets (gsd-fast, gsd-debug, gsd-explore); commands that need a .planning/ project are never delegated.&quot;,
+      &quot;provenance_root&quot;: {
+        &quot;root_kind&quot;: &quot;gsd&quot;,
+        &quot;identity_file&quot;: &quot;gsd-file-manifest.json&quot;,
+        &quot;identity_fields&quot;: {},
+        &quot;entrypoint_pattern&quot;: &quot;skills/gsd-&lt;name&gt;/SKILL.md&quot;,
+        &quot;note&quot;: &quot;The host config directory (for example ~/.claude) is the root; its gsd-file-manifest.json version must equal the lock version.&quot;
+      }
     }
   },
   &quot;distribution_cli&quot;: {
@@ -183,6 +190,27 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
             &quot;files&quot;: [
               &quot;skills/guide/omh-routing/references/skill-common-rail.md&quot;,
               &quot;skills/ultrawork/ulw-interview/SKILL.md&quot;
+            ]
+          }
+        },
+        {
+          &quot;ecosystem&quot;: &quot;gsd&quot;,
+          &quot;skill_name&quot;: &quot;gsd-explore&quot;,
+          &quot;selector&quot;: &quot;gsd-explore&quot;,
+          &quot;mode&quot;: &quot;component&quot;,
+          &quot;operations&quot;: [
+            &quot;interview&quot;
+          ],
+          &quot;requires&quot;: [
+            &quot;tool:skill&quot;,
+            &quot;model-binding:planner&quot;
+          ],
+          &quot;notes&quot;: &quot;Return bounded Socratic questions without roadmap writes; Thunderkit owns the interview and user decisions.&quot;,
+          &quot;provenance&quot;: {
+            &quot;root_kind&quot;: &quot;gsd&quot;,
+            &quot;entrypoint&quot;: &quot;skills/gsd-explore/SKILL.md&quot;,
+            &quot;files&quot;: [
+              &quot;skills/gsd-explore/SKILL.md&quot;
             ]
           }
         }
@@ -779,6 +807,28 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
               &quot;skills/guide/omh-routing/references/skill-common-rail.md&quot;,
               &quot;skills/reviewer/omh-native-debugging/SKILL.md&quot;,
               &quot;skills/reviewer/omh-native-debugging/references/native-debug-loop.md&quot;
+            ]
+          }
+        },
+        {
+          &quot;ecosystem&quot;: &quot;gsd&quot;,
+          &quot;skill_name&quot;: &quot;gsd-debug&quot;,
+          &quot;selector&quot;: &quot;gsd-debug&quot;,
+          &quot;mode&quot;: &quot;handoff&quot;,
+          &quot;operations&quot;: [
+            &quot;general&quot;,
+            &quot;native-fault&quot;
+          ],
+          &quot;requires&quot;: [
+            &quot;tool:skill&quot;,
+            &quot;model-binding:planner&quot;
+          ],
+          &quot;notes&quot;: &quot;Hand the investigation to GSD debugging on GSD hosts; Thunderkit keeps the planner binding and never treats a native fix as verified evidence.&quot;,
+          &quot;provenance&quot;: {
+            &quot;root_kind&quot;: &quot;gsd&quot;,
+            &quot;entrypoint&quot;: &quot;skills/gsd-debug/SKILL.md&quot;,
+            &quot;files&quot;: [
+              &quot;skills/gsd-debug/SKILL.md&quot;
             ]
           }
         }

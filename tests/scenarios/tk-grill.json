@@ -34,7 +34,7 @@
         "frontmatter": {
           "thunderkit-role": "interrogator",
           "thunderkit-tier": "intake",
-          "thunderkit-delegates": "omh:ultrawork/ulw-interview",
+          "thunderkit-delegates": "omh:ultrawork/ulw-interview gsd:gsd-explore",
           "thunderkit-contract": "1"
         }
       },
@@ -88,15 +88,15 @@
     ],
     "failure": [
       {
-        "name": "unsupported host falls back to owned intake",
+        "name": "Claude host without GSD reports the missing explore peer",
         "operation": "interview",
         "config": "opencode",
         "capabilities": "unsupported_host",
         "expect": {
           "decision": "fallback",
-          "reason_code": "unsupported_host",
-          "target_ecosystem": null,
-          "target_selector": null,
+          "reason_code": "peer_missing",
+          "target_ecosystem": "gsd",
+          "target_selector": "gsd-explore",
           "exit": 0
         }
       },

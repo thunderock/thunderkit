@@ -9,7 +9,7 @@ CHANNELS: Final = {
     "gsd": ("get-shit-done-cc", "dist-tag:latest"),
 }
 HOST_PEERS: Final = {"hermes": "omh", "opencode": "omo", "default": "gsd"}
-TARGET_ECOSYSTEMS: Final = frozenset({"omo", "omh"})
+TARGET_ECOSYSTEMS: Final = frozenset({"omo", "omh", "gsd"})
 STATIC_PIN_FIELDS: Final = ("version", "integrity", "registry")
 OPERATIONS: Final = {
     "tk-router": ("route", ("bootstrap", "route")),
@@ -32,11 +32,12 @@ OPERATIONS: Final = {
     "tk-memory": ("view", ("view", "save")),
     "tk-handoff": ("save", ("save", "restore", "lookup")),
 }
-ROOT_KINDS: Final = {"omo": "package", "omh": "omh"}
-SKILL_PREFIXES: Final = {"omo": "dist/skills", "omh": "skills"}
+ROOT_KINDS: Final = {"omo": "package", "omh": "omh", "gsd": "gsd"}
+SKILL_PREFIXES: Final = {"omo": "dist/skills", "omh": "skills", "gsd": "skills"}
 PEER_ROOTS: Final = {
     "omo": ("package", "package.json", "dist/skills/<skill_name>/SKILL.md"),
     "omh": ("omh", "manifest.json", "skills/<category>/<skill_name>/SKILL.md"),
+    "gsd": ("gsd", "gsd-file-manifest.json", "skills/gsd-<name>/SKILL.md"),
 }
 TARGET_KEYS: Final = frozenset({
     "ecosystem", "skill_name", "selector", "mode", "operations", "requires", "notes", "provenance",
@@ -101,6 +102,8 @@ _LOCAL_COMPANIONS: Final[dict[tuple[str, str], frozenset[str]]] = {
     ("omh", "operator/omh-visual-qa"): frozenset({"references/visual-verdict-contract.md"}),
     ("omh", "reviewer/omh-native-debugging"): frozenset({"references/native-debug-loop.md"}),
     ("omh", "reviewer/omh-verification-gate"): frozenset(),
+    ("gsd", "gsd-debug"): frozenset(),
+    ("gsd", "gsd-explore"): frozenset(),
 }
 COMPANIONS: Final = {
     (ecosystem, selector): frozenset(f"{SKILL_PREFIXES[ecosystem]}/{selector}/{path}" for path in paths)
@@ -119,7 +122,7 @@ OMH_CANONICAL: Final = {
     "reviewer/omh-verification-gate": "verification-gate",
 }
 TARGETS: Final = {
-    "tk-grill": {("omh", "ultrawork/ulw-interview", "component", ("interview",))},
+    "tk-grill": {("omh", "ultrawork/ulw-interview", "component", ("interview",)), ("gsd", "gsd-explore", "component", ("interview",))},
     "tk-spec": {("omh", "ultrawork/ulw-interview", "component", ("clarify",))},
     "tk-map": {
         ("omo", "ulw-research", "component", ("map",)),
@@ -151,6 +154,7 @@ TARGETS: Final = {
     "tk-debug": {
         ("omo", "debugging", "handoff", ("general", "native-fault")),
         ("omh", "reviewer/omh-native-debugging", "component", ("native-fault",)),
+        ("gsd", "gsd-debug", "handoff", ("general", "native-fault")),
     },
     "tk-ship": {("omh", "reviewer/omh-verification-gate", "component", ("prepare",))},
     "tk-audit": {("omh", "reviewer/omh-verification-gate", "component", ("audit",))},

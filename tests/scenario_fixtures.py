@@ -97,7 +97,7 @@ class Recipe:
             raise ConfigError("unknown capabilities recipe field")
         host = text_value(raw.get("host"), "host")
         peers = tuple(text_value(item, "peers") for item in items(raw.get("peers"), "peers"))
-        if len(set(peers)) != len(peers) or set(peers) - {"omo", "omh"}:
+        if len(set(peers)) != len(peers) or set(peers) - {"omo", "omh", "gsd"}:
             raise ConfigError("peers must contain unique omo/omh identities")
         method = text_value(raw.get("method", "configured"), "method")
         if method not in ("configured", "delegate_route", "explicit_dispatch"):

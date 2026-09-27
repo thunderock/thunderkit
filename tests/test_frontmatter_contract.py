@@ -259,7 +259,7 @@ class FrontmatterContractTests(unittest.TestCase):
                     validate_thunderkit(fm, "tk-example")
 
     def test_repo_policy_rejects_invalid_delegate_tokens(self) -> None:
-        for delegates in ("gsd:foo", "", "none omo:planner", "omo:-foo", "omo:Upper",
+        for delegates in ("omc:foo", "", "none omo:planner", "omo:-foo", "omo:Upper",
                           "omo:a/b/c", "omh:foo/", "omo:foo\tomh:bar", "omo:foo\nomh:bar"):
             with self.subTest(delegates=delegates):
                 fm = replace(parse_skill_md(HEADER), metadata={**METADATA, "thunderkit-delegates": delegates})

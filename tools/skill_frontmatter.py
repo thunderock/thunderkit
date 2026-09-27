@@ -15,7 +15,7 @@ _METADATA_KEYS: Final = frozenset({
 _ENTRY: Final = re.compile(r"([a-zA-Z0-9_][a-zA-Z0-9_.-]*):(?:[ \t]+(.*))?")
 _CLOSING: Final = re.compile(r"^---\n", re.MULTILINE)
 _NAME: Final = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
-_DELEGATE: Final = re.compile(r"(omo|omh):[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)?")
+_DELEGATE: Final = re.compile(r"(omo|omh|gsd):[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)?")
 
 
 class FrontmatterError(ValueError):

@@ -73,7 +73,7 @@ def validate_candidate(candidate: JsonObject, pin: JsonObject) -> None:
     identity = expect_object(pin.get("provenance_root"), "provenance_root")
     _relative(identity.get("identity_file"), "identity_file")
     identity_fields = expect_object(identity.get("identity_fields"), "identity_fields")
-    if not identity_fields or any(type(value) not in (str, int) for value in identity_fields.values()):
+    if (not identity_fields and identity.get("root_kind") != "gsd") or any(type(value) not in (str, int) for value in identity_fields.values()):
         raise model_config.ConfigError("identity_fields must contain string or integer values, not booleans")
     provenance = expect_object(candidate.get("provenance"), "provenance")
     if set(provenance) != {"root_kind", "entrypoint", "files"} or provenance.get("root_kind") != identity.get("root_kind"):
@@ -100,6 +100,10 @@ def validate_candidate(candidate: JsonObject, pin: JsonObject) -> None:
                     or identity.get("manifest_record_fields") != ["name", "path", "sha256", "source"]
                     or not expect_strings(identity.get("manifest_source_values"), "manifest_source_values")):
                 raise model_config.ConfigError("OMH selector and installer identity must be fully qualified")
+        case "gsd":
+            expected = {}
+            if selector != name or not name.startswith("gsd-") or entrypoint != f"skills/{name}/SKILL.md" or "canonical_name" in candidate:
+                raise model_config.ConfigError("GSD selector must identify its installed gsd-<name> skill")
         case _:
             raise model_config.ConfigError("root_kind must be package or omh")
     if identity_fields != expected:

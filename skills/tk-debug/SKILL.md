@@ -5,7 +5,7 @@ compatibility: "Python 3.11+ standard library for the bundled resolver; supporte
 metadata:
   thunderkit-role: "debug"
   thunderkit-tier: "verify"
-  thunderkit-delegates: "omo:debugging omh:reviewer/omh-native-debugging"
+  thunderkit-delegates: "omo:debugging omh:reviewer/omh-native-debugging gsd:gsd-debug"
   thunderkit-contract: "1"
 ---
 
