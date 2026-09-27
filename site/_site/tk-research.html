@@ -15,6 +15,11 @@ h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(
 pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
 code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
 table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
 th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
 th{background:#0d1220}
@@ -29,7 +34,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p>Read the skill-local <a href="skills/tk-research/references/delegation.md.html">delegation policy</a>, <a href="skills/tk-research/references/dependencies.json.html">target registry</a>, <a href="skills/tk-research/references/models.json.html">model catalog</a>, <a href="skills/tk-research/references/model-roster.md.html">model contract</a> and <a href="skills/tk-research/references/config.schema.json.html">config schema</a>. Resolve them and <code>scripts/</code> from this installed skill&#x27;s root, not the caller&#x27;s working directory or an assumed sibling installation. Name missing local assets as unavailable; do not search a global store or another checkout to replace them.</p>
 <h2 id="delegation">Delegation</h2>
 <p>The sole operation, <code>research</code>, has two alternative targets:</p>
-<table><thead><tr><th>Qualified address</th><th>Eligible host</th><th>Mode</th><th>Required capabilities</th></tr></thead><tbody><tr><td><code>omo:ulw-research</code></td><td>OpenCode or Codex</td><td><code>handoff</code></td><td><code>tool:skill</code>, <code>model-binding:executors</code></td></tr><tr><td><code>omh:ultrawork/ulw-research</code></td><td>Hermes</td><td><code>handoff</code></td><td><code>tool:skill</code>, <code>model-binding:executors</code></td></tr></tbody></table>
+<div class='tbl'><table><thead><tr><th>Qualified address</th><th>Eligible host</th><th>Mode</th><th>Required capabilities</th></tr></thead><tbody><tr><td><code>omo:ulw-research</code></td><td>OpenCode or Codex</td><td><code>handoff</code></td><td><code>tool:skill</code>, <code>model-binding:executors</code></td></tr><tr><td><code>omh:ultrawork/ulw-research</code></td><td>Hermes</td><td><code>handoff</code></td><td><code>tool:skill</code>, <code>model-binding:executors</code></td></tr></tbody></table></div>
 <p>These addresses are registry identities, not host slash commands or bare-name aliases. Invoke only the resolver-selected target through the host&#x27;s real skill tool, using its verified selector. OMH&#x27;s categorized selector and canonical manifest name <code>research</code> must agree with its pinned source; OMO&#x27;s same-named skill cannot satisfy that identity. Check loaded package/version/source, entrypoint bytes and all declared companions, including OMH&#x27;s shared rail and briefing format. Installed files, self-reported hashes, skill listings and quarantine-bypassing copies do not establish readiness.</p>
 <p>Set <code>SKILL_ROOT</code> to this installed skill directory and <code>PROJECT_ROOT</code> to the caller&#x27;s actual project. <code>CONFIG_PATH</code> names its explicit project-contained configuration; <code>CAPABILITIES_PATH</code> names project-contained evidence from current allowed host descriptors and effective bindings, not credentials or guesses. With native candidates enabled:</p>
 <pre><code>: &quot;${SKILL_ROOT:?Set the installed tk-research root}&quot;

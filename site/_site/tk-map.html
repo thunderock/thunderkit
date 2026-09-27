@@ -15,6 +15,11 @@ h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(
 pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
 code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
 table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
 th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
 th{background:#0d1220}
@@ -35,7 +40,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
   --config &quot;$PROJECT_ROOT/.thunderkit/config.json&quot; \
   --capabilities &quot;$CAPABILITIES_PATH&quot; --json</code></pre>
 <p>With <code>delegation: off</code> or no enabled ecosystems, omit <code>--capabilities</code> and perform no native discovery, loading, routing, doctor or installer calls. Configuration is still required: mapping is model-bearing even on an owned route. The local resolver only computes a route; exit 0 is neither a bound execution channel nor proof that reconnaissance ran.</p>
-<table><thead><tr><th>Qualified alternative</th><th>Host</th><th>Registry mode</th><th>Required capabilities</th></tr></thead><tbody><tr><td><code>omo:ulw-research</code></td><td>OpenCode or Codex</td><td><code>component</code></td><td><code>tool:skill</code>, <code>model-binding:executors</code></td></tr><tr><td><code>omh:planner/omh-codebase-onboarding</code></td><td>Hermes</td><td><code>component</code></td><td><code>tool:skill</code>, <code>model-binding:executors</code></td></tr></tbody></table>
+<div class='tbl'><table><thead><tr><th>Qualified alternative</th><th>Host</th><th>Registry mode</th><th>Required capabilities</th></tr></thead><tbody><tr><td><code>omo:ulw-research</code></td><td>OpenCode or Codex</td><td><code>component</code></td><td><code>tool:skill</code>, <code>model-binding:executors</code></td></tr><tr><td><code>omh:planner/omh-codebase-onboarding</code></td><td>Hermes</td><td><code>component</code></td><td><code>tool:skill</code>, <code>model-binding:executors</code></td></tr></tbody></table></div>
 <p>These addresses identify sources, not slash commands. Invoke only the verified host skill name/selector after its loaded path, package/version/source, pinned bytes and all companions match the local registry. OMH&#x27;s categorized selector and canonical <code>codebase-onboarding</code> identity must agree; OMO&#x27;s research target is not interchangeable with OMH onboarding.</p>
 <p>For every selected executor, preserve its ordered association with an effective host descriptor, catalog-supported provider/model ID and supported effort. Prove the actual channel that will perform the work uses its assigned selected member; a config value, prompt label or skill load alone does not bind it. Represent the whole selected executor set without collapsing it, although one bounded request need not exercise every member. Check real OpenCode agent/category mappings rather than inventing a <code>task(model=...)</code> option; include the actual root binding if the root does model-bearing recon. On Hermes, use an already-proven read-only channel; do not call <code>omh_delegate_route</code> to mutate configuration.</p>
 <p>Separately verify that the chosen component can honor the read-only scope before invoking it. OMO <code>ulw-research</code> is only a bounded source investigation returning findings in <strong>component</strong> mode, not permission to launch its full research workflow. OMH onboarding may return only verified read-only reconnaissance. Refuse an onboarding request to write <code>AGENTS.md</code>, initialize a knowledge base or change code; do not substitute <code>init-deep</code>. If the boundary cannot be enforced, do not invoke that target; apply the fallback guard.</p>

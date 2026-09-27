@@ -15,6 +15,11 @@ h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(
 pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
 code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
 table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
 th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
 th{background:#0d1220}
@@ -38,7 +43,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
   --project-root &quot;$PROJECT_ROOT&quot; --config &quot;$PROJECT_ROOT/.thunderkit/config.json&quot; \
   --capabilities &quot;$CAPABILITIES_PATH&quot; --json</code></pre>
 <p>Config and capability files must resolve inside the actual project, without traversal or symlink escape. With delegation off or no enabled ecosystems, omit capabilities and perform no native discovery, loading, routing, doctor or installer calls. Config remains required.</p>
-<table><thead><tr><th>Qualified target</th><th>Host</th><th>Operation</th><th>Mode</th><th>Registry requirements</th></tr></thead><tbody><tr><td><code>omo:debugging</code></td><td>OpenCode or Codex</td><td>general, native-fault</td><td>handoff</td><td><code>tool:skill</code>, <code>model-binding:planner</code></td></tr><tr><td><code>omh:reviewer/omh-native-debugging</code></td><td>Hermes</td><td>native-fault only</td><td>component</td><td><code>tool:skill</code>, <code>model-binding:planner</code></td></tr></tbody></table>
+<div class='tbl'><table><thead><tr><th>Qualified target</th><th>Host</th><th>Operation</th><th>Mode</th><th>Registry requirements</th></tr></thead><tbody><tr><td><code>omo:debugging</code></td><td>OpenCode or Codex</td><td>general, native-fault</td><td>handoff</td><td><code>tool:skill</code>, <code>model-binding:planner</code></td></tr><tr><td><code>omh:reviewer/omh-native-debugging</code></td><td>Hermes</td><td>native-fault only</td><td>component</td><td><code>tool:skill</code>, <code>model-binding:planner</code></td></tr></tbody></table></div>
 <p>These are source-qualified addresses, not slash commands. Invoke only the verified host selector after package/version/source, loaded entrypoint and every required file&#x27;s real bytes match the pinned registry. OMO uses <code>oh-my-openagent@5.0.0-beta.81</code>; its entire declared debugging reference/script tree is required. OMH uses <code>oh-my-hermes@2.0.3</code>, categorized selector <code>reviewer/omh-native-debugging</code> and canonical identity <code>native-debugging</code>; its native-debug-loop reference and categorized shared rail must both match. Its provenance root contains <code>manifest.json</code> and <code>skills/</code>, not just the skills directory or a task&#x27;s Hermes home. An installed package, same-name file, quarantined companion, self-reported hash or <code>ready</code> flag is not proof. Never install, render peer code or change host/provider/auth configuration to qualify it.</p>
 <p>Keep the resolver record unchanged: <code>schema_version</code>, <code>skill</code>, <code>operation</code>, <code>decision</code>, <code>reason_code</code>, <code>detail</code>, <code>target</code>, <code>bindings</code>, <code>runtime_home</code>, <code>evidence_paths</code>. Exit 0 means routing was computed, not that a probe or native workflow ran. Blocked is exit 1; invalid input is exit 2. Only <code>delegate/compatible</code> admits a native candidate, subject to the additional scope, role, permission and ownership gates below. Record later invocation failures separately; never rewrite a compatible routing reason to explain a failed run. A corrected input produces a new record without overwriting the earlier decision.</p>
 <h2 id="native-handoff">Native handoff</h2>
