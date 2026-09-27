@@ -213,3 +213,76 @@ test("an installer terminated by a signal cannot report success", () => {
   assert.equal(result.status, canInstall ? 1 : 2);
   assert.match(result.stderr, canInstall ? /SIGTERM/ : /require Node >=22\.20\.0/);
 });
+
+
+const registry = {
+  "oh-my-openagent": { versions: ["4.5.12", "5.0.0-beta.9", "5.0.0-beta.10", "5.0.0-beta.90", "5.0.0", "5.0.1", "6.0.0-beta.1"], "dist-tags": { latest: "5.0.1", beta: "5.0.0" } },
+  "oh-my-hermes": { versions: ["1.0.7", "2.0.3", "2.0.5"], "dist-tags": { latest: "2.0.5", beta: "1.0.7" } },
+  "get-shit-done-cc": { versions: ["1.42.3", "1.43.0-rc2"], "dist-tags": { latest: "1.42.3", next: "1.43.0-rc2" } },
+};
+const registryFile = join(sandbox, "registry.json");
+writeFileSync(registryFile, JSON.stringify(registry));
+
+test("compareSemver orders numeric prerelease parts numerically", () => {
+  assert.ok(cli.compareSemver("5.0.0-beta.10", "5.0.0-beta.9") > 0);
+  assert.ok(cli.compareSemver("5.0.0-beta.90", "5.0.0") < 0);
+  assert.equal(cli.compareSemver("1.2.3", "1.2.3"), 0);
+  assert.throws(() => cli.compareSemver("v1.2.3", "1.2.3"), RangeError);
+});
+
+test("resolveChannel picks the highest major-series beta, not the beta or latest tags", () => {
+  const omo = registry["oh-my-openagent"];
+  assert.equal(cli.resolveChannel("max-prerelease:5.x:beta", omo.versions, omo["dist-tags"]), "5.0.0-beta.90");
+  assert.throws(() => cli.resolveChannel("max-prerelease:7.x:beta", omo.versions, omo["dist-tags"]), RangeError);
+});
+
+test("resolveChannel follows a dist-tag only when it names a published version", () => {
+  assert.equal(cli.resolveChannel("dist-tag:latest", ["2.0.5"], { latest: "2.0.5" }), "2.0.5");
+  assert.throws(() => cli.resolveChannel("dist-tag:latest", ["2.0.3"], { latest: "2.0.5" }), RangeError);
+  assert.throws(() => cli.resolveChannel("range:^2", ["2.0.5"], {}), RangeError);
+});
+
+test("installPlan maps each host to its required peer and a concrete command", () => {
+  const cases = [["hermes", "omh", "2.0.5", "npm install -g oh-my-hermes@2.0.5 "], ["opencode", "omo", "5.0.0-beta.90", "oh-my-openagent@5.0.0-beta.90"],
+    ["claude", "gsd", "1.42.3", "npx get-shit-done-cc@1.42.3 --claude --global"], ["copilot", "gsd", "1.42.3", "--copilot --global"]];
+  for (const [host, peer, version, fragment] of cases) {
+    const plan = cli.installPlan(manifest, host, version);
+    assert.equal(plan.peer, peer);
+    assert.equal(plan.version, version);
+    assert.ok(plan.command.includes(fragment), plan.command);
+    assert.ok(!/@latest|<[^>]*>|--<runtime>/.test(plan.command), plan.command);
+  }
+  assert.throws(() => cli.installPlan(manifest, "Bad Host", "1.0.0"), RangeError);
+});
+
+test("peers resolves offline, never prompts and never runs the install", () => {
+  const stub = npxStub();
+  for (const [host, fragment] of [["opencode", "oh-my-openagent@5.0.0-beta.90"], ["hermes", "oh-my-hermes@2.0.5"], ["codex", "get-shit-done-cc@1.42.3 --codex --global"]]) {
+    const result = spawnSync(process.execPath, [bin, "peers", "--host", host, "--json"], {
+      cwd: sandbox, input: "", encoding: "utf8", timeout: 10_000,
+      env: { ...process.env, ...stub.env, THUNDERKIT_DEPS_MANIFEST: "", THUNDERKIT_PEER_REGISTRY: registryFile },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, "");
+    const plan = JSON.parse(result.stdout);
+    assert.deepEqual(Object.keys(plan).sort(), ["channel", "command", "host", "package", "peer", "version"]);
+    assert.ok(plan.command.includes(fragment), plan.command);
+    assert.equal(existsSync(stub.log), false, "peers must not spawn npx");
+  }
+});
+
+test("peers rejects missing or unknown options with exit 2", () => {
+  for (const args of [["peers"], ["peers", "--host"], ["peers", "--host", "claude", "--bogus"], ["peers", "--host", "BAD"]]) {
+    const result = runCli(args, { THUNDERKIT_PEER_REGISTRY: registryFile });
+    assert.equal(result.status, 2, args.join(" "));
+    assert.equal(result.stdout, "");
+  }
+});
+
+test("peers fails closed on malformed registry facts", () => {
+  const bad = join(sandbox, "bad-registry.json");
+  writeFileSync(bad, JSON.stringify({ "get-shit-done-cc": { versions: "1.42.3" } }));
+  const result = runCli(["peers", "--host", "claude"], { THUNDERKIT_PEER_REGISTRY: bad });
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+});

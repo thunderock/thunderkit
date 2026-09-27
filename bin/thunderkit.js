@@ -59,7 +59,73 @@ export function renderDeps(manifest, { json = false } = {}) {
   return lines.join("\n");
 }
 
-/** @param {string[]} argv @returns {{command: "deps", json: boolean} | {command: "install" | "list" | "version" | "help"}} */
+/** @param {string} version @returns {{core: number[], pre: string[]} | null} */
+function parseSemver(version) {
+  const m = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(version);
+  if (!m) return null;
+  return { core: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] === undefined ? [] : m[4].split(".") };
+}
+
+/** @param {string} a @param {string} b @returns {number} */
+export function compareSemver(a, b) {
+  const x = parseSemver(a), y = parseSemver(b);
+  if (!x || !y) throw new RangeError(`not a canonical version: ${!x ? a : b}`);
+  for (let i = 0; i < 3; i++) if (x.core[i] !== y.core[i]) return x.core[i] - y.core[i];
+  if (!x.pre.length || !y.pre.length) return y.pre.length - x.pre.length;
+  for (let i = 0; i < Math.max(x.pre.length, y.pre.length); i++) {
+    if (i >= x.pre.length) return -1;
+    if (i >= y.pre.length) return 1;
+    const l = x.pre[i], r = y.pre[i], ln = /^\d+$/.test(l), rn = /^\d+$/.test(r);
+    if (ln && rn && l !== r) return l.length !== r.length ? l.length - r.length : (l < r ? -1 : 1);
+    if (ln !== rn) return ln ? -1 : 1;
+    if (l !== r) return l < r ? -1 : 1;
+  }
+  return 0;
+}
+
+/** Resolve a manifest channel to one concrete published version. @param {string} channel @param {string[]} versions @param {Record<string, string>} distTags @returns {string} */
+export function resolveChannel(channel, versions, distTags) {
+  const published = versions.filter((version) => parseSemver(version) !== null);
+  const tag = /^dist-tag:([a-z][a-z0-9-]*)$/.exec(channel);
+  if (tag) {
+    const version = distTags[tag[1]];
+    if (typeof version !== "string" || !published.includes(version)) throw new RangeError(`dist-tag ${tag[1]} does not name a published version`);
+    return version;
+  }
+  const series = /^max-prerelease:(0|[1-9]\d*)\.x:([a-z][a-z0-9-]*)$/.exec(channel);
+  if (series) {
+    const major = Number(series[1]);
+    const matching = published.filter((version) => {
+      const parsed = parseSemver(version);
+      return parsed !== null && parsed.core[0] === major && parsed.pre.length === 2 && parsed.pre[0] === series[2] && /^\d+$/.test(parsed.pre[1]);
+    }).sort(compareSemver);
+    const highest = matching.at(-1);
+    if (highest === undefined) throw new RangeError(`no ${major}.x ${series[2]} prerelease is published`);
+    return highest;
+  }
+  throw new RangeError(`unsupported channel: ${channel}`);
+}
+
+/** @param {DependencyManifest} manifest @param {string} host @returns {string} */
+export function peerForHost(manifest, host) {
+  const peer = manifest.hosts[host] ?? manifest.hosts.default;
+  if (peer === undefined || !(peer in manifest.ecosystems)) throw new RangeError(`no required peer for host ${host}`);
+  return peer;
+}
+
+/** Build the printed, never-executed install step for one host. @param {DependencyManifest} manifest @param {string} host @param {string} version */
+export function installPlan(manifest, host, version) {
+  if (!/^[a-z][a-z0-9-]*$/.test(host)) throw new RangeError(`invalid host: ${host}`);
+  const peer = peerForHost(manifest, host);
+  const record = manifest.ecosystems[/** @type {"omo" | "omh" | "gsd"} */ (peer)];
+  const escaped = record.package.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const command = record.install_hint
+    .replace(new RegExp(`${escaped}@(?:latest|<[^>]*>)`, "g"), `${record.package}@${version}`)
+    .replace(/--<runtime>/g, `--${host}`);
+  return { host, peer, package: record.package, channel: record.channel, version, command };
+}
+
+/** @param {string[]} argv @returns {{command: "deps", json: boolean} | {command: "peers", host: string, json: boolean} | {command: "install" | "list" | "version" | "help"}} */
 export function parseArgs(argv) {
   switch (argv[0]) {
     case "deps": {
@@ -67,6 +133,17 @@ export function parseArgs(argv) {
       const unknown = options.find((option) => option !== "--json");
       if (unknown !== undefined) throw new RangeError(`unknown option for deps: ${unknown}`);
       return { command: "deps", json: options.includes("--json") };
+    }
+    case "peers": {
+      const options = argv.slice(1);
+      let host = "", json = false;
+      for (let i = 0; i < options.length; i++) {
+        if (options[i] === "--json") json = true;
+        else if (options[i] === "--host" && i + 1 < options.length) host = options[++i];
+        else throw new RangeError(`unknown option for peers: ${options[i]}`);
+      }
+      if (!/^[a-z][a-z0-9-]*$/.test(host)) throw new RangeError("peers requires --host <name>");
+      return { command: "peers", host, json };
     }
     case "install":
     case "add":
@@ -93,6 +170,8 @@ function help() {
     npx thunderkit list        List the skills in the pack (no install)
     npx thunderkit deps        Show ecosystem dependencies and manual hints
     npx thunderkit deps --json Print dependency information as JSON
+    npx thunderkit peers --host <name> [--json]
+                               Resolve the host's required peer and print its install command
     npx thunderkit help        Show this
     npx thunderkit --version   Show the package version
 
@@ -154,6 +233,31 @@ function main() {
         const message = error instanceof Error ? error.message : String(error);
         process.stderr.write(`thunderkit: dependency manifest: ${message.replace(/[\r\n]+/g, " ")}\n`);
         process.exitCode = 1;
+      }
+      break;
+    case "peers":
+      try {
+        const manifest = JSON.parse(readFileSync(process.env.THUNDERKIT_DEPS_MANIFEST || new URL("../skills/references/dependencies.json", import.meta.url), "utf8"));
+        const peer = peerForHost(manifest, options.host);
+        const record = manifest.ecosystems[peer];
+        // THUNDERKIT_PEER_REGISTRY is a test-only offline override: {package: {versions, "dist-tags"}}.
+        const override = process.env.THUNDERKIT_PEER_REGISTRY;
+        let facts;
+        if (override) {
+          facts = JSON.parse(readFileSync(override, "utf8"))[record.package];
+        } else {
+          const view = spawnSync("npm", ["view", record.package, "versions", "dist-tags", "--json"], { stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", timeout: 60_000 });
+          if (view.error || view.status !== 0) throw new Error(`npm view ${record.package} failed`);
+          facts = JSON.parse(view.stdout);
+        }
+        if (!facts || !Array.isArray(facts.versions) || typeof facts["dist-tags"] !== "object") throw new Error("malformed registry facts");
+        const plan = installPlan(manifest, options.host, resolveChannel(record.channel, facts.versions, facts["dist-tags"]));
+        process.stdout.write(options.json ? JSON.stringify(plan, null, 2) + "\n"
+          : `${plan.host}: ${plan.peer} ${plan.package}@${plan.version} (channel ${plan.channel})\n  run: ${plan.command}\n  Thunderkit never runs this command.\n`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`thunderkit: peers: ${message.replace(/[\r\n]+/g, " ")}\n`);
+        process.exitCode = error instanceof RangeError ? 2 : 1;
       }
       break;
     case "version":
