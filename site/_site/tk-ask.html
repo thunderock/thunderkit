@@ -66,6 +66,8 @@ Q: How many dependency layers?              [number]</code></pre>
 <ul><li>Unknown operation requested of this skill: refuse it. <code>tk-ask</code> has one operation; anything</li></ul>
 <p>  else belongs to a different skill and is reported as unavailable, not improvised.</p>
 <p>The fallback never widens the accepted set, and it never converts an <code>unknown</code> into a guess.</p>
+<h2 id="asking-the-user">Asking the user</h2>
+<p>When this skill needs a decision from the user, ask through the host&#x27;s structured choice tool as described in <code>references/asking.md</code>: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record <code>unknown</code> and stop at the gate.</p>
 <h2 id="output-contract">Output contract</h2>
 <p>Every posed question yields exactly one record:</p>
 <pre><code>Q: &lt;question&gt;  [&lt;shape&gt;(: &lt;options&gt;)]

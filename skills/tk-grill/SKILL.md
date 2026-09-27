@@ -173,6 +173,10 @@ record is preserved unchanged; do not rewrite its `reason_code` to `capability_m
 names a routing gate, not a bad result from a route that was correctly admitted. Whether the
 intake then continues owned is governed by the bound-planner rule above.
 
+## Asking the user
+
+When this skill needs a decision from the user, ask through the host's structured choice tool as described in `references/asking.md`: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record `unknown` and stop at the gate.
+
 ## Output contract
 
 The controller writes `<project root>/.thunderkit/BRIEF.md` **after** the component returns (or

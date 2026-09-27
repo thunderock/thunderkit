@@ -106,6 +106,10 @@ If a returned suggestion contradicts an accepted choice, preserve that choice an
 it or re-ask the settled fork automatically. Only the user's explicit revision can change it.
 After a known return, any owned continuation remains bounded and planner-bound as above.
 
+## Asking the user
+
+When this skill needs a decision from the user, ask through the host's structured choice tool as described in `references/asking.md`: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record `unknown` and stop at the gate.
+
 ## Output contract
 
 After the component returns, the controller normalizes the result into the project's

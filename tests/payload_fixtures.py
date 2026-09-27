@@ -27,6 +27,7 @@ EXPECTED: Final = (
     "references/model-roster.md",
     "references/delegation.md",
     "references/config.schema.json",
+    "references/asking.md",
     "scripts/model_config.py",
     "scripts/capability_gates.py",
     "scripts/tk-resolve.py",

@@ -136,6 +136,10 @@ There is no native route to fall back from, so the fallback is the protocol itse
 
 The fallback never widens the accepted set, and it never converts an `unknown` into a guess.
 
+## Asking the user
+
+When this skill needs a decision from the user, ask through the host's structured choice tool as described in `references/asking.md`: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record `unknown` and stop at the gate.
+
 ## Output contract
 
 Every posed question yields exactly one record:

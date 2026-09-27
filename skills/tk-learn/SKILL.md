@@ -183,6 +183,10 @@ never assume Thunderkit's checkout-only tests or site builder exist in an instal
 Missing validation remains reported as unvalidated. Neither discovery nor a proposal
 authorizes implementation, installation, automatic draft commits or delivery.
 
+## Asking the user
+
+When this skill needs a decision from the user, ask through the host's structured choice tool as described in `references/asking.md`: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record `unknown` and stop at the gate.
+
 ## Output contract
 
 The controller writes `$PROJECT_ROOT/.thunderkit/knowledge/<slug>.md` within the approved

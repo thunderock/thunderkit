@@ -239,6 +239,10 @@ for a run. Carrying on with a documented portable procedure for an optional back
 new question. The router never installs, logs in, edits a global host configuration, or
 delivers (push/PR/merge) on its own.
 
+## Asking the user
+
+When this skill needs a decision from the user, ask through the host's structured choice tool as described in `references/asking.md`: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record `unknown` and stop at the gate.
+
 ## Output contract
 
 Each router turn ends with a short status block. Its fields, in order:

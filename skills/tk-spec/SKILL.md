@@ -145,6 +145,10 @@ record an `invocation_failure` note separately alongside the unchanged route. Do
 correctly admitted route. Only a known terminal failure may continue owned, with the bound
 selected planner and the rounds that remain, never a fresh six.
 
+## Asking the user
+
+When this skill needs a decision from the user, ask through the host's structured choice tool as described in `references/asking.md`: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record `unknown` and stop at the gate.
+
 ## Output contract
 
 The controller writes results **after** the loop ends, never while a component runs, and never

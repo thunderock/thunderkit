@@ -18,6 +18,7 @@ MANIFEST: Final = (
     ("skills/references/model-roster.md", "references/model-roster.md"),
     ("skills/references/delegation.md", "references/delegation.md"),
     ("skills/references/config.schema.json", "references/config.schema.json"),
+    ("skills/references/asking.md", "references/asking.md"),
     ("skills/references/model_config.py", "scripts/model_config.py"),
     ("skills/references/capability_gates.py", "scripts/capability_gates.py"),
     ("skills/references/tk-resolve.py", "scripts/tk-resolve.py"),

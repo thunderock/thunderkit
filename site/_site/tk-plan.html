@@ -70,6 +70,8 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p>  → the lane is <code>blocked</code>, not plannable.</p>
 <ul><li><strong>A model hint</strong> — critical-path lane vs. breadth/cleanup lane, resolved within the selected</li></ul>
 <p>  executor class. A hint cannot substitute a model or approve dispatch.</p>
+<h2 id="asking-the-user">Asking the user</h2>
+<p>When this skill needs a decision from the user, ask through the host&#x27;s structured choice tool as described in <code>references/asking.md</code>: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record <code>unknown</code> and stop at the gate.</p>
 <h2 id="output-contract--thunderkitplanmd--thunderkitplanjson">Output contract — <code>.thunderkit/PLAN.md</code> + <code>.thunderkit/plan.json</code></h2>
 <p>Human-readable <code>PLAN.md</code> and a machine-readable <code>plan.json</code> that <code>tk-execute</code> consumes:</p>
 <p>For a native handoff these are <strong>controller-derived lane summaries</strong>, not another executable plan. Normalize only after known return, approved artifact verification and lane validation; retain the native plan as the execution authority. Do not change its bytes to fit the summary. Preserve the existing goal/layers/lanes structure and every lane&#x27;s fields:</p>

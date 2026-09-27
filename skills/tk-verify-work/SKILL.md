@@ -130,6 +130,10 @@ rewriting the resolver record.
    plan-only result, test-only evidence or unresolved failure prevents a complete UAT pass.
    Record the exact remaining gaps; do not convert a waiver or proposed repair into a pass.
 
+## Asking the user
+
+When this skill needs a decision from the user, ask through the host's structured choice tool as described in `references/asking.md`: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record `unknown` and stop at the gate.
+
 ## Output contract
 
 `.thunderkit/UAT.md` is durable, committed project context that travels with the repository.

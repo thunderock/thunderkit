@@ -42,6 +42,8 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p>The owned procedure is the skill:</p>
 <ol><li>Confirm the author model (default or <code>model=</code>) and one different-family reviewer.</li><li>Make the change on the author model; keep each commit to one logical step.</li><li>Run the relevant tests before each commit.</li><li>Give the reviewer the diff and the test output; address findings or record why not.</li><li>Commit only after the review returns. No push, PR, tag or publish.</li></ol>
 <p>Without a valid configuration, stop as blocked and ask for one; never pick a model silently.</p>
+<h2 id="asking-the-user">Asking the user</h2>
+<p>When this skill needs a decision from the user, ask through the host&#x27;s structured choice tool as described in <code>references/asking.md</code>: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record <code>unknown</code> and stop at the gate.</p>
 <h2 id="output-contract">Output contract</h2>
 <pre><code>task: &lt;one sentence&gt;
 author: &lt;model key&gt; (&lt;family&gt;)
