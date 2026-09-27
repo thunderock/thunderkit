@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import unittest
@@ -5,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Final
+from unittest.mock import patch
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -17,6 +19,16 @@ from tools.skill_frontmatter import (
     parse_skill_md,
     validate_thunderkit,
 )
+
+
+def scratch_root() -> str:
+    for name in ("THUNDERKIT_TEST_TMPDIR", "TMPDIR"):
+        if value := os.environ.get(name):
+            return value
+    fallback = ROOT / ".omo-tmp"
+    fallback.mkdir(exist_ok=True)
+    return str(fallback)
+
 
 DESCRIPTION: Final = "Use when checking frontmatter contracts for local skills."
 CORE: Final = f'---\nname: tk-example\ndescription: "{DESCRIPTION}"\n'
@@ -154,19 +166,40 @@ class FrontmatterContractTests(unittest.TestCase):
 
     def test_file_adapter_preserves_body_bytes(self) -> None:
         body = "\r\n# Café\r\nline\rnext\n\tend  "
-        with TemporaryDirectory(dir=ROOT) as directory:
+        with TemporaryDirectory(dir=scratch_root()) as directory:
             path = Path(directory) / "SKILL.md"
             path.write_bytes((HEADER + body).encode("utf-8"))
             fm = parse_skill_file(path)
         self.assertEqual(fm.body.encode("utf-8"), body.encode("utf-8"))
 
     def test_file_adapter_reports_the_file_path(self) -> None:
-        with TemporaryDirectory(dir=ROOT) as directory:
+        with TemporaryDirectory(dir=scratch_root()) as directory:
             path = Path(directory) / "SKILL.md"
             path.write_bytes((CORE + "requires: x\n---\n").encode("utf-8"))
             with self.assertRaises(FrontmatterError) as caught:
                 parse_skill_file(str(path))
         self.assertEqual((caught.exception.path, caught.exception.line), (str(path), 4))
+
+    def test_file_adapters_allocate_under_the_supplied_private_root(self) -> None:
+        real = TemporaryDirectory
+        created: list[Path] = []
+
+        def recording(**kwargs: str) -> TemporaryDirectory[str]:
+            directory = real(**kwargs)
+            created.append(Path(directory.name))
+            return directory
+
+        names = ("test_file_adapter_preserves_body_bytes", "test_file_adapter_reports_the_file_path")
+        with real(dir=scratch_root()) as outer:
+            private = Path(outer) / "supplied"
+            private.mkdir()
+            supplied = {"THUNDERKIT_TEST_TMPDIR": str(private), "TMPDIR": str(private)}
+            with patch.dict(os.environ, supplied), \
+                    patch.object(sys.modules[__name__], "TemporaryDirectory", recording):
+                result = unittest.TestResult()
+                unittest.TestSuite(type(self)(name) for name in names).run(result)
+        self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
+        self.assertEqual([directory.parent for directory in created], [private, private])
 
     def test_module_is_importable_from_the_tools_directory(self) -> None:
         code = (
