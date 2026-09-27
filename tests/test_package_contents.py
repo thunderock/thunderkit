@@ -61,7 +61,7 @@ class PackageContentsTests(PayloadFixture):
         assert node is not None, "Node is required for package tests"
         assert npm is not None, "npm is required for real offline package tests"
         self.node, self.npm = node, npm
-        self.env.update(PATH=os.pathsep.join((str(Path(node).parent), str(Path(npm).parent), os.defpath)),
+        self.env.update(PATH=os.pathsep.join((str(Path(npm).parent), str(Path(node).parent), os.defpath)),
                         NPM_CONFIG_USERCONFIG=str(self.sandbox / "user.npmrc"),
                         NPM_CONFIG_GLOBALCONFIG=str(self.sandbox / "global.npmrc"),
                         NPM_CONFIG_CACHE=str(self.sandbox / "npm-cache"),
