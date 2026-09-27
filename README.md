@@ -4,7 +4,7 @@
 
 **Ship big changes in big repos — by splitting the work into parallel lanes and routing each to the best model across a heterogeneous agent fleet.**
 
-[![skills](https://img.shields.io/badge/Agent_Skills-19-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
+[![skills](https://img.shields.io/badge/Agent_Skills-21-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
 [![npm](https://img.shields.io/npm/v/thunderkit?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/thunderkit)
 [![CI](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/ci.yml?branch=master&style=for-the-badge&logo=github&label=CI)](https://github.com/thunderock/thunderkit/actions/workflows/ci.yml)
 [![Pages](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/pages.yml?branch=master&style=for-the-badge&logo=githubpages&label=Docs)](https://thunderock.github.io/thunderkit/)
@@ -119,7 +119,7 @@ A supplied `decided_at` is preserved; readers never invent one. See the
 A backend never replaces a selected model or lowers the family minimum. Unsupported host/model
 mappings are reported explicitly; changing a choice requires the user, not an automatic fallback.
 
-## The skills (19)
+## The skills (21)
 
 | Stage | Skill | What it owns |
 |---|---|---|
@@ -135,6 +135,8 @@ mappings are reported explicitly; changing a choice requires the user, not an au
 | **pre-plan** | `tk-learn` | Research a topic online → source-backed knowledge note → optionally draft a new validated skill. |
 | **plan** | `tk-plan` | Decompose into **disjoint, dependency-layered lanes**, each with acceptance + a verify command. |
 | **execute** | `tk-execute` | One execution owner: a qualified native handoff or portable lane dispatch, with worktree and genuine session evidence. |
+| **execute** | `tk-fast` | Trivial inline edit: no model choice, plan, subagents or review; targeted test and one atomic commit. Uses GSD `gsd-fast` where installed. |
+| **execute** | `tk-quick` | Small task on one chosen model (planner default or `model=<key>`), atomic commits and tests, one different-family review before each commit. |
 | **verify** | `tk-review` | **Cross-family review + evidence gate** (also `--plan` for pre-execution plan-check). |
 | **verify** | `tk-verify-work` | Conversational UAT — walk each acceptance criterion through the real user surface. |
 | **verify** | `tk-debug` | Scientific-method debug loop with persisted, resumable state. |

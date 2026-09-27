@@ -21,7 +21,7 @@ class SkillPayloadTests(PayloadFixture):
     def test_real_tree_when_checked_from_an_unrelated_directory(self) -> None:
         # Given the installed payload inventory, not a generated test fixture.
         skills = registered_skills()
-        self.assertEqual((len(skills), len(EXPECTED)), (19, 9))
+        self.assertEqual((len(skills), len(EXPECTED)), (21, 9))
         self.assertEqual({path.parent.name for path in (ROOT / "skills").glob("tk-*/SKILL.md")}, set(skills))
         module = self.load_module(TOOL)
         self.assertEqual(tuple(module.MANAGED_FILES), EXPECTED)
@@ -30,9 +30,9 @@ class SkillPayloadTests(PayloadFixture):
         before = snapshot(ROOT / "skills")
         # When the CLI derives its root from __file__ rather than cwd.
         result = self.cli(check=True)
-        # Then all 171 copies are current, byte-exact, and the inventory is unchanged.
+        # Then all 189 copies are current, byte-exact, and the inventory is unchanged.
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("171/171", result.stdout)
+        self.assertIn("189/189", result.stdout)
         self.assertEqual(snapshot(ROOT / "skills"), before)
         for name in skills:
             skill = ROOT / "skills" / name

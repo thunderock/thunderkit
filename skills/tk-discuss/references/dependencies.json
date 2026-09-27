@@ -950,6 +950,45 @@
         }
       ],
       "fallback": "Thunderkit owns handoff saving and restoration and reports lookup limits when explicitly requested session recovery is unavailable."
+    },
+    "tk-fast": {
+      "role": "fast",
+      "default_operation": "edit",
+      "operations": [
+        "edit"
+      ],
+      "targets": [
+        {
+          "ecosystem": "gsd",
+          "skill_name": "gsd-fast",
+          "selector": "gsd-fast",
+          "mode": "handoff",
+          "operations": [
+            "edit"
+          ],
+          "requires": [
+            "tool:skill"
+          ],
+          "notes": "Hand a trivial inline edit to GSD fast mode on GSD hosts; Thunderkit binds no model and adds no plan or review.",
+          "provenance": {
+            "root_kind": "gsd",
+            "entrypoint": "skills/gsd-fast/SKILL.md",
+            "files": [
+              "skills/gsd-fast/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit edits inline in the current session, runs the targeted test and makes one atomic commit when GSD fast mode is unavailable."
+    },
+    "tk-quick": {
+      "role": "quick",
+      "default_operation": "quick",
+      "operations": [
+        "quick"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns quick tasks because the model choice and the single cross-family review gate must stay local."
     }
   },
   "excluded": [

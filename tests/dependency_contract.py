@@ -75,7 +75,7 @@ def validate_manifest(raw: JsonValue, skill_dirs: set[str]) -> None:
     skills = json_object(doc.get("skills"))
     assert set(peers) == set(CHANNELS), "ecosystems must be exactly omo, omh and gsd"
     assert set(skills) == skill_dirs == set(OPERATIONS), "skill inventory mismatch"
-    assert len(skill_dirs) == 19
+    assert len(skill_dirs) == 21
     assert doc.get("excluded") == ["omc"]
     cli = json_object(doc.get("distribution_cli"))
     assert (cli.get("package"), cli.get("version"), cli.get("node")) == ("skills", "1.7.0", ">=22.20.0")

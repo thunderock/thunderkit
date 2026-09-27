@@ -34,7 +34,7 @@ EXPECTED: Final = (
 )
 FIXTURE_SKILLS: Final = ("tk-x", "tk-test")
 OWNED_SKILLS: Final = frozenset({"tk-router", "tk-test", "tk-ask", "tk-docs", "tk-memory",
-                               "tk-handoff", "tk-verify-work"})
+                               "tk-handoff", "tk-verify-work", "tk-quick"})
 MANAGED_PATHS: Final = (
     "skills", "skills/references", "skills/tk-x", "skills/tk-x/SKILL.md",
     "skills/tk-test/references", "skills/tk-test/scripts",
@@ -209,7 +209,7 @@ class PayloadFixture(unittest.TestCase):
         project.mkdir()
         cfg, caps = project / "config.json", project / "capabilities.json"
         write_json(cfg, config())
-        host = "opencode" if skill.name == "tk-debug" else "hermes"
+        host = {"tk-debug": "opencode", "tk-fast": "claude"}.get(skill.name, "hermes")
         write_json(caps, capability_snapshot(host, {}, {}))
         return [sys.executable, "-S", str(skill / "scripts/tk-resolve.py"), "--skill", skill.name,
                 "--config", str(cfg), "--capabilities", str(caps), "--project-root", str(project), "--json"]

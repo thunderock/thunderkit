@@ -109,7 +109,7 @@ class PackageContentsTests(PayloadFixture):
         # Then only nineteen complete owned payloads ship; source caches are untouched.
         self.assertEqual({path.parent.name for path in (package / "skills").glob("*/SKILL.md")},
                          set(registered_skills()))
-        self.assertEqual(len(registered_skills()), 19)
+        self.assertEqual(len(registered_skills()), 21)
         self.assertEqual(snapshot(ROOT / "skills"), before)
 
     def test_package_when_git_free_source_has_caches_and_private_files_excludes_them(self) -> None:

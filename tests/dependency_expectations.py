@@ -31,6 +31,8 @@ OPERATIONS: Final = {
     "tk-audit": ("audit", ("audit",)),
     "tk-memory": ("view", ("view", "save")),
     "tk-handoff": ("save", ("save", "restore", "lookup")),
+    "tk-fast": ("edit", ("edit",)),
+    "tk-quick": ("quick", ("quick",)),
 }
 ROOT_KINDS: Final = {"omo": "package", "omh": "omh", "gsd": "gsd"}
 SKILL_PREFIXES: Final = {"omo": "dist/skills", "omh": "skills", "gsd": "skills"}
@@ -104,6 +106,7 @@ _LOCAL_COMPANIONS: Final[dict[tuple[str, str], frozenset[str]]] = {
     ("omh", "reviewer/omh-verification-gate"): frozenset(),
     ("gsd", "gsd-debug"): frozenset(),
     ("gsd", "gsd-explore"): frozenset(),
+    ("gsd", "gsd-fast"): frozenset(),
 }
 COMPANIONS: Final = {
     (ecosystem, selector): frozenset(f"{SKILL_PREFIXES[ecosystem]}/{selector}/{path}" for path in paths)
@@ -159,4 +162,5 @@ TARGETS: Final = {
     "tk-ship": {("omh", "reviewer/omh-verification-gate", "component", ("prepare",))},
     "tk-audit": {("omh", "reviewer/omh-verification-gate", "component", ("audit",))},
     "tk-handoff": {("omo", "coding-agent-sessions", "component", ("lookup",))},
+    "tk-fast": {("gsd", "gsd-fast", "handoff", ("edit",))},
 }

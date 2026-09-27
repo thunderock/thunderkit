@@ -1,0 +1,73 @@
+{
+  "skill": "tk-quick",
+  "cases": {
+    "happy": [
+      {
+        "name": "quick task is owned after validating configuration",
+        "operation": "quick",
+        "config": "sol",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        },
+        "sections": [
+          "Model choice",
+          "Delegation",
+          "Fallback",
+          "Output contract"
+        ],
+        "frontmatter": {
+          "thunderkit-role": "quick",
+          "thunderkit-tier": "execute",
+          "thunderkit-delegates": "none",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "default operation is quick",
+        "operation": null,
+        "config": "sol",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "quick without configuration is blocked",
+        "operation": "quick",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2
+        }
+      },
+      {
+        "name": "plan operation is refused",
+        "operation": "plan",
+        "config": "sol",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2
+        }
+      }
+    ]
+  }
+}
