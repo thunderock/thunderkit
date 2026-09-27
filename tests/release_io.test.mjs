@@ -195,6 +195,10 @@ test("pushTag writes the bot-identified reservation once, pushes only that ref w
 test("publishTarball and createRelease use exact explicit argv with only the intended environment", async () => {
   const f = fixture();
   const { transport, hooks, calls } = transportFor(f);
+  // A GitHub runner already exports provenance variables; hide them so the forwarded set is exact.
+  const provenanceKeys = ["ACTIONS_ID_TOKEN_REQUEST_TOKEN", "GITHUB_ACTIONS", "GITHUB_REPOSITORY", "GITHUB_WORKFLOW_REF", "GITHUB_SHA", "GITHUB_REF", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_SERVER_URL", "GITHUB_API_URL"];
+  const saved = Object.fromEntries(provenanceKeys.filter((key) => key in process.env).map((key) => [key, process.env[key]]));
+  for (const key of provenanceKeys) delete process.env[key];
   process.env.GH_TOKEN = "ghs_fixture";
   process.env.NPM_TOKEN = "npm_secret";
   process.env.ACTIONS_ID_TOKEN_REQUEST_URL = "https://token.example";
@@ -223,6 +227,7 @@ test("publishTarball and createRelease use exact explicit argv with only the int
     delete process.env.GH_TOKEN;
     delete process.env.NPM_TOKEN;
     delete process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+    Object.assign(process.env, saved);
   }
 });
 
