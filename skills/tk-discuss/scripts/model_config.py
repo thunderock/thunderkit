@@ -220,12 +220,12 @@ def normalize_config(raw: JsonObject, catalog: JsonObject) -> tuple[JsonObject, 
             raise ConfigError(f"frozen_paths[{index}] must be repo-relative using forward slashes, "
                               "without a drive, '..' segments or ASCII control characters")
     normalized["frozen_paths"] = list(paths)
-    ecosystems = _strings(source.get("ecosystems", ["omo", "omh"]), "ecosystems")
+    ecosystems = _strings(source.get("ecosystems", ["omo", "omh", "gsd"]), "ecosystems")
     if len(set(ecosystems)) != len(ecosystems):
         raise ConfigError("ecosystems contains duplicate entries; choose each ecosystem only once")
     for ecosystem in ecosystems:
-        if ecosystem not in ("omo", "omh"):
-            raise ConfigError("ecosystems: unsupported value; choose 'omo' or 'omh'")
+        if ecosystem not in ("omo", "omh", "gsd"):
+            raise ConfigError("ecosystems: unsupported value; choose 'omo', 'omh' or 'gsd'")
     normalized["ecosystems"] = list(ecosystems)
     delegation = _text(source.get("delegation", "auto"), "delegation")
     if delegation not in ("auto", "off"):

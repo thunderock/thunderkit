@@ -46,7 +46,7 @@ class ConfigSchema(Rule):
 REFERENCES: Final = Path(__file__).resolve().parents[1] / "skills" / "references"
 OPERATIONAL_DEFAULTS: Final[JsonObject] = {
     "schema_version": 2, "review_families_min": 2, "max_layers": 3,
-    "frozen_paths": [], "ecosystems": ["omo", "omh"], "delegation": "auto",
+    "frozen_paths": [], "ecosystems": ["omo", "omh", "gsd"], "delegation": "auto",
 }
 
 
@@ -231,7 +231,7 @@ class CatalogSchemaTests(unittest.TestCase):
         self.assertEqual(properties["review_families_min"], {"type": "integer", "minimum": 2})
         self.assertEqual(properties["decided_at"].get("type"), "string")
         self.assertEqual(properties["ecosystems"], {"type": "array", "uniqueItems": True,
-                         "items": {"type": "string", "enum": ["omo", "omh"]}})
+                         "items": {"type": "string", "enum": ["omo", "omh", "gsd"]}})
         self.assertEqual(properties["delegation"], {"type": "string", "enum": ["auto", "off"]})
 
     def test_frozen_path_pattern_rejects_escape_and_nonportable_paths(self) -> None:

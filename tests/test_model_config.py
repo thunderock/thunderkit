@@ -11,7 +11,7 @@ class ModelConfigNormalizationTests(ModelConfigCase):
     def test_live_choices_are_retained_when_version_is_absent(self) -> None:
         normalized, warnings = self.normalize(deepcopy(LIVE))
         self.assertEqual(normalized, {**LIVE, "schema_version": 2,
-                                      "ecosystems": ["omo", "omh"], "delegation": "auto"})
+                                      "ecosystems": ["omo", "omh", "gsd"], "delegation": "auto"})
         self.assertEqual(warnings, ["schema_version absent; assuming 2"])
 
     def test_defaults_do_not_choose_models_when_only_classes_are_supplied(self) -> None:
@@ -19,7 +19,7 @@ class ModelConfigNormalizationTests(ModelConfigCase):
         normalized, _ = self.normalize({"classes": classes})
         self.assertEqual(normalized, {"schema_version": 2, "classes": classes,
                                       "review_families_min": 2, "max_layers": 3,
-                                      "frozen_paths": [], "ecosystems": ["omo", "omh"],
+                                      "frozen_paths": [], "ecosystems": ["omo", "omh", "gsd"],
                                       "delegation": "auto"})
 
     def test_explicit_options_are_retained_when_they_differ_from_defaults(self) -> None:
@@ -80,7 +80,7 @@ class ModelConfigNormalizationTests(ModelConfigCase):
                 expected = {key: value for key, value in raw.items() if key != "models"}
                 self.assertEqual(normalized, {**expected, "schema_version": 2,
                     "classes": {"planner": "opus48", "executors": ["opus5"], "reviewers": review},
-                    "ecosystems": ["omo", "omh"], "delegation": "auto"})
+                    "ecosystems": ["omo", "omh", "gsd"], "delegation": "auto"})
                 self.assertEqual(warnings, ["legacy models schema converted (preview only; not saved)"])
 
     def test_invalid_fields_report_the_key_without_side_effects(self) -> None:

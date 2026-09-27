@@ -8,7 +8,7 @@
   "review_families_min": 2,
   "max_layers": 3,
   "frozen_paths": ["LICENSE"],
-  "ecosystems": ["omo", "omh"],
+  "ecosystems": ["omo", "omh", "gsd"],
   "delegation": "auto",
   "decided_at": "2026-09-04"
 }

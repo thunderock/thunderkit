@@ -93,7 +93,8 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
         &quot;type&quot;: &quot;string&quot;,
         &quot;enum&quot;: [
           &quot;omo&quot;,
-          &quot;omh&quot;
+          &quot;omh&quot;,
+          &quot;gsd&quot;
         ]
       }
     },
@@ -173,7 +174,8 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
     &quot;frozen_paths&quot;: [],
     &quot;ecosystems&quot;: [
       &quot;omo&quot;,
-      &quot;omh&quot;
+      &quot;omh&quot;,
+      &quot;gsd&quot;
     ],
     &quot;delegation&quot;: &quot;auto&quot;
   },
@@ -182,7 +184,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
     &quot;Canonical writes use schema_version: 2. A classes config may omit schema_version; readers assume 2 without rewriting the file. An explicit version other than 2 is invalid for classes.&quot;,
     &quot;All three model classes are required user selections and have no defaults. Missing operational fields receive only the defaults listed here, in memory. Explicit values are preserved or rejected, never replaced with defaults.&quot;,
     &quot;decided_at is optional for readers. Preserve a supplied string, including an empty string; never fabricate a date or placeholder.&quot;,
-    &quot;ecosystems is a unique list containing only omo and/or omh. An empty list selects neither ecosystem; it is not replaced by the default.&quot;,
+    &quot;ecosystems is a unique list containing only omo, omh and/or gsd. An empty list selects neither ecosystem; it is not replaced by the default.&quot;,
     &quot;The only recognized legacy shape is models.{plan,critical_path,review}: plan becomes classes.planner, critical_path becomes a singleton classes.executors array, and review becomes classes.reviewers, retaining all or a nonempty unique catalog-key list. No other aliases are recognized.&quot;,
     &quot;Legacy input may omit schema_version or specify 1 or 2. Only a complete valid legacy object produces a normalized preview with a migration warning; saving requires user approval. Preserve known operational fields and decided_at. Mixed models/classes or incomplete legacy shapes are invalid.&quot;,
     &quot;Reject unknown object keys at the config root and within classes or legacy models. The legacy root permits models in place of classes plus the same operational fields and optional decided_at.&quot;,

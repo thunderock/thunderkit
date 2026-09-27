@@ -246,12 +246,12 @@ def normalize_config(raw: JsonObject, catalog: JsonObject) -&gt; tuple[JsonObjec
             raise ConfigError(f&quot;frozen_paths[{index}] must be repo-relative using forward slashes, &quot;
                               &quot;without a drive, &#x27;..&#x27; segments or ASCII control characters&quot;)
     normalized[&quot;frozen_paths&quot;] = list(paths)
-    ecosystems = _strings(source.get(&quot;ecosystems&quot;, [&quot;omo&quot;, &quot;omh&quot;]), &quot;ecosystems&quot;)
+    ecosystems = _strings(source.get(&quot;ecosystems&quot;, [&quot;omo&quot;, &quot;omh&quot;, &quot;gsd&quot;]), &quot;ecosystems&quot;)
     if len(set(ecosystems)) != len(ecosystems):
         raise ConfigError(&quot;ecosystems contains duplicate entries; choose each ecosystem only once&quot;)
     for ecosystem in ecosystems:
-        if ecosystem not in (&quot;omo&quot;, &quot;omh&quot;):
-            raise ConfigError(&quot;ecosystems: unsupported value; choose &#x27;omo&#x27; or &#x27;omh&#x27;&quot;)
+        if ecosystem not in (&quot;omo&quot;, &quot;omh&quot;, &quot;gsd&quot;):
+            raise ConfigError(&quot;ecosystems: unsupported value; choose &#x27;omo&#x27;, &#x27;omh&#x27; or &#x27;gsd&#x27;&quot;)
     normalized[&quot;ecosystems&quot;] = list(ecosystems)
     delegation = _text(source.get(&quot;delegation&quot;, &quot;auto&quot;), &quot;delegation&quot;)
     if delegation not in (&quot;auto&quot;, &quot;off&quot;):

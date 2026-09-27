@@ -215,7 +215,7 @@ class SkillPayloadTests(PayloadFixture):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         imported: JsonObject = json.loads(result.stdout)
         self.assertEqual(imported["normalized"], dict(raw, review_families_min=2, max_layers=3,
-                                                   frozen_paths=[], ecosystems=["omo", "omh"], delegation="auto"))
+                                                   frozen_paths=[], ecosystems=["omo", "omh", "gsd"], delegation="auto"))
         self.assertEqual(imported["warnings"], [])
         self.assertIs(imported["bytecode_policy"], False)
         self.assertEqual(imported["module_paths"], [str(skill / "scripts")] * 2)
