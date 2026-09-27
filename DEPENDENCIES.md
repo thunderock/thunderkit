@@ -6,27 +6,33 @@ cross-family review and completion gates. It can reuse compatible native impleme
 without copying their workflow bodies or running a second workflow owner.
 
 The authoritative registry is [`skills/references/dependencies.json`](skills/references/dependencies.json).
-It records exact package pins, source identity, published integrity, loaded-file fingerprints,
-host constraints, and each skill's operation-specific targets and owned fallback.
+It records the required peer for each host, the release channel resolved at install time,
+source identity, the files each target loads, host constraints, and each skill's
+operation-specific targets and owned fallback. Installed versions and file digests live in the
+machine-local lock `.thunderkit/peers.lock.json`, which is never committed or packed.
 
-## Optional peers and host support
+## Required peer per host
 
-| Peer | Exact pin | License | Eligible active hosts | Upstream source |
-|---|---|---|---|---|
-| OMO | `oh-my-openagent@5.0.0-beta.81` | SUL-1.0 | OpenCode, Codex | [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) |
-| OMH | `oh-my-hermes@2.0.3` | MIT | Hermes | [rlaope/oh-my-hermes](https://github.com/rlaope/oh-my-hermes) |
+| Host | Required peer | Package | Channel | License | Upstream source |
+|---|---|---|---|---|---|
+| Hermes | OMH | `oh-my-hermes` | `latest` dist-tag | MIT | [rlaope/oh-my-hermes](https://github.com/rlaope/oh-my-hermes) |
+| OpenCode | OMO | `oh-my-openagent` | highest `5.x` `-beta.N` prerelease | SUL-1.0 | [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) |
+| Claude Code, Codex, Copilot, Gemini, Cursor, Windsurf | GSD | `get-shit-done-cc` | `latest` dist-tag | MIT | [gsd-build/get-shit-done](https://github.com/gsd-build/get-shit-done) |
 
-OMO's registry source commit is `a5eb7c130cae64125f31de13adee083eccc5d004`; read its
-[pinned license](https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/a5eb7c130cae64125f31de13adee083eccc5d004/LICENSE.md).
-The published metadata is linked at
-[OMO 5.0.0-beta.81](https://registry.npmjs.org/oh-my-openagent/5.0.0-beta.81) and
-[OMH 2.0.3](https://registry.npmjs.org/oh-my-hermes/2.0.3).
+No peer version is fixed in the repository. `thunderkit install` resolves each channel when you
+install, and the lock records the resolved version and the SHA-256 of every installed file the
+targets use (trust on first lock). OMC stays excluded. Read OMO's
+[license](https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/a5eb7c130cae64125f31de13adee083eccc5d004/LICENSE.md)
+before installing it.
+
 Thunderkit's MIT license does not relicense either peer or confer commercial-use rights to
 OMO. Thunderkit does not redistribute the peer implementations; each upstream license applies.
 
-Only these two ecosystems are eligible. Claude Code and other skill-compatible hosts have no
-declared native peer route and use Thunderkit-owned portable procedures. Even on an eligible
-host, a target is conditional: a package present on disk is not necessarily loaded, compatible,
+Each host has exactly one required peer. When it is missing, a skill stops and prints the
+peer's non-interactive install command instead of running an owned copy. On GSD hosts only
+project-free commands are targets (`gsd-debug`, `gsd-explore`); every other operation uses a thin
+Thunderkit-owned path, because GSD phase commands need a `.planning/` project. Even on a
+supported host, a target is conditional: a package present on disk is not necessarily loaded, compatible,
 model-bound, or verified. Each operation uses only its own declared target, never a same-named
 skill from a different source. A native installation on one host does not activate another.
 
@@ -39,9 +45,10 @@ skill from a different source. A native installation on one host does not activa
 | Thunderkit local resolver/model helpers | Python ≥3.11 | Local validation; no native installer or model call |
 | OMH npm launcher | Node ≥18 | Separate from the Thunderkit distribution CLI requirement |
 | OMH packaged wheel | Python ≥3.11 | Required by the Python implementation behind the launcher |
-| OMO | Host-managed; runtime version not specified in the registry | Follow the pinned upstream host requirements; no universal Node-only claim |
+| GSD installer | Node ≥22.0.0 | Required by `get-shit-done-cc` |
+| OMO | Host-managed; runtime version not specified in the registry | Follow the upstream host requirements; no universal Node-only claim |
 
-`skills@1.7.0` is a distribution tool, **not a third peer ecosystem**. The pointer's Node ≥18
+`skills@1.7.0` is a distribution tool, **not a peer ecosystem**. The pointer's Node ≥18
 package requirement does not mean installation works on Node 18. Both install and list enforce
 the higher distribution boundary; list still delegates to that CLI even though it installs no
 skills. A distribution lock for individual skills does not install or restore native peers.
@@ -56,7 +63,7 @@ npx thunderkit deps --json
 node bin/thunderkit.js deps --json
 ```
 
-JSON contains `schema_version`, `ecosystems`, `distribution_cli` and `note`. The peer records
+JSON contains `schema_version` (2), `hosts`, `ecosystems`, `distribution_cli` and `note`. The peer records
 include manual hints, not results of probing the machine. `deps` never executes installation,
 activation, doctor, update or login commands. Running it is not evidence that a model answered
 or a native workflow ran. The `npx` form may retrieve Thunderkit itself if it is not cached.
@@ -71,11 +78,11 @@ the pinned peer's requirements and license before making host configuration chan
 
 The registry's exact installation hint is:
 
-> Host-native opencode.json plugin pin: {"plugin":["oh-my-openagent@5.0.0-beta.81"]}; Thunderkit never runs this installation.
+> Host-native opencode.json plugin pin: {"plugin":["oh-my-openagent@<resolved 5.x beta>"]}; Thunderkit never runs this installation.
 
-This is an OpenCode plugin configuration hint, not a Codex installer command or an instruction
-to overwrite an existing configuration. The registry permits Codex as a host but supplies no
-separate Codex installation command. Consult the pinned upstream's host-specific instructions;
+This is an OpenCode plugin configuration hint, not an instruction to overwrite an existing
+configuration. OMO is required only on OpenCode; Codex uses GSD. Consult the upstream's
+host-specific instructions;
 until the loaded source and effective bindings are proven, the native route is unavailable.
 
 After operator-approved installation, activate/load the peer through the host's native
@@ -87,7 +94,7 @@ ecosystem-prefixed slash command.
 The separately run doctor hint, copied from the registry:
 
 ```sh
-bunx oh-my-openagent@5.0.0-beta.81 doctor
+bunx oh-my-openagent@<locked version> doctor
 ```
 
 ### OMH
@@ -95,10 +102,10 @@ bunx oh-my-openagent@5.0.0-beta.81 doctor
 The exact registry hint combines package installation with native setup:
 
 ```sh
-npm install -g oh-my-hermes@2.0.3 && omh setup --full --yes --no-interactive --no-menubar --scope user
+npm install -g oh-my-hermes@latest && omh setup --full --yes --no-interactive --no-menubar --scope user
 ```
 
-The first command installs the pinned launcher; the second performs user-scoped activation
+The first command installs the launcher; the second performs user-scoped activation
 and configuration. These are explicit operator-approved side effects, never actions taken by
 Thunderkit's install or dependency display. Confirm the matching plugin and categorized skills
 are loaded in the actual Hermes process before attempting delegation.
@@ -118,6 +125,20 @@ Use categorized selectors such as `ultrawork/ulw-plan`; the shared required refe
 `guide/omh-routing/references/skill-common-rail.md`. Missing or quarantined companions make a
 target unavailable; a known pathname does not authorize bypassing a scanner.
 
+### GSD
+
+The registry hint for Claude Code, Codex, Copilot and the other GSD hosts:
+
+```sh
+npx get-shit-done-cc@latest --<runtime> --global
+```
+
+Pass the host runtime flag (for example `--claude`, `--codex` or `--copilot`) and a location
+flag; with both, the installer does not prompt. It writes `gsd-<name>/SKILL.md` skills and
+`gsd-file-manifest.json` into the host config directory. Thunderkit never runs it. GSD phase
+workflows expect a `.planning/` project, which Thunderkit ignores in git and npm; only commands
+that work without one are targets.
+
 ## Models remain the user's choice
 
 [`models.json`](skills/references/models.json) defines the supported mappings independently of
@@ -131,7 +152,7 @@ the peer host matrix. The catalog currently declares:
 | `sol` | OpenAI | Codex |
 
 All other model/harness combinations are unsupported by this catalog, not guessed aliases.
-For example, OMO's Codex host entry does not make `opus48` a supported Codex model; OMH's Hermes
+For example, GSD's Codex host entry does not make `opus48` a supported Codex model; OMH's Hermes
 entry does not make `sol` a supported Hermes model. A peer may therefore be usable for one
 operation but unable to represent an entire chosen model set for another.
 
@@ -151,7 +172,7 @@ critique is not automatically an independent cross-family review.
 ## Fallback and ownership
 
 The resolver returns `delegate`, `owned`, `fallback`, or `blocked`. It validates configuration,
-operation, exact source/version and required file bytes, capabilities, effective model bindings
+operation, source identity, the locked version and required file bytes, capabilities, effective model bindings
 and safety boundaries before a native invocation. A successful resolver exit means a routing
 decision was computed, not that work completed.
 
@@ -177,14 +198,14 @@ that route ready. See the [delegation contract](skills/references/delegation.md)
 
 ## Context cost and standalone skills
 
-The pinned OMH full profile installs **123 skills**; core installs **10**, according to the
+The OMH full profile installs **123 skills**; core installs **10**, according to the
 registry. The provided setup hint selects full. These counts are not token-cost measurements:
 host discovery, loaded instructions, tools and companion references affect context usage.
 OMO also loads native instructions in-process; a small Thunderkit wrapper does not guarantee
 a small total prompt or low runtime cost. No numeric OMO context budget is specified here.
 
 Standalone Thunderkit skills carry local copies of their owned references and helpers, not
-either upstream catalog. Installing one does not install its sibling `tk-*` stages or native
+any upstream catalog. Installing one does not install its sibling `tk-*` stages or native
 peers. Missing siblings are named as unavailable rather than read through guessed paths or
 installed implicitly. Keep project context committed as described in the
 [README](README.md#project-memory--thunderkit); changing hosts still requires fresh qualification.

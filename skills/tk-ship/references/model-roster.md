@@ -66,7 +66,7 @@ defaults **in memory**, without changing the file or replacing an explicit value
 | `review_families_min` | `2` | Integer ≥2; booleans and floats are invalid |
 | `max_layers` | `3` | Integer ≥1; booleans and floats are invalid |
 | `frozen_paths` | `[]` | Literal repository-relative POSIX paths |
-| `ecosystems` | `["omo", "omh"]` | Unique list containing only `omo` and/or `omh`; `[]` disables both |
+| `ecosystems` | `["omo", "omh", "gsd"]` | Unique list of `omo`, `omh` and/or `gsd`; `[]` disables all |
 | `delegation` | `"auto"` | `"auto"` or `"off"` |
 
 `decided_at` is optional for readers. Preserve a supplied string, including an empty string;

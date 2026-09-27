@@ -1,7 +1,7 @@
 # Native-peer delegation
 
 [dependencies.json](dependencies.json) is the authoritative operation and target map.
-Only `omo` and `omh` are peer ecosystems; the distribution CLI is not a peer.
+`omo`, `omh` and `gsd` are the peer ecosystems, one required per host (Hermes: `omh`, OpenCode: `omo`, every other host: `gsd`); the distribution CLI is not a peer.
 Resolve a target by `(ecosystem, selector)`, never by an unqualified skill name.
 Targets are alternatives for a compatible host, not an instruction to run every peer.
 
@@ -246,11 +246,11 @@ remain available for later stages. It is a record shape, not a report of local r
   "operation": "plan",
   "decision": "delegate",
   "reason_code": "compatible",
-  "detail": "Pinned source and effective planner binding verified before invocation.",
+  "detail": "Locked source bytes and effective planner binding verified before invocation.",
   "target": {
     "ecosystem": "omh",
     "package": "oh-my-hermes",
-    "version": "2.0.3",
+    "version": "2.0.5",
     "skill_name": "ulw-plan",
     "selector": "ultrawork/ulw-plan",
     "mode": "handoff"

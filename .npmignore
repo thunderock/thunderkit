@@ -10,6 +10,7 @@
 .omo-tmp/
 .omc/
 .omh/
+.planning/
 site/
 tests/
 Makefile
@@ -23,6 +24,7 @@ CHANGELOG.md
 **/.omo-tmp/
 **/.omh/
 **/.omc/
+**/.planning/
 **/node_modules/
 **/.ruff_cache/
 **/.pytest_cache/

@@ -17,6 +17,7 @@ wt-*/
 .omo-tmp/
 .omh/
 .omc/
+.planning/
 node_modules/
 *.tgz
 

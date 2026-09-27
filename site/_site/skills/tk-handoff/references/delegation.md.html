@@ -25,7 +25,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top"><a href="../../../index.html">Home</a><a href="../../../north-star.html">North Star</a><a href="../../../roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
 <h1 id="native-peer-delegation">Native-peer delegation</h1>
-<p><a href="dependencies.json.html">dependencies.json</a> is the authoritative operation and target map. Only <code>omo</code> and <code>omh</code> are peer ecosystems; the distribution CLI is not a peer. Resolve a target by <code>(ecosystem, selector)</code>, never by an unqualified skill name. Targets are alternatives for a compatible host, not an instruction to run every peer.</p>
+<p><a href="dependencies.json.html">dependencies.json</a> is the authoritative operation and target map. <code>omo</code>, <code>omh</code> and <code>gsd</code> are the peer ecosystems, one required per host (Hermes: <code>omh</code>, OpenCode: <code>omo</code>, every other host: <code>gsd</code>); the distribution CLI is not a peer. Resolve a target by <code>(ecosystem, selector)</code>, never by an unqualified skill name. Targets are alternatives for a compatible host, not an instruction to run every peer.</p>
 <h2 id="resolve-before-invoking">Resolve before invoking</h2>
 <ol><li>Validate the requested skill and operation against the manifest.</li></ol>
 <p>   Use <code>default_operation</code> only when the operation is omitted; reject unknown values.</p>
@@ -76,11 +76,11 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
   &quot;operation&quot;: &quot;plan&quot;,
   &quot;decision&quot;: &quot;delegate&quot;,
   &quot;reason_code&quot;: &quot;compatible&quot;,
-  &quot;detail&quot;: &quot;Pinned source and effective planner binding verified before invocation.&quot;,
+  &quot;detail&quot;: &quot;Locked source bytes and effective planner binding verified before invocation.&quot;,
   &quot;target&quot;: {
     &quot;ecosystem&quot;: &quot;omh&quot;,
     &quot;package&quot;: &quot;oh-my-hermes&quot;,
-    &quot;version&quot;: &quot;2.0.3&quot;,
+    &quot;version&quot;: &quot;2.0.5&quot;,
     &quot;skill_name&quot;: &quot;ulw-plan&quot;,
     &quot;selector&quot;: &quot;ultrawork/ulw-plan&quot;,
     &quot;mode&quot;: &quot;handoff&quot;

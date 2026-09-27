@@ -44,7 +44,7 @@ class InternalArtifactTests(unittest.TestCase):
 
     def test_files_when_internal_are_ignored(self) -> None:
         for relative in (
-            ".omo/notes.md", ".omo-tmp/x.json", ".omh/plans/x.md", ".omc/state.json",
+            ".omo/notes.md", ".omo-tmp/x.json", ".omh/plans/x.md", ".omc/state.json", ".planning/ROADMAP.md",
             ".thunderkit/DECISIONS.md", ".thunderkit/runs/lane.json",
             ".thunderkit/scratch-note.md", ".thunderkit/archive/NORTH_STAR.md",
             ".thunderkit/config.json.bak", ".thunderkit/PHILOSOPHY.md.bak",

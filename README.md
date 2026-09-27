@@ -110,7 +110,7 @@ respond, and at least `review_families_min` distinct families must answer indepe
 
 Canonical configuration uses `schema_version: 2` and `classes.planner`, `classes.executors`,
 and `classes.reviewers`. Missing operational fields default **in memory** to
-`review_families_min: 2`, `max_layers: 3`, `frozen_paths: []`, `ecosystems: ["omo", "omh"]`, and
+`review_families_min: 2`, `max_layers: 3`, `frozen_paths: []`, `ecosystems: ["omo", "omh", "gsd"]`, and
 `delegation: "auto"`. Existing versionless `classes` files remain readable without rewriting.
 A supplied `decided_at` is preserved; readers never invent one. See the
 [configuration contract](skills/references/config.schema.json) and
