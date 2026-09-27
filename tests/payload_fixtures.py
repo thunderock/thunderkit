@@ -30,6 +30,7 @@ EXPECTED: Final = (
     "scripts/model_config.py",
     "scripts/capability_gates.py",
     "scripts/tk-resolve.py",
+    "scripts/peer_lock.py",
 )
 FIXTURE_SKILLS: Final = ("tk-x", "tk-test")
 OWNED_SKILLS: Final = frozenset({"tk-router", "tk-test", "tk-ask", "tk-docs", "tk-memory",
@@ -41,7 +42,8 @@ MANAGED_PATHS: Final = (
     *(f"skills/tk-test/{asset}" for asset in EXPECTED),
 )
 RUNTIME_ASSETS: Final = ("references/models.json", "references/dependencies.json",
-                         "scripts/model_config.py", "scripts/capability_gates.py", "scripts/tk-resolve.py")
+                         "scripts/model_config.py", "scripts/capability_gates.py", "scripts/tk-resolve.py",
+                         "scripts/peer_lock.py")
 Damage: TypeAlias = Literal["missing", "corrupt", "empty", "syntax", "directory", "fifo", "file"]
 SOURCE_KINDS: Final[tuple[Damage, ...]] = ("missing", "corrupt", "empty", "syntax")
 SOURCE_CASES: Final[tuple[tuple[str, Damage], ...]] = tuple(
@@ -53,10 +55,11 @@ REGISTRY_PATH_CASES: Final[tuple[tuple[str, Damage], ...]] = (
 )
 INVALID_REGISTRIES: Final = (
     b"[]", b"{}", b'{"schema_version":true,"skills":{"tk-x":{},"tk-test":{}}}',
-    b'{"schema_version":1,"skills":[]}', b'{"schema_version":1,"skills":{}}',
-    b'{"schema_version":1,"skills":{"tk-x":null,"tk-test":{}}}',
-    b'{"schema_version":1,"skills":{"tk-x":{},"tk-x":{},"tk-test":{}}}',
-    *(json.dumps({"schema_version": 1, "skills": {key: {}}}).encode()
+    b'{"schema_version":2,"skills":[]}', b'{"schema_version":2,"skills":{}}',
+    b'{"schema_version":2,"skills":{"tk-x":null,"tk-test":{}}}',
+    b'{"schema_version":2,"skills":{"tk-x":{},"tk-x":{},"tk-test":{}}}',
+    b'{"schema_version":1,"skills":{"tk-x":{},"tk-test":{}}}',
+    *(json.dumps({"schema_version": 2, "skills": {key: {}}}).encode()
       for key in ("../tk-x", "/tk-x", "tk-x/../y", "other", "tk-", "tk-x\\y")),
 )
 TreeState: TypeAlias = tuple[tuple[str, int, int, str], ...]

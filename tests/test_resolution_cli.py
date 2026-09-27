@@ -175,7 +175,7 @@ class ResolutionCliTests(unittest.TestCase):
                     if location == "identity_file":
                         identity[location] = path
                     elif location == "files":
-                        mapping(provenance["files"])[path] = self.fixture.loaded["sha256"]
+                        sequence(provenance["files"]).append(path)
                     else:
                         provenance[location] = path
                     self.cli(self.fixture.arguments(), 2)
@@ -232,13 +232,14 @@ class ResolutionCliTests(unittest.TestCase):
         scripts, references = self.root / "scripts", self.root / "references"
         scripts.mkdir()
         references.mkdir()
-        for name in ("tk-resolve.py", "capability_gates.py", "model_config.py"):
+        for name in ("tk-resolve.py", "capability_gates.py", "model_config.py", "peer_lock.py"):
             self.assertTrue((REFERENCES / name).is_file(), name)
             shutil.copyfile(REFERENCES / name, scripts / name)
         shutil.copyfile(REFERENCES / "models.json", references / "models.json")
         args = self.fixture.arguments()
         shutil.copyfile(self.root / "dependencies.json", references / "dependencies.json")
-        args = args[:args.index("--manifest")] + args[args.index("--project-root"):]
+        manifest = args.index("--manifest")
+        args = args[:manifest] + args[manifest + 2:]
         result = self.cli(args, script=scripts / "tk-resolve.py")
         self.assertEqual(result["decision"], "delegate")
         self.assertFalse((scripts / "__pycache__").exists())
@@ -246,7 +247,7 @@ class ResolutionCliTests(unittest.TestCase):
     def test_resource_lookup_when_assets_exist_only_above_the_skill(self) -> None:
         scripts = self.root / "nested/scripts"
         scripts.mkdir(parents=True)
-        for name in ("tk-resolve.py", "capability_gates.py", "model_config.py"):
+        for name in ("tk-resolve.py", "capability_gates.py", "model_config.py", "peer_lock.py"):
             self.assertTrue((REFERENCES / name).is_file(), name)
             shutil.copyfile(REFERENCES / name, scripts / name)
         shutil.copyfile(REFERENCES / "models.json", self.root / "models.json")
@@ -259,7 +260,7 @@ class ResolutionCliTests(unittest.TestCase):
     def test_import_when_bytecode_writing_was_enabled(self) -> None:
         scripts = self.root / "scripts"
         scripts.mkdir()
-        for name in ("tk-resolve.py", "capability_gates.py", "model_config.py"):
+        for name in ("tk-resolve.py", "capability_gates.py", "model_config.py", "peer_lock.py"):
             self.assertTrue((REFERENCES / name).is_file(), name)
             shutil.copyfile(REFERENCES / name, scripts / name)
         code = "import runpy,sys\nsys.dont_write_bytecode=False\nrunpy.run_path(sys.argv[1])\nprint(sys.dont_write_bytecode)"

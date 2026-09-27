@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import TypeAlias
 
 from dependency_expectations import (
-    COMPANIONS, ENTRYPOINT_SHA256, NATIVE_ROLES, OMH_CANONICAL, OPERATIONS, PEER_ROOTS, PINS,
-    ROOT_KINDS, SHA256, SHARED_FILES, SINGLE_CLASS, SKILL_PREFIXES, TARGET_KEYS, TARGETS,
+    CHANNELS, COMPANIONS, HOST_PEERS, NATIVE_ROLES, OMH_CANONICAL, OPERATIONS, PEER_ROOTS,
+    ROOT_KINDS, SHARED_PATHS, SINGLE_CLASS, SKILL_PREFIXES, STATIC_PIN_FIELDS, TARGET_ECOSYSTEMS,
+    TARGET_KEYS, TARGETS,
 )
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -45,23 +46,21 @@ def _root_relative(path: str) -> None:
 
 
 def validate_provenance(ecosystem: str, selector: str, raw: JsonValue) -> None:
-    """Raise AssertionError unless the target carries trustworthy deployed fingerprints."""
+    """Raise AssertionError unless the target lists exactly the lockable paths for its selector."""
     provenance = json_object(raw)
     assert set(provenance) == {"root_kind", "entrypoint", "files"}, "provenance shape"
     assert provenance["root_kind"] == ROOT_KINDS[ecosystem], "provenance root_kind mismatch"
-    files = json_object(provenance["files"])
+    files = _strings(provenance["files"])
     assert files, "provenance files missing"
-    for path, digest in files.items():
+    assert len(files) == len(set(files)), "duplicate provenance path"
+    for path in files:
         _root_relative(path)
-        assert isinstance(digest, str) and SHA256.fullmatch(digest), "malformed provenance fingerprint"
     entrypoint = f"{SKILL_PREFIXES[ecosystem]}/{selector}/SKILL.md"
     assert provenance["entrypoint"] == entrypoint, "provenance entrypoint location"
-    assert entrypoint in files, "provenance entrypoint fingerprint missing"
-    assert files[entrypoint] == ENTRYPOINT_SHA256[(ecosystem, selector)], "provenance entrypoint fingerprint mismatch"
+    assert entrypoint in files, "provenance entrypoint missing"
     companions = set(files) - {entrypoint}
-    for path, digest in SHARED_FILES.get(ecosystem, {}).items():
+    for path in SHARED_PATHS.get(ecosystem, frozenset()):
         assert path in files, "omh shared rail missing"
-        assert files[path] == digest, "omh shared rail fingerprint mismatch"
         companions.discard(path)
     assert companions == COMPANIONS[(ecosystem, selector)], "frozen companion set mismatch"
 
@@ -70,22 +69,25 @@ def validate_manifest(raw: JsonValue, skill_dirs: set[str]) -> None:
     """Raise AssertionError when a declared peer or operation violates the contract."""
     doc = json_object(raw)
     version = doc.get("schema_version")
-    assert type(version) is int and version == 1, "manifest schema version"
+    assert type(version) is int and version == 2, "manifest schema version"
+    assert doc.get("hosts") == HOST_PEERS, "host peer map mismatch"
     peers = json_object(doc.get("ecosystems"))
     skills = json_object(doc.get("skills"))
-    assert set(peers) == set(PINS), "ecosystems must be exactly omo and omh"
+    assert set(peers) == set(CHANNELS), "ecosystems must be exactly omo, omh and gsd"
     assert set(skills) == skill_dirs == set(OPERATIONS), "skill inventory mismatch"
     assert len(skill_dirs) == 19
-    assert doc.get("excluded") == ["gsd", "omc"]
+    assert doc.get("excluded") == ["omc"]
     cli = json_object(doc.get("distribution_cli"))
     assert (cli.get("package"), cli.get("version"), cli.get("node")) == ("skills", "1.7.0", ">=22.20.0")
     restricted = []
-    for ecosystem, (package, pinned_version) in PINS.items():
+    for ecosystem, (package, channel) in CHANNELS.items():
         peer = json_object(peers[ecosystem])
-        assert (peer.get("package"), peer.get("version")) == (package, pinned_version), "peer pin mismatch"
-        assert peer.get("registry") == f"https://registry.npmjs.org/{package}/{pinned_version}"
-        root = json_object(peer.get("provenance_root"))
-        assert tuple(root.get(key) for key in ("root_kind", "identity_file", "entrypoint_pattern")) == PEER_ROOTS[ecosystem], "peer provenance root mismatch"
+        assert (peer.get("package"), peer.get("channel")) == (package, channel), "peer channel mismatch"
+        assert not any(field in peer for field in STATIC_PIN_FIELDS), "static peer pin"
+        assert json_string(peer.get("install_hint")).strip(), "install hint missing"
+        if ecosystem in PEER_ROOTS:
+            root = json_object(peer.get("provenance_root"))
+            assert tuple(root.get(key) for key in ("root_kind", "identity_file", "entrypoint_pattern")) == PEER_ROOTS[ecosystem], "peer provenance root mismatch"
         restricted.append(json_string(peer.get("install_hint")))
     for name, raw_skill in skills.items():
         skill = json_object(raw_skill)
@@ -101,7 +103,7 @@ def validate_manifest(raw: JsonValue, skill_dirs: set[str]) -> None:
             target = json_object(raw_target)
             assert TARGET_KEYS <= target.keys(), "unqualified target"
             ecosystem, selector = json_string(target["ecosystem"]), json_string(target["selector"])
-            assert ecosystem in PINS, "ineligible target ecosystem"
+            assert ecosystem in TARGET_ECOSYSTEMS, "ineligible target ecosystem"
             assert (ecosystem == "omh") == ("/" in selector), "selector ecosystem mismatch"
             assert re.fullmatch(r"[a-z0-9-]+(?:/[a-z0-9-]+)?", selector)
             assert target["skill_name"] == selector.rsplit("/", 1)[-1]
@@ -113,7 +115,7 @@ def validate_manifest(raw: JsonValue, skill_dirs: set[str]) -> None:
             key = (ecosystem, selector)
             assert key not in seen, "duplicate qualified target"
             seen.add(key)
-            assert key in ENTRYPOINT_SHA256, "unqualified target"
+            assert key in COMPANIONS, "unqualified target"
             canonical = OMH_CANONICAL.get(selector)
             assert target.get("canonical_name") == canonical, "omh canonical name mismatch"
             roles = NATIVE_ROLES.get(key)
@@ -133,7 +135,7 @@ def validate_manifest(raw: JsonValue, skill_dirs: set[str]) -> None:
             actual.add((ecosystem, selector, mode, target_ops))
             restricted.append(json.dumps(target))
         assert actual == TARGETS.get(name, set()), f"{name}: frozen target map mismatch"
-    assert not re.search(r"gsd|omc", "\n".join(restricted), re.IGNORECASE), "excluded reference"
+    assert not re.search(r"omc", "\n".join(restricted), re.IGNORECASE), "excluded reference"
 
 
 def validate_role(text: str, role: str) -> None:

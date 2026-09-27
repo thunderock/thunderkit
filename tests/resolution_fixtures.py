@@ -47,6 +47,7 @@ SHAPE_ROWS: Final[tuple[tuple[str, JsonValue], ...]] = (
 )
 BAD_PATHS: Final = ("", "/absolute", "C:/drive", "a:b", "a/b:c", "a\\b", "../a",
                    "a/../b", "a//b", "./a", "a/", "a/./b", "a\x00b", "a\x1fb", "a\x7fb")
+FIXTURE_VERSION: Final = "1.0.0-fixture"
 
 
 def mapping(value: JsonValue) -> JsonObject:
@@ -81,7 +82,7 @@ def materialize_peer(root: Path, pin: JsonObject, targets: Sequence[JsonObject])
         selector = text(target["selector"])
         provenance = mapping(target["provenance"])
         digests: dict[str, str] = {}
-        for relative in mapping(provenance["files"]):
+        for relative in sequence(provenance["files"]):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(f"thunderkit fixture {relative}\n".encode())
@@ -93,21 +94,21 @@ def materialize_peer(root: Path, pin: JsonObject, targets: Sequence[JsonObject])
                              "sha256": digests[entrypoint], "source": "builtin"}
     identity = mapping(pin["provenance_root"])
     document = deepcopy(mapping(identity["identity_fields"]))
+    document["version"] = FIXTURE_VERSION
     if identity["root_kind"] == "omh":
         document.update(skills_dir=str(root / "skills"), source="builtin", skills=list(records.values()))
     write_json(root / text(identity["identity_file"]), document)
     return hashes
 
 
-def fixture_manifest(base: JsonObject, hashes: dict[tuple[str, str], dict[str, str]]) -> JsonObject:
-    result = deepcopy(base)
-    for value in mapping(result["skills"]).values():
-        for raw in sequence(mapping(value)["targets"]):
-            target = mapping(raw)
-            key = (text(target["ecosystem"]), text(target["selector"]))
-            if key in hashes:
-                mapping(target["provenance"])["files"] = dict(hashes[key])
-    return result
+def fixture_lock(host: str, ecosystem: str, pin: JsonObject, root: Path,
+                 hashes: dict[str, dict[str, str]]) -> JsonObject:
+    files: JsonObject = {}
+    for digests in hashes.values():
+        files.update(digests)
+    return {"schema_version": 1, "host": host, "peer": ecosystem, "package": pin["package"],
+            "channel": pin["channel"], "version": FIXTURE_VERSION, "registry_integrity": "",
+            "locked_at": "2026-09-27T00:00:00Z", "root": str(root), "files": files}
 
 
 def slot_bindings(catalog: JsonObject, host: str, selection: JsonObject,
@@ -191,7 +192,8 @@ class Fixture:
                       if mapping(value)["ecosystem"] == self.ecosystem)
         self.peer_root = root / text(pin["package"])
         hashes = materialize_peer(self.peer_root, pin, [target])
-        self.manifest = fixture_manifest(base, {(self.ecosystem, key): value for key, value in hashes.items()})
+        self.manifest = base
+        self.lock = fixture_lock(host, self.ecosystem, pin, self.peer_root, hashes)
         self.target = next(mapping(value) for value in sequence(mapping(mapping(self.manifest["skills"])[skill])["targets"])
                            if mapping(value)["ecosystem"] == self.ecosystem)
         classes: JsonObject = {"planner": "opus5", "executors": ["fable51"], "reviewers": ["fable51", "opus5"]}
@@ -205,14 +207,16 @@ class Fixture:
         entrypoint = text(mapping(target["provenance"])["entrypoint"])
         self.loaded: JsonObject = {"path": str(self.peer_root / entrypoint),
                                    "sha256": hashes[text(target["selector"])][entrypoint]}
-        self.peer: JsonObject = {key: pin[key] for key in ("package", "version", "source")}
+        self.peer: JsonObject = {"package": pin["package"], "version": FIXTURE_VERSION, "source": pin["source"]}
         self.peer.update(root=str(self.peer_root), loaded_skills={text(target["selector"]): self.loaded})
         self.snapshot = snapshot(host, {self.ecosystem: self.peer}, slot_bindings(self.catalog, host, classes, self.slots))
 
     def arguments(self, operation: str | None = None) -> list[str]:
-        for name, document in (("config", self.config), ("capabilities", self.snapshot), ("dependencies", self.manifest)):
+        for name, document in (("config", self.config), ("capabilities", self.snapshot), ("dependencies", self.manifest),
+                               ("lock", self.lock)):
             write_json(self.root / f"{name}.json", document)
         result = ["--skill", self.skill, "--config", str(self.root / "config.json"),
                   "--capabilities", str(self.root / "capabilities.json"),
-                  "--manifest", str(self.root / "dependencies.json"), "--project-root", str(self.root)]
+                  "--manifest", str(self.root / "dependencies.json"), "--lock", str(self.root / "lock.json"),
+                  "--project-root", str(self.root)]
         return result + (["--operation", operation] if operation is not None else [])

@@ -87,16 +87,15 @@
         }
       },
       {
-        "name": "Codex route uses its catalog mapping without claiming family readiness",
+        "name": "Codex host falls back from the OpenCode-only OMO ulw-execute target",
         "operation": "execute",
         "config": "sol",
         "capabilities": "codex_omo_full",
         "expect": {
-          "decision": "delegate",
-          "reason_code": "compatible",
-          "target_ecosystem": "omo",
-          "target_selector": "ulw-execute",
-          "target_mode": "handoff",
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
           "exit": 0,
           "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
         },

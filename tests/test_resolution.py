@@ -41,7 +41,7 @@ class ResolutionTests(unittest.TestCase):
             self.assertIsNone(result["runtime_home"])
 
     def test_delegate_when_host_models_and_real_peer_bytes_match(self) -> None:
-        for host, skill in (("opencode", "tk-plan"), ("codex", "tk-plan"),
+        for host, skill in (("opencode", "tk-plan"),
                            ("hermes", "tk-plan"), ("hermes", "tk-grill"), ("opencode", "tk-execute")):
             with self.subTest(host=host, skill=skill):
                 f = self.fixture(host, skill)
@@ -56,7 +56,7 @@ class ResolutionTests(unittest.TestCase):
                     expected = {"class": cls, "descriptor": binding["descriptor"], "method": "configured"}
                     expected.update(mapping(sequence(binding["members"])[0]) if cls == "planner" else {"members": binding["members"]})
                     self.assertEqual(effective[slot], expected)
-                self.assertEqual(result["evidence_paths"], ["config.json", "capabilities.json"])
+                self.assertEqual(result["evidence_paths"], ["config.json", "capabilities.json", "lock.json"])
 
     def test_slot_bindings_when_compared_with_literal_host_identities(self) -> None:
         f = self.fixture()
@@ -148,7 +148,7 @@ class ResolutionTests(unittest.TestCase):
             for kind in ("tamper", "missing", "symlink", "directory"):
                 f = self.fixture(host)
                 identity = "manifest.json" if host == "hermes" else "package.json"
-                for relative in (*mapping(mapping(f.target["provenance"])["files"]), identity):
+                for relative in (*sequence(mapping(f.target["provenance"])["files"]), identity):
                     with self.subTest(host=host, kind=kind, file=relative):
                         path = f.peer_root / relative
                         original = path.read_bytes()

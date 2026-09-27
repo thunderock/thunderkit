@@ -80,16 +80,15 @@
         "sections": ["Lookup", "Delegation", "Fallback"]
       },
       {
-        "name": "explicit lookup consent qualifies the codex component",
+        "name": "Codex host falls back from the OpenCode-only OMO coding-agent-sessions target",
         "operation": "lookup",
         "config": "sol",
         "capabilities": "codex_omo_full",
         "expect": {
-          "decision": "delegate",
-          "reason_code": "compatible",
-          "target_ecosystem": "omo",
-          "target_selector": "coding-agent-sessions",
-          "target_mode": "component",
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
           "exit": 0,
           "requested_bindings": {
             "planner": "sol",

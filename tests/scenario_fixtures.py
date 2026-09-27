@@ -14,7 +14,8 @@ REFERENCES: Final = ROOT / "skills/references"
 sys.path.insert(0, str(ROOT))
 from skills.references.model_config import (ConfigError as ConfigError, JsonObject as JsonObject, JsonValue as JsonValue,
                                             load_json as load_json, normalize_config, selected_models)
-from resolution_fixtures import fixture_manifest, make_home, mapping, materialize_peer, sequence, slot_bindings, text, write_json
+from resolution_fixtures import (FIXTURE_VERSION, fixture_lock, make_home, mapping, materialize_peer, sequence,
+                                 slot_bindings, text, write_json)
 
 SAMPLE_SKILL: Final = '''---
 name: tk-plan
@@ -140,7 +141,7 @@ def _mutate(fault: Fault, targets: list[JsonObject], snapshot: JsonObject) -> No
             path = Path(text(peer["root"])) / entry
             match fault:
                 case Fault.MISSING_COMPANION:
-                    companions = sorted(set(mapping(provenance["files"])) - {entry})
+                    companions = sorted(set(sequence(provenance["files"])) - {entry})
                     if not companions:
                         raise ConfigError("missing_companion requires a mandatory companion")
                     (Path(text(peer["root"])) / companions[0]).unlink()
@@ -194,7 +195,7 @@ class FixtureLibrary:
         definition = object_value(mapping(self.manifest["skills"]).get(request.skill), "manifest skill")
         operation = request.operation if request.operation is not None else text(definition["default_operation"])
         targets = [mapping(item) for item in sequence(definition["targets"]) if operation in sequence(mapping(item)["operations"])]
-        hashes: dict[tuple[str, str], dict[str, str]] = {}
+        lock: JsonObject | None = None
         peers: JsonObject = {}
         trusted = self.manifest
         snapshot: JsonObject | None = None
@@ -209,12 +210,14 @@ class FixtureLibrary:
                 pin = mapping(pins[ecosystem])
                 peer_root = root / "peers" / ecosystem
                 digests = materialize_peer(peer_root, pin, matching)
-                hashes.update({(ecosystem, key): value for key, value in digests.items()})
+                host_peers = mapping(self.manifest["hosts"])
+                if host_peers.get(recipe.host, host_peers["default"]) == ecosystem:
+                    lock = fixture_lock(recipe.host, ecosystem, pin, peer_root, digests)
                 loaded: JsonObject = {}
                 for target in matching:
                     selector, entry = text(target["selector"]), text(mapping(target["provenance"])["entrypoint"])
                     loaded[selector] = {"path": str(peer_root / entry), "sha256": digests[selector][entry]}
-                peers[ecosystem] = {**{key: pin[key] for key in ("package", "version", "source")},
+                peers[ecosystem] = {"package": pin["package"], "version": FIXTURE_VERSION, "source": pin["source"],
                                     "root": str(peer_root), "loaded_skills": loaded}
             active = [target for target in targets if target["ecosystem"] in peers
                       and recipe.host in sequence(mapping(pins[text(target["ecosystem"])])["hosts"])]
@@ -259,12 +262,11 @@ class FixtureLibrary:
             snapshot = {"schema_version": 1, "host": recipe.host, "peers": peers, "model_bindings": bindings,
                         "tools": ["skill", "delegate_task", "omh_delegate_route"], "consents": ["dispatch", "delivery:disabled", "lookup"],
                         "runtime_home": home}
-            trusted = fixture_manifest(self.manifest, hashes)
             _mutate(recipe.fault, active, snapshot)
         argv = ["--skill", request.skill, "--project-root", str(root), "--catalog", str(REFERENCES / "models.json")]
         if request.operation is not None:
             argv.extend(["--operation", request.operation])
-        for name, document in (("manifest", trusted), ("config", config), ("capabilities", snapshot)):
+        for name, document in (("manifest", trusted), ("config", config), ("capabilities", snapshot), ("lock", lock)):
             if document is not None:
                 input_path = root / ("dependencies.json" if name == "manifest" else f"{name}.json")
                 write_json(input_path, document)

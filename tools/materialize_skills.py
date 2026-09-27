@@ -21,6 +21,7 @@ MANIFEST: Final = (
     ("skills/references/model_config.py", "scripts/model_config.py"),
     ("skills/references/capability_gates.py", "scripts/capability_gates.py"),
     ("skills/references/tk-resolve.py", "scripts/tk-resolve.py"),
+    ("skills/references/peer_lock.py", "scripts/peer_lock.py"),
 )
 MANAGED_FILES: Final = tuple(destination for _, destination in MANIFEST)
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
@@ -110,8 +111,8 @@ def _read_source(path: Path) -> bytes:
 def discover_skills(root: Path, registry: bytes | None = None) -> list[Path]:
     path = root / "skills/references/dependencies.json"
     document = _json_object(path, _read_source(path) if registry is None else registry)
-    if type(document.get("schema_version")) is not int or document.get("schema_version") != 1:
-        raise PayloadError(path, "registry schema_version must be 1")
+    if type(document.get("schema_version")) is not int or document.get("schema_version") != 2:
+        raise PayloadError(path, "registry schema_version must be 2")
     entries = document.get("skills")
     if not isinstance(entries, dict) or not entries:
         raise PayloadError(path, "registry skills must be a nonempty object")

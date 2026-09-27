@@ -170,7 +170,9 @@ function smoke(root, version, cwd) {
   const deps = launch(["deps", "--json"]);
   const manifest = readJson(join(root, "skills/references/dependencies.json"));
   const reported = deps.status === 0 && deps.stderr === "" ? JSON.parse(deps.stdout) : abort("E_ARTIFACT");
-  if (!isObject(manifest) || !isObject(reported) || reported.schema_version !== 1 || JSON.stringify(reported.ecosystems) !== JSON.stringify(manifest.ecosystems)
+  if (!isObject(manifest) || !isObject(reported) || reported.schema_version !== 2 || manifest.schema_version !== 2
+      || JSON.stringify(reported.hosts) !== JSON.stringify(manifest.hosts)
+      || JSON.stringify(reported.ecosystems) !== JSON.stringify(manifest.ecosystems)
       || JSON.stringify(reported.distribution_cli) !== JSON.stringify(manifest.distribution_cli)) abort("E_ARTIFACT");
   const invalid = launch(["deps", "--invalid"]);
   if (invalid.status !== 2 || invalid.stdout !== "" || invalid.stderr.trimEnd().split("\n").length !== 1 || invalid.stderr.trim() === "") abort("E_ARTIFACT");

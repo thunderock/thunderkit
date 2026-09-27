@@ -3,10 +3,14 @@
 import re
 from typing import Final
 
-PINS: Final = {
-    "omo": ("oh-my-openagent", "5.0.0-beta.81"),
-    "omh": ("oh-my-hermes", "2.0.3"),
+CHANNELS: Final = {
+    "omo": ("oh-my-openagent", "max-prerelease:5.x:beta"),
+    "omh": ("oh-my-hermes", "dist-tag:latest"),
+    "gsd": ("get-shit-done-cc", "dist-tag:latest"),
 }
+HOST_PEERS: Final = {"hermes": "omh", "opencode": "omo", "default": "gsd"}
+TARGET_ECOSYSTEMS: Final = frozenset({"omo", "omh"})
+STATIC_PIN_FIELDS: Final = ("version", "integrity", "registry")
 OPERATIONS: Final = {
     "tk-router": ("route", ("bootstrap", "route")),
     "tk-test": ("preflight", ("preflight",)),
@@ -58,27 +62,7 @@ SINGLE_CLASS: Final = {
 }
 OMH_RAIL: Final = "skills/guide/omh-routing/references/skill-common-rail.md"
 SHA256: Final = re.compile(r"[0-9a-f]{64}")
-# Entrypoint fingerprints pinned from the trusted artifact inventories, independent of the manifest.
-ENTRYPOINT_SHA256: Final = {
-    ("omo", "ulw-research"): "989f86f1920f783aed6156438f1ab29d5e10c12aea3bcebff5362295777c6afe",
-    ("omo", "ulw-plan"): "27a0f81ccb76431beb2889ec83239d525946697aa4fb5e86071ec07af6861dbd",
-    ("omo", "ulw-execute"): "071a86e7981278d678f35e8c2d00dd007494688b64eac7a60b1fcc14d339cba7",
-    ("omo", "visual-qa"): "5ea017377d1d2789722bdb0545cdf01b0fbeb3fb251f8a981325fa948ba13c6f",
-    ("omo", "debugging"): "49fb22e0a1adb577cce543acc4e823212bd1af2e360b0e89aec041498081ed5e",
-    ("omo", "coding-agent-sessions"): "9b00f11c1aadc51604f67376f45f33e416dc90915fd83f616a7936d5bd173d61",
-    ("omh", "ultrawork/ulw-interview"): "c3a9d80a041ad8695e6bb513be9fc9e48c3b54444f53b134dca4cb6249076317",
-    ("omh", "planner/omh-codebase-onboarding"): "ad50a185e1ccbfaaf71a590125ac66ed628cbc66b427861d07583ed93b791c17",
-    ("omh", "ultrawork/ulw-research"): "95186ac5e6ec0a70ccfd4509ed15e8a3869077dd7866288fed7b635f1022968a",
-    ("omh", "operator/omh-skill-scout"): "8e39141b6cb54da294799738304ffa76d49ff436caa6c44df52db6f7343d400e",
-    ("omh", "ultrawork/ulw-plan"): "ad7f130b32e8333c3cbbf290ef3fb4131e7a2012298a10a82d91ffe746e23481",
-    ("omh", "ultrawork/ulw-work"): "738485b872799d09e39d1bb9a4faead1e2794848615791cdae659f42bb259ebc",
-    ("omh", "reviewer/omh-code-review"): "6043c0cbd886314d8577913727c0527c7cb50fe72677c6bded6f68dee74b8cd2",
-    ("omh", "operator/omh-visual-qa"): "1cc3ed7024fb1093433d2eafd1dfd0950262c1b104aa14b0cd391c866d7b821e",
-    ("omh", "reviewer/omh-native-debugging"): "109ebcb5eab82b2ceb646fca9e25068afc40b921ad15dd4cb118a1ffd216de4d",
-    ("omh", "reviewer/omh-verification-gate"): "5ac11ff9c08bf1c5f5933daf659deb22046c927328d85bb1fb7adbd7b3af1583",
-}
-OMH_RAIL_SHA256: Final = "8762158b58981df3127c86bffc8172c91c4d371d16bca668feb76910460c4a19"
-SHARED_FILES: Final = {"omh": {OMH_RAIL: OMH_RAIL_SHA256}}
+SHARED_PATHS: Final = {"omh": frozenset({OMH_RAIL})}
 # Skill-local inventory entries are expanded to peer-root-relative paths below.
 _LOCAL_COMPANIONS: Final[dict[tuple[str, str], frozenset[str]]] = {
     ("omo", "ulw-research"): frozenset({"ATTRIBUTION.md"}),

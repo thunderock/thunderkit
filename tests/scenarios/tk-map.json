@@ -49,16 +49,15 @@
         "sections": ["Delegation", "Fallback", "Output contract"]
       },
       {
-        "name": "codex research component preserves its supported executor selection",
+        "name": "Codex host falls back from the OpenCode-only OMO ulw-research target",
         "operation": "map",
         "config": "sol",
         "capabilities": "codex_omo_full",
         "expect": {
-          "decision": "delegate",
-          "reason_code": "compatible",
-          "target_ecosystem": "omo",
-          "target_selector": "ulw-research",
-          "target_mode": "component",
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
           "exit": 0,
           "requested_bindings": {
             "planner": "sol",

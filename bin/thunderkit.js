@@ -22,18 +22,20 @@ export function nodeSatisfies(version, min) {
   return true;
 }
 
-/** @typedef {{package: string, version: string, license: string, hosts: string[], runtime?: Record<string, string>, install_hint: string, doctor_hint: string}} Ecosystem */
-/** @typedef {{schema_version: number, ecosystems: {omo: Ecosystem, omh: Ecosystem}, distribution_cli: {package: string, version: string, node: string}} DependencyManifest */
+/** @typedef {{package: string, channel: string, license: string, hosts: string[], runtime?: Record<string, string>, install_hint: string, doctor_hint?: string}} Ecosystem */
+/** @typedef {{schema_version: number, hosts: Record<string, string>, ecosystems: {omo: Ecosystem, omh: Ecosystem, gsd: Ecosystem}, distribution_cli: {package: string, version: string, node: string}} DependencyManifest */
 
 /** @param {DependencyManifest} manifest @param {{json?: boolean}} options @returns {string} */
 export function renderDeps(manifest, { json = false } = {}) {
-  if (manifest?.schema_version !== 1 || !manifest.ecosystems?.omo || !manifest.ecosystems?.omh || !manifest.distribution_cli) {
+  if (manifest?.schema_version !== 2 || !manifest.hosts || !manifest.ecosystems?.omo || !manifest.ecosystems?.omh
+      || !manifest.ecosystems?.gsd || !manifest.distribution_cli) {
     throw new TypeError("unsupported or incomplete dependency manifest");
   }
-  const { omo, omh } = manifest.ecosystems;
+  const { omo, omh, gsd } = manifest.ecosystems;
   const output = {
-    schema_version: 1,
-    ecosystems: { omo, omh },
+    schema_version: 2,
+    hosts: manifest.hosts,
+    ecosystems: { omo, omh, gsd },
     distribution_cli: manifest.distribution_cli,
     note: DEPS_NOTE,
   };
@@ -43,12 +45,12 @@ export function renderDeps(manifest, { json = false } = {}) {
   for (const [name, peer] of Object.entries(output.ecosystems)) {
     const runtime = Object.entries(peer.runtime ?? {}).map(([name, version]) => `${name} ${version}`).join(", ");
     lines.push(
-      `${name}: ${peer.package}@${peer.version}`,
+      `${name}: ${peer.package} (channel ${peer.channel})`,
       `  license: ${peer.license}`,
       `  hosts: ${peer.hosts.join(", ")}`,
       `  runtime: ${runtime || "host-managed (not specified)"}`,
       `  install_hint: ${peer.install_hint}`,
-      `  doctor_hint: ${peer.doctor_hint}`,
+      `  doctor_hint: ${peer.doctor_hint ?? "none"}`,
       "",
     );
   }

@@ -64,16 +64,15 @@
         "sections": ["Investigation component", "The loop", "Output contract"]
       },
       {
-        "name": "general operation supports the catalog Codex planner binding",
+        "name": "Codex host falls back from the OpenCode-only OMO debugging target",
         "operation": "general",
         "config": "sol",
         "capabilities": "codex_omo_full",
         "expect": {
-          "decision": "delegate",
-          "reason_code": "compatible",
-          "target_ecosystem": "omo",
-          "target_selector": "debugging",
-          "target_mode": "handoff",
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
           "exit": 0,
           "requested_bindings": {
             "planner": "sol",

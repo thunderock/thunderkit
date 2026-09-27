@@ -46,6 +46,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import model_config
 import capability_gates
+import peer_lock
 sys.dont_write_bytecode = _BYTECODE_POLICY
 
 from capability_gates import (Decision, Reason, Request, digest, expect_list, expect_object,
@@ -66,6 +67,7 @@ class _Arguments(argparse.Namespace):
     capabilities: str | None = None
     catalog: str | None = None
     manifest: str | None = None
+    lock: str | None = None
     project_root: str | None = None
     json: bool = False
 
@@ -86,7 +88,7 @@ def validate_candidate(candidate: JsonObject, pin: JsonObject) -&gt; None:
     for field in TARGET_FIELDS:
         if not expect_text(candidate.get(field), f&quot;target.{field}&quot;):
             raise model_config.ConfigError(f&quot;target.{field} must not be empty&quot;)
-    for field in (&quot;package&quot;, &quot;version&quot;, &quot;source&quot;):
+    for field in (&quot;package&quot;, &quot;channel&quot;, &quot;source&quot;):
         if not expect_text(pin.get(field), f&quot;pin.{field}&quot;):
             raise model_config.ConfigError(f&quot;pin.{field} must not be empty&quot;)
     if &quot;source_commit&quot; in pin:
@@ -103,24 +105,22 @@ def validate_candidate(candidate: JsonObject, pin: JsonObject) -&gt; None:
     if set(provenance) != {&quot;root_kind&quot;, &quot;entrypoint&quot;, &quot;files&quot;} or provenance.get(&quot;root_kind&quot;) != identity.get(&quot;root_kind&quot;):
         raise model_config.ConfigError(&quot;provenance must have exactly root_kind, entrypoint and files matching the pin&quot;)
     entrypoint = _relative(provenance.get(&quot;entrypoint&quot;), &quot;entrypoint&quot;)
-    files = expect_object(provenance.get(&quot;files&quot;), &quot;provenance.files&quot;)
-    if entrypoint not in files:
-        raise model_config.ConfigError(&quot;provenance.files must include the entrypoint&quot;)
-    for relative, fingerprint in files.items():
-        _relative(relative, &quot;provenance.files key&quot;)
-        if not digest(fingerprint):
-            raise model_config.ConfigError(&quot;provenance.files values must be lowercase SHA-256 digests&quot;)
+    files = expect_strings(provenance.get(&quot;files&quot;), &quot;provenance.files&quot;)
+    if entrypoint not in files or len(set(files)) != len(files):
+        raise model_config.ConfigError(&quot;provenance.files must list the entrypoint and no duplicate paths&quot;)
+    for relative in files:
+        _relative(relative, &quot;provenance.files entry&quot;)
     selector = _relative(candidate.get(&quot;selector&quot;), &quot;selector&quot;)
     name = _relative(candidate.get(&quot;skill_name&quot;), &quot;skill_name&quot;)
     if &quot;/&quot; in name:
         raise model_config.ConfigError(&quot;skill_name must be a single path segment&quot;)
     match provenance.get(&quot;root_kind&quot;):
         case &quot;package&quot;:
-            expected: JsonObject = {&quot;name&quot;: pin[&quot;package&quot;], &quot;version&quot;: pin[&quot;version&quot;]}
+            expected: JsonObject = {&quot;name&quot;: pin[&quot;package&quot;]}
             if selector != name or entrypoint != f&quot;dist/skills/{name}/SKILL.md&quot; or &quot;canonical_name&quot; in candidate:
                 raise model_config.ConfigError(&quot;Package selector must identify its exact skill entrypoint&quot;)
         case &quot;omh&quot;:
-            expected = {&quot;schema_version&quot;: 1, &quot;package&quot;: pin[&quot;package&quot;], &quot;version&quot;: pin[&quot;version&quot;]}
+            expected = {&quot;schema_version&quot;: 1, &quot;package&quot;: pin[&quot;package&quot;]}
             if (selector.count(&quot;/&quot;) != 1 or entrypoint != f&quot;skills/{selector}/SKILL.md&quot;
                     or not expect_text(candidate.get(&quot;canonical_name&quot;), &quot;canonical_name&quot;)
                     or identity.get(&quot;manifest_record_fields&quot;) != [&quot;name&quot;, &quot;path&quot;, &quot;sha256&quot;, &quot;source&quot;]
@@ -162,7 +162,7 @@ def resolve(argv: Sequence[str]) -&gt; JsonObject:
     &quot;&quot;&quot;Compute one decision from CLI-style arguments; print nothing and write nothing.&quot;&quot;&quot;
     args = _Arguments()
     parser = _Parser(add_help=False, allow_abbrev=False)
-    for name in (&quot;skill&quot;, &quot;config&quot;, &quot;capabilities&quot;, &quot;operation&quot;, &quot;catalog&quot;, &quot;manifest&quot;, &quot;project-root&quot;):
+    for name in (&quot;skill&quot;, &quot;config&quot;, &quot;capabilities&quot;, &quot;operation&quot;, &quot;catalog&quot;, &quot;manifest&quot;, &quot;lock&quot;, &quot;project-root&quot;):
         parser.add_argument(f&quot;--{name}&quot;, required=name == &quot;skill&quot;)
     parser.add_argument(&quot;--json&quot;, action=&quot;store_true&quot;)
     argument_error: model_config.ConfigError | None = None
@@ -205,8 +205,8 @@ def resolve(argv: Sequence[str]) -&gt; JsonObject:
             return model_config.load_json(str(path))
 
         manifest = model_config.load_json(_resource(&quot;dependencies.json&quot;, args.manifest))
-        if type(manifest.get(&quot;schema_version&quot;)) is not int or manifest.get(&quot;schema_version&quot;) != 1:
-            raise model_config.ConfigError(&quot;manifest.schema_version must be 1&quot;)
+        if type(manifest.get(&quot;schema_version&quot;)) is not int or manifest.get(&quot;schema_version&quot;) != 2:
+            raise model_config.ConfigError(&quot;manifest.schema_version must be 2&quot;)
         skills = expect_object(manifest.get(&quot;skills&quot;), &quot;manifest.skills&quot;)
         if args.skill not in skills:
             raise model_config.ConfigError(f&quot;Unknown skill {args.skill!r}&quot;)
@@ -236,8 +236,8 @@ def resolve(argv: Sequence[str]) -&gt; JsonObject:
             if operation not in expect_strings(target.get(&quot;operations&quot;), &quot;target.operations&quot;) or ecosystem not in allowed:
                 continue
             pin = expect_object(ecosystems.get(ecosystem), f&quot;ecosystems.{ecosystem}&quot;)
-            candidate: JsonObject = {**target, &quot;package&quot;: pin.get(&quot;package&quot;), &quot;version&quot;: pin.get(&quot;version&quot;),
-                                     &quot;hosts&quot;: pin.get(&quot;hosts&quot;), &quot;pin&quot;: pin}
+            candidate: JsonObject = {**target, &quot;package&quot;: pin.get(&quot;package&quot;), &quot;version&quot;: &quot;unlocked&quot;,
+                                     &quot;hosts&quot;: pin.get(&quot;hosts&quot;), &quot;pin&quot;: pin, &quot;lock&quot;: None}
             validate_candidate(candidate, pin)
             candidates.append(candidate)
         if not candidates:
@@ -249,6 +249,11 @@ def resolve(argv: Sequence[str]) -&gt; JsonObject:
         compatible = [target for target in candidates if host in expect_strings(target.get(&quot;hosts&quot;), &quot;hosts&quot;)]
         if not compatible:
             return finish(&quot;fallback&quot;, &quot;unsupported_host&quot;, f&quot;No enabled target supports host {host!r}&quot;)
+        lock = peer_lock.validate_lock(consume(args.lock, &quot;lock&quot;)) if args.lock is not None else None
+        for candidate in compatible:
+            if lock is not None and lock.get(&quot;peer&quot;) == candidate.get(&quot;ecosystem&quot;) and lock.get(&quot;host&quot;) == host:
+                candidate[&quot;lock&quot;] = lock
+                candidate[&quot;version&quot;] = expect_text(lock.get(&quot;version&quot;), &quot;lock.version&quot;)
         request = Request(host, project, selected, catalog)
         failures: list[JsonObject] = []
         for candidate in compatible:

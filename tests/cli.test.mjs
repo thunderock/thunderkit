@@ -62,12 +62,14 @@ test("nodeSatisfies compares patch floors and rejects incomplete versions", () =
 
 test("renderDeps returns only the dependency JSON contract", () => {
   const output = JSON.parse(cli.renderDeps(manifest, { json: true }));
-  assert.deepEqual(Object.keys(output).sort(), ["distribution_cli", "ecosystems", "note", "schema_version"]);
-  assert.equal(output.schema_version, 1);
-  assert.deepEqual(Object.keys(output.ecosystems), ["omo", "omh"]);
-  assert.deepEqual(Object.values(output.ecosystems).map(({ package: name, version }) => `${name}@${version}`), [
-    "oh-my-openagent@5.0.0-beta.81", "oh-my-hermes@2.0.3",
+  assert.deepEqual(Object.keys(output).sort(), ["distribution_cli", "ecosystems", "hosts", "note", "schema_version"]);
+  assert.equal(output.schema_version, 2);
+  assert.deepEqual(output.hosts, { hermes: "omh", opencode: "omo", default: "gsd" });
+  assert.deepEqual(Object.keys(output.ecosystems), ["omo", "omh", "gsd"]);
+  assert.deepEqual(Object.values(output.ecosystems).map(({ package: name, channel }) => `${name} ${channel}`), [
+    "oh-my-openagent max-prerelease:5.x:beta", "oh-my-hermes dist-tag:latest", "get-shit-done-cc dist-tag:latest",
   ]);
+  assert.ok(Object.values(output.ecosystems).every((peer) => !("version" in peer) && !("integrity" in peer)));
   assert.deepEqual(output.ecosystems, manifest.ecosystems);
   assert.deepEqual(output.distribution_cli, manifest.distribution_cli);
   assert.match(output.note, /Thunderkit never runs/);
@@ -76,7 +78,7 @@ test("renderDeps returns only the dependency JSON contract", () => {
 test("renderDeps describes requirements and hints without executing them", () => {
   const output = cli.renderDeps(manifest, { json: false });
   for (const peer of Object.values(manifest.ecosystems)) {
-    for (const value of [`${peer.package}@${peer.version}`, peer.license, ...peer.hosts, peer.install_hint, peer.doctor_hint]) {
+    for (const value of [`${peer.package} (channel ${peer.channel})`, peer.license, ...peer.hosts, peer.install_hint, peer.doctor_hint ?? "none"]) {
       assert.ok(output.includes(value), `missing dependency detail: ${value}`);
     }
   }
@@ -107,20 +109,22 @@ test("deps --json emits exactly one object from outside the package directory", 
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, "");
   const output = JSON.parse(result.stdout);
-  assert.deepEqual(Object.keys(output).sort(), ["distribution_cli", "ecosystems", "note", "schema_version"]);
-  assert.equal(output.schema_version, 1);
-  assert.deepEqual(Object.keys(output.ecosystems), ["omo", "omh"]);
-  assert.equal(output.ecosystems.omo.version, "5.0.0-beta.81");
-  assert.equal(output.ecosystems.omh.version, "2.0.3");
+  assert.deepEqual(Object.keys(output).sort(), ["distribution_cli", "ecosystems", "hosts", "note", "schema_version"]);
+  assert.equal(output.schema_version, 2);
+  assert.deepEqual(Object.keys(output.ecosystems), ["omo", "omh", "gsd"]);
+  assert.equal(output.ecosystems.omo.channel, "max-prerelease:5.x:beta");
+  assert.equal(output.ecosystems.omh.channel, "dist-tag:latest");
+  assert.equal(output.ecosystems.gsd.channel, "dist-tag:latest");
   assert.equal(output.distribution_cli.version, "1.7.0");
 });
 
-test("deps prints both pinned ecosystems", () => {
+test("deps prints every host peer with its release channel", () => {
   const result = runCli(["deps"]);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, "");
-  assert.match(result.stdout, /oh-my-openagent@5\.0\.0-beta\.81/);
-  assert.match(result.stdout, /oh-my-hermes@2\.0\.3/);
+  assert.match(result.stdout, /oh-my-openagent \(channel max-prerelease:5\.x:beta\)/);
+  assert.match(result.stdout, /oh-my-hermes \(channel dist-tag:latest\)/);
+  assert.match(result.stdout, /get-shit-done-cc \(channel dist-tag:latest\)/);
 });
 
 test("deps rejects unknown options before reading the manifest", () => {

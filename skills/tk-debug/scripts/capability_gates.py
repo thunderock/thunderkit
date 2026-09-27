@@ -21,7 +21,7 @@ Decision: TypeAlias = Literal["delegate", "owned", "fallback", "blocked"]
 Method: TypeAlias = Literal["configured", "delegate_route", "explicit_dispatch"]
 Reason: TypeAlias = Literal["compatible", "disabled", "owned_policy", "invalid_config", "peer_missing",
                             "unsupported_host", "version_mismatch", "source_mismatch", "capability_missing",
-                            "model_mismatch", "unsafe_runtime_home", "missing_evidence"]
+                            "model_mismatch", "unsafe_runtime_home", "missing_evidence", "peer_unlocked"]
 LOCAL_FS: Final = frozenset({"ext2", "ext3", "ext4", "xfs", "btrfs", "f2fs"})
 MOUNT_LIMIT: Final = 4 * 1024 * 1024
 
@@ -120,16 +120,23 @@ def _provenance(candidate: JsonObject, snapshot: JsonObject) -> None:
     need(ecosystem in peers, "peer_missing", "No peer evidence")
     peer = expect_object(peers[ecosystem], "peer")
     pin = expect_object(candidate.get("pin"), "pin")
-    for field in ("package", "version", "source", "source_commit"):
-        if field == "source_commit" and (field not in pin or field not in peer):
-            continue
+    need(candidate.get("lock") is not None, "peer_unlocked", "No peer lock; run the printed lock command")
+    lock = expect_object(candidate.get("lock"), "lock")
+    for field in ("package", "source"):
         value = expect_text(evidence(peer, field), field)
-        need(value == pin.get(field), "version_mismatch" if field == "version" else "source_mismatch", f"Peer {field} differs from pin")
+        need(value == pin.get(field), "source_mismatch", f"Peer {field} differs from manifest")
+    version = expect_text(evidence(peer, "version"), "version")
+    need(version == lock.get("version"), "version_mismatch", "Peer version differs from lock")
+    if "source_commit" in pin and "source_commit" in peer:
+        need(expect_text(peer["source_commit"], "source_commit") == pin.get("source_commit"), "source_mismatch", "Peer source_commit differs from manifest")
     root = _resolved(path_text(evidence(peer, "root"), "root"))
     need(root.is_dir(), "source_mismatch", "Peer root is not a directory")
     identity = expect_object(pin.get("provenance_root"), "provenance_root")
     provenance = expect_object(candidate.get("provenance"), "provenance")
-    files = expect_object(provenance.get("files"), "files")
+    paths = expect_strings(provenance.get("files"), "files")
+    locked = expect_object(lock.get("files"), "lock.files")
+    need(bool(paths) and all(path in locked for path in paths), "peer_unlocked", "Lock does not cover every required file")
+    files: JsonObject = {path: locked[path] for path in paths}
     entry = expect_text(provenance.get("entrypoint"), "entrypoint")
     identity_path = _locate(root, expect_text(identity.get("identity_file"), "identity_file"))
     try:
@@ -137,6 +144,7 @@ def _provenance(candidate: JsonObject, snapshot: JsonObject) -> None:
         expected = expect_object(identity.get("identity_fields"), "identity_fields")
         need(all(type(document.get(key)) is type(value) and document.get(key) == value for key, value in expected.items()),
              "source_mismatch", "Installed identity differs from pin")
+        need(document.get("version") == lock.get("version"), "source_mismatch", "Installed identity version differs from lock")
         if provenance.get("root_kind") == "omh":
             records = [{key: expect_text(expect_object(row, "skill record").get(key), key)
                         for key in ("name", "path", "sha256", "source")} for row in expect_list(document.get("skills"), "skills")]
