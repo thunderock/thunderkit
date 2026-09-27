@@ -1,0 +1,66 @@
+{
+  "schema_version": 2,
+  "recipes": {
+    "opencode_omo_full": {
+      "host": "opencode", "peers": ["omo"], "bindings": "opencode"
+    },
+    "hermes_omh_full": {
+      "host": "hermes", "peers": ["omh"], "bindings": "hermes", "home": "task"
+    },
+    "codex_omo_full": {
+      "host": "codex", "peers": ["omo"], "bindings": "sol"
+    },
+    "opencode_omo_legacy": {
+      "host": "opencode", "peers": ["omo"], "bindings": "legacy_opencode"
+    },
+    "opencode_both_peers": {
+      "host": "opencode", "peers": ["omo", "omh"], "bindings": "opencode"
+    },
+    "hermes_both_peers": {
+      "host": "hermes", "peers": ["omo", "omh"], "bindings": "hermes", "home": "task"
+    },
+    "hermes_omh_shared_home": {
+      "host": "hermes", "peers": ["omh"], "bindings": "hermes", "home": "shared"
+    },
+    "mixed_same_name": {
+      "host": "hermes", "peers": ["omo", "omh"], "bindings": "hermes", "home": "task",
+      "fault": "mixed_same_name"
+    },
+    "unsupported_host": {
+      "host": "claude", "peers": ["omo", "omh"], "bindings": "opencode", "binding_host": "opencode"
+    },
+    "binding_mismatch": {
+      "host": "opencode", "peers": ["omo"], "bindings": "opencode", "fault": "binding_mismatch"
+    },
+    "wrong_host_bindings": {
+      "host": "opencode", "peers": ["omo"], "bindings": "opencode", "binding_host": "hermes"
+    },
+    "peer_missing": {
+      "host": "opencode", "peers": ["omo"], "bindings": "opencode", "fault": "peer_missing"
+    },
+    "no_consents": {
+      "host": "opencode", "peers": ["omo"], "bindings": "opencode", "fault": "no_consents"
+    },
+    "tampered_peer": {
+      "host": "opencode", "peers": ["omo"], "bindings": "opencode", "fault": "tamper"
+    },
+    "self_hashed_tamper": {
+      "host": "opencode", "peers": ["omo"], "bindings": "opencode", "fault": "self_hashed_tamper"
+    },
+    "missing_companion": {
+      "host": "opencode", "peers": ["omo"], "bindings": "opencode", "fault": "missing_companion"
+    },
+    "missing_role": {
+      "host": "opencode", "peers": ["omo"], "bindings": "opencode", "fault": "missing_role"
+    },
+    "hermes_tampered_peer": {
+      "host": "hermes", "peers": ["omh"], "bindings": "hermes", "home": "task", "fault": "tamper"
+    },
+    "hermes_missing_companion": {
+      "host": "hermes", "peers": ["omh"], "bindings": "hermes", "home": "task", "fault": "missing_companion"
+    },
+    "hermes_missing_role": {
+      "host": "hermes", "peers": ["omh"], "bindings": "hermes", "home": "task", "fault": "missing_role"
+    }
+  }
+}

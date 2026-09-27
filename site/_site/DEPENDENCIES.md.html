@@ -1,0 +1,89 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DEPENDENCIES — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<h1 id="native-workflow-dependencies">Native workflow dependencies</h1>
+<p>Thunderkit is a policy and interoperability layer, not a native runtime installer. It owns user-selected model classes, lifecycle routing, portable project context, independent cross-family review and completion gates. It can reuse compatible native implementations without copying their workflow bodies or running a second workflow owner.</p>
+<p>The authoritative registry is <a href="skills/references/dependencies.json.html"><code>skills/references/dependencies.json</code></a>. It records the required peer for each host, the release channel resolved at install time, source identity, the files each target loads, host constraints, and each skill&#x27;s operation-specific targets and owned fallback. Installed versions and file digests live in the machine-local lock <code>.thunderkit/peers.lock.json</code>, which is never committed or packed.</p>
+<h2 id="required-peer-per-host">Required peer per host</h2>
+<div class='tbl'><table><thead><tr><th>Host</th><th>Required peer</th><th>Package</th><th>Channel</th><th>License</th><th>Upstream source</th></tr></thead><tbody><tr><td>Hermes</td><td>OMH</td><td><code>oh-my-hermes</code></td><td><code>latest</code> dist-tag</td><td>MIT</td><td><a href="https://github.com/rlaope/oh-my-hermes">rlaope/oh-my-hermes</a></td></tr><tr><td>OpenCode</td><td>OMO</td><td><code>oh-my-openagent</code></td><td>highest <code>5.x</code> <code>-beta.N</code> prerelease</td><td>SUL-1.0</td><td><a href="https://github.com/code-yeongyu/oh-my-openagent">code-yeongyu/oh-my-openagent</a></td></tr><tr><td>Claude Code, Codex, Copilot, Gemini, Cursor, Windsurf</td><td>GSD</td><td><code>get-shit-done-cc</code></td><td><code>latest</code> dist-tag</td><td>MIT</td><td><a href="https://github.com/gsd-build/get-shit-done">gsd-build/get-shit-done</a></td></tr></tbody></table></div>
+<p>No peer version is fixed in the repository. <code>thunderkit install</code> resolves each channel when you install, and the lock records the resolved version and the SHA-256 of every installed file the targets use (trust on first lock). OMC stays excluded. Read OMO&#x27;s <a href="https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/a5eb7c130cae64125f31de13adee083eccc5d004/LICENSE.md">license</a> before installing it.</p>
+<p>Thunderkit&#x27;s MIT license does not relicense either peer or confer commercial-use rights to OMO. Thunderkit does not redistribute the peer implementations; each upstream license applies.</p>
+<p>Each host has exactly one required peer. When it is missing, a skill stops and prints the peer&#x27;s non-interactive install command instead of running an owned copy. On GSD hosts only project-free commands are targets (<code>gsd-debug</code>, <code>gsd-explore</code>); every other operation uses a thin Thunderkit-owned path, because GSD phase commands need a <code>.planning/</code> project. Even on a supported host, a target is conditional: a package present on disk is not necessarily loaded, compatible, model-bound, or verified. Each operation uses only its own declared target, never a same-named skill from a different source. A native installation on one host does not activate another.</p>
+<h2 id="runtime-requirements">Runtime requirements</h2>
+<div class='tbl'><table><thead><tr><th>Surface</th><th>Requirement</th><th>Boundary</th></tr></thead><tbody><tr><td>Thunderkit npm pointer: help, version, deps</td><td>Node ≥18</td><td>Displays information; <code>deps</code> does not run peer commands</td></tr><tr><td>Thunderkit install/list</td><td>Node ≥22.20.0</td><td>Invokes the pinned <code>skills@1.7.0</code> distribution CLI</td></tr><tr><td>Thunderkit local resolver/model helpers</td><td>Python ≥3.11</td><td>Local validation; no native installer or model call</td></tr><tr><td>OMH npm launcher</td><td>Node ≥18</td><td>Separate from the Thunderkit distribution CLI requirement</td></tr><tr><td>OMH packaged wheel</td><td>Python ≥3.11</td><td>Required by the Python implementation behind the launcher</td></tr><tr><td>GSD installer</td><td>Node ≥22.0.0</td><td>Required by <code>get-shit-done-cc</code></td></tr><tr><td>OMO</td><td>Host-managed; runtime version not specified in the registry</td><td>Follow the upstream host requirements; no universal Node-only claim</td></tr></tbody></table></div>
+<p><code>skills@1.7.0</code> is a distribution tool, <strong>not a peer ecosystem</strong>. The pointer&#x27;s Node ≥18 package requirement does not mean installation works on Node 18. Both install and list enforce the higher distribution boundary; list still delegates to that CLI even though it installs no skills. A distribution lock for individual skills does not install or restore native peers.</p>
+<h2 id="display-information-without-native-setup">Display information without native setup</h2>
+<pre><code>npx thunderkit deps
+npx thunderkit deps --json
+
+# Existing checkout: no npx package retrieval
+node bin/thunderkit.js deps --json</code></pre>
+<p>JSON contains <code>schema_version</code> (2), <code>hosts</code>, <code>ecosystems</code>, <code>distribution_cli</code> and <code>note</code>. The peer records include manual hints, not results of probing the machine. <code>deps</code> never executes installation, activation, doctor, update or login commands. Running it is not evidence that a model answered or a native workflow ran. The <code>npx</code> form may retrieve Thunderkit itself if it is not cached.</p>
+<h2 id="separately-approved-native-setup">Separately approved native setup</h2>
+<p>Installing Thunderkit through <code>npx thunderkit install</code> or <code>skills@1.7.0</code> installs Thunderkit skills only. Native setup is an optional operator action, outside that installation. Review the pinned peer&#x27;s requirements and license before making host configuration changes.</p>
+<h3 id="omo">OMO</h3>
+<p>The registry&#x27;s exact installation hint is:</p>
+<p>&gt; Host-native opencode.json plugin pin: {&quot;plugin&quot;:[&quot;oh-my-openagent@&lt;resolved 5.x beta&gt;&quot;]}; Thunderkit never runs this installation.</p>
+<p>This is an OpenCode plugin configuration hint, not an instruction to overwrite an existing configuration. OMO is required only on OpenCode; Codex uses GSD. Consult the upstream&#x27;s host-specific instructions; until the loaded source and effective bindings are proven, the native route is unavailable.</p>
+<p>After operator-approved installation, activate/load the peer through the host&#x27;s native mechanism. If a restart is needed, do it separately; loading a Thunderkit skill does not reconfigure an already running host. OMO skills load in-process from <code>dist/skills</code>, not through <code>npx skills</code>. Use the verified host skill tool (<code>skill(name=...)</code> / <code>$name</code>), not an invented ecosystem-prefixed slash command.</p>
+<p>The separately run doctor hint, copied from the registry:</p>
+<pre><code>bunx oh-my-openagent@&lt;locked version&gt; doctor</code></pre>
+<h3 id="omh">OMH</h3>
+<p>The exact registry hint combines package installation with native setup:</p>
+<pre><code>npm install -g oh-my-hermes@latest &amp;&amp; omh setup --full --yes --no-interactive --no-menubar --scope user</code></pre>
+<p>The first command installs the launcher; the second performs user-scoped activation and configuration. These are explicit operator-approved side effects, never actions taken by Thunderkit&#x27;s install or dependency display. Confirm the matching plugin and categorized skills are loaded in the actual Hermes process before attempting delegation.</p>
+<p>The separately run doctor hint is:</p>
+<pre><code>omh doctor</code></pre>
+<p><strong><code>omh doctor</code> may record local state.</strong> It is not a guaranteed read-only probe, and a successful doctor report alone does not prove a workflow&#x27;s provenance, model bindings or completion.</p>
+<p>The default skill root is <code>~/.omh/skills</code>, with identity in <code>~/.omh/manifest.json</code>. The provenance root is the bundle home containing both, not the skills subdirectory or a task&#x27;s <code>HERMES_HOME</code>. Use categorized selectors such as <code>ultrawork/ulw-plan</code>; the shared required reference is <code>guide/omh-routing/references/skill-common-rail.md</code>. Missing or quarantined companions make a target unavailable; a known pathname does not authorize bypassing a scanner.</p>
+<h3 id="gsd">GSD</h3>
+<p>The registry hint for Claude Code, Codex, Copilot and the other GSD hosts:</p>
+<pre><code>npx get-shit-done-cc@latest --&lt;runtime&gt; --global</code></pre>
+<p>Pass the host runtime flag (for example <code>--claude</code>, <code>--codex</code> or <code>--copilot</code>) and a location flag; with both, the installer does not prompt. It writes <code>gsd-&lt;name&gt;/SKILL.md</code> skills and <code>gsd-file-manifest.json</code> into the host config directory. Thunderkit never runs it. GSD phase workflows expect a <code>.planning/</code> project, which Thunderkit ignores in git and npm; only commands that work without one are targets.</p>
+<h2 id="models-remain-the-users-choice">Models remain the user&#x27;s choice</h2>
+<p><a href="skills/references/models.json.html"><code>models.json</code></a> defines the supported mappings independently of the peer host matrix. The catalog currently declares:</p>
+<div class='tbl'><table><thead><tr><th>Model key</th><th>Family</th><th>Supported harness mappings</th></tr></thead><tbody><tr><td><code>opus48</code></td><td>Anthropic</td><td>Claude, Hermes</td></tr><tr><td><code>opus5</code></td><td>Anthropic</td><td>OpenCode, Hermes</td></tr><tr><td><code>fable51</code></td><td>Anthropic</td><td>OpenCode, Hermes</td></tr><tr><td><code>sol</code></td><td>OpenAI</td><td>Codex</td></tr></tbody></table></div>
+<p>All other model/harness combinations are unsupported by this catalog, not guessed aliases. For example, GSD&#x27;s Codex host entry does not make <code>opus48</code> a supported Codex model; OMH&#x27;s Hermes entry does not make <code>sol</code> a supported Hermes model. A peer may therefore be usable for one operation but unable to represent an entire chosen model set for another.</p>
+<p>The three required choices are <code>classes.planner</code> (one key), <code>classes.executors</code> (a nonempty unique list), and <code>classes.reviewers</code> (<code>&quot;all&quot;</code> or a nonempty unique list). No backend chooses these for the user. <code>&quot;all&quot;</code> considers every catalog model, including those outside the other classes; preflight reports unavailable optional candidates. Explicit selections must succeed, and responding reviewers must independently meet <code>review_families_min</code> (at least two). Three Anthropic variants are still one family, regardless of how many harnesses run them.</p>
+<p>Native roles must honor the selected classes and supported effort settings through effective host configuration, not prompt labels. OMO <code>task()</code> has no model parameter; <code>load_skills</code> injects instructions, not model bindings. A host reconfiguration or restart remains an operator action, not proof that an existing root session switched models. Native internal critique is not automatically an independent cross-family review.</p>
+<h2 id="fallback-and-ownership">Fallback and ownership</h2>
+<p>The resolver returns <code>delegate</code>, <code>owned</code>, <code>fallback</code>, or <code>blocked</code>. It validates configuration, operation, source identity, the locked version and required file bytes, capabilities, effective model bindings and safety boundaries before a native invocation. A successful resolver exit means a routing decision was computed, not that work completed.</p>
+<ul><li><strong>Owned:</strong> no target is declared, or <code>delegation: &quot;off&quot;</code> disables native invocation.</li><li><strong>Fallback:</strong> a peer is missing, unsupported, mismatched or insufficiently evidenced, and</li></ul>
+<p>  the skill&#x27;s documented Thunderkit-owned procedure can meet the same constraints.</p>
+<ul><li><strong>Blocked:</strong> no compliant procedure can honor explicit models, review families or safety</li></ul>
+<p>  requirements. Report what is missing; never silently substitute a model or another ecosystem.</p>
+<p>A bounded native component returns findings while Thunderkit owns the stage. A full planning or execution handoff has one native owner, retaining its native artifacts and approvals; execution remains a separate approved stage. Completion checks use actual model identities, artifact/diff identities and genuine session evidence. Missing resume IDs stay explicitly unavailable. Changed artifacts invalidate dependent gates, and uncertain in-flight timeouts do not authorize duplicate execution or a competing fallback loop.</p>
+<p>OMO execution must honor an explicit no-push/no-PR/no-publish/no-merge-to-master boundary and stop at verified commits on the named feature branch; omitting delivery flags alone is not enough. OMH execution requires the actual parent process and child dispatcher to share the same existing task-owned local-disk <code>HERMES_HOME</code> inside the project, with the matching plugin. Thunderkit does not mutate a shared Hermes home or copy credentials into the project to make that route ready. See the <a href="skills/references/delegation.md.html">delegation contract</a> for full gates.</p>
+<h2 id="context-cost-and-standalone-skills">Context cost and standalone skills</h2>
+<p>The OMH full profile installs <strong>123 skills</strong>; core installs <strong>10</strong>, according to the registry. The provided setup hint selects full. These counts are not token-cost measurements: host discovery, loaded instructions, tools and companion references affect context usage. OMO also loads native instructions in-process; a small Thunderkit wrapper does not guarantee a small total prompt or low runtime cost. No numeric OMO context budget is specified here.</p>
+<p>Standalone Thunderkit skills carry local copies of their owned references and helpers, not any upstream catalog. Installing one does not install its sibling <code>tk-*</code> stages or native peers. Missing siblings are named as unavailable rather than read through guessed paths or installed implicitly. Keep project context committed as described in the <a href="https://github.com/thunderock/thunderkit/blob/master/README.md#project-memory--thunderkit">README</a>; changing hosts still requires fresh qualification.</p>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

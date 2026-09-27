@@ -1,0 +1,98 @@
+{
+  "skill": "tk-test",
+  "cases": {
+    "happy": [
+      {
+        "name": "configured preflight stays owned without peers",
+        "operation": "preflight",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["sol", "opus5"]
+          }
+        },
+        "sections": ["Delegation", "Fallback", "Output contract"],
+        "frontmatter": {
+          "thunderkit-role": "preflight",
+          "thunderkit-tier": "intake",
+          "thunderkit-delegates": "none",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "default preflight preserves all reviewers request",
+        "operation": null,
+        "config": "opencode_all",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        }
+      },
+      {
+        "name": "delegation off preserves explicit fleet",
+        "operation": "preflight",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "preflight requires project model choices",
+        "operation": "preflight",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "bootstrap belongs to router not preflight",
+        "operation": "bootstrap",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}

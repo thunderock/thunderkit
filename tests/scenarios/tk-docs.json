@@ -1,0 +1,179 @@
+{
+  "skill": "tk-docs",
+  "cases": {
+    "happy": [
+      {
+        "name": "opencode profile computes owned docs route only",
+        "operation": "docs",
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "sections": ["Delegation", "Model binding", "Document manifest", "Procedure", "Fallback", "Output contract"],
+        "frontmatter": {
+          "thunderkit-role": "docs",
+          "thunderkit-tier": "deliver",
+          "thunderkit-delegates": "none",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "hermes profile defaults to owned docs operation",
+        "operation": null,
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "codex profile computes owned route without certifying review",
+        "operation": "docs",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "sol",
+            "executors": ["sol"],
+            "reviewers": ["sol"]
+          }
+        }
+      },
+      {
+        "name": "both peer recipe cannot introduce an undeclared docs target",
+        "operation": "docs",
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "delegation off preserves classes without native evidence",
+        "operation": "docs",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      },
+      {
+        "name": "owned docs needs config but no native snapshot",
+        "operation": "docs",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["sol", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "owned route retains literal all reviewer request",
+        "operation": "docs",
+        "config": "opencode_all",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "missing config blocks model bearing documentation",
+        "operation": "docs",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "unknown operation cannot select product documentation alias",
+        "operation": "product-docs",
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}

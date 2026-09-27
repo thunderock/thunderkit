@@ -1,4 +1,5 @@
 {
+  "schema_version": 2,
   "classes": {
     "planner": "opus48",
     "executors": ["opus48", "opus5", "fable51"],
@@ -7,5 +8,7 @@
   "review_families_min": 2,
   "max_layers": 3,
   "frozen_paths": ["LICENSE"],
+  "ecosystems": ["omo", "omh", "gsd"],
+  "delegation": "auto",
   "decided_at": "2026-09-04"
 }

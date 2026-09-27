@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>North Star — thunderkit</title><style>
+<title>NORTH_STAR — thunderkit</title><style>
 :root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
@@ -15,6 +15,11 @@ h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(
 pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
 code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
 table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
 th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
 th{background:#0d1220}
@@ -24,13 +29,13 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
-<h1>thunderkit — North Star</h1>
+<h1 id="thunderkit--north-star">thunderkit — North Star</h1>
 <p>&gt; <strong>Big work in big repos is won by decomposition + heterogeneity, not by one smart model.</strong></p>
 <p>thunderkit is an *opinionated* skill pack. It exists to take a large change in a large repository and:</p>
 <ol><li><strong>Decompose</strong> it into disjoint, dependency-layered lanes that don&#x27;t collide.</li><li><strong>Route</strong> each lane to the best model *and* harness for that kind of work.</li><li><strong>Run</strong> those lanes in parallel across a heterogeneous fleet (Bedrock Fable 5.1,</li></ol>
 <p>   Claude Opus, Codex Sol — via the <code>claude</code>, <code>codex</code>, and <code>opencode</code>/<code>hermes</code> harnesses).</p>
 <ol><li><strong>Review</strong> the result across at least two model families before calling it done.</li><li><strong>Remember</strong> the project&#x27;s intent as a committed artifact, not a chat transcript.</li></ol>
-<h2>The opinions (non-negotiable — skills enforce these as gates)</h2>
+<h2 id="the-opinions-non-negotiable--skills-enforce-these-as-gates">The opinions (non-negotiable — skills enforce these as gates)</h2>
 <ol><li><strong>No single-model plans.</strong> A plan that can&#x27;t be split into parallelizable lanes isn&#x27;t</li></ol>
 <p>   finished. <code>tk-plan</code> emits lanes or it fails.</p>
 <ol><li><strong>Review is always cross-family.</strong> A model family reviewing its own output is not review.</li></ol>
@@ -43,14 +48,18 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p>   outcome (the critical path, the final review), thunderkit offers the top models and asks —    it does not silently default.</p>
 <ol><li><strong>Context is committed.</strong> A project&#x27;s opinion and decisions live in <code>.thunderkit/</code></li></ol>
 <p>   (<code>NORTH_STAR.md</code> + a decision log), so they travel with the repo across sessions and agents.</p>
-<h2>What thunderkit is not</h2>
+<h2 id="what-thunderkit-is-not">What thunderkit is not</h2>
 <ul><li>Not a UX / SEO / design / payments / delivery framework. It has exactly one concern:</li></ul>
 <p>  turning big-repo changes into parallel, cross-reviewed, evidence-gated work.</p>
-<ul><li>Not a launcher, plugin marketplace, or hook system. It is plain <code>SKILL.md</code> files that any</li></ul>
-<p>  Agent-Skills-compatible agent can read.</p>
-<ul><li>Not coupled to any private orchestrator. Lane execution uses portable CLI dispatch that</li></ul>
-<p>  works on anyone&#x27;s machine.</p>
-<h2>Why heterogeneity</h2>
+<ul><li>Not a plugin marketplace, hook system, or native runtime installer. It distributes</li></ul>
+<p>  <code>SKILL.md</code> files and small local helpers; its npm pointer installs Thunderkit skills only.</p>
+<ul><li>Not coupled to a private orchestrator or a universal host adapter. Native workflow reuse is</li></ul>
+<p>  qualified per host, operation, source version, model binding, and safety boundary. Portable   procedures still require suitable tools and reachable selected models.</p>
+<h2 id="architecture-and-boundaries">Architecture and boundaries</h2>
+<p>Thunderkit retains model-class selection, lifecycle policy, portable project context and evidence-based completion. It reuses native implementation only where the <a href="skills/references/dependencies.json.html">dependency registry</a> declares a compatible target: OMO on OpenCode or Codex, OMH on Hermes. Other skill-compatible hosts use Thunderkit-owned procedures; installing readable skill files does not promise native execution support.</p>
+<p>The peers are optional and separately installed, activated and checked by the operator. Thunderkit neither bundles their workflow bodies nor installs or activates them. Its <a href="DEPENDENCIES.md.html">dependency guide</a> records exact versions, licenses and manual instructions. One native handoff owns the scoped workflow; it does not run beside a duplicate owned loop.</p>
+<p>The user chooses <code>classes.planner</code>, <code>classes.executors</code> and <code>classes.reviewers</code>. Backend choice cannot replace those selections or weaken the independent reviewer-family gate. Missing peers produce named owned fallbacks; missing explicit models, unsupported mappings or unmet safety requirements block work when no compliant procedure exists. This is how partial availability degrades honestly without changing the project&#x27;s opinion.</p>
+<h2 id="why-heterogeneity">Why heterogeneity</h2>
 <p>Different work has different cost/quality curves. Wide exploration and cheap retrieval want a fast, login-free model (Fable 5.1). The critical implementation path wants the strongest coder (Opus). Review wants a *different* family than the author, so blind spots don&#x27;t survive. Sol (Codex) brings a genuinely different lineage for that second opinion. One model can&#x27;t be all of these at once; a fleet can — if the work is decomposed to feed it. That decomposition is the whole game, and it&#x27;s what thunderkit is opinionated about.</p>
 <footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
 </div></body></html>

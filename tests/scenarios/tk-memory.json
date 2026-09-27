@@ -1,0 +1,171 @@
+{
+  "skill": "tk-memory",
+  "cases": {
+    "happy": [
+      {
+        "name": "default view needs neither config nor capabilities",
+        "operation": null,
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {}
+        },
+        "sections": ["Delegation", "Fallback", "Output contract"],
+        "frontmatter": {
+          "thunderkit-role": "memory",
+          "thunderkit-tier": "context",
+          "thunderkit-delegates": "none",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "explicit view remains model free",
+        "operation": "view",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "canonical save preserves ordered selections without peer evidence",
+        "operation": "save",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "empty ecosystem selection keeps save owned",
+        "operation": "save",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["sol", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "complete legacy save is preview compatible without changing choices",
+        "operation": "save",
+        "config": "legacy",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      },
+      {
+        "name": "save retains literal reviewers all rather than a runtime expansion",
+        "operation": "save",
+        "config": "opencode_all",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        }
+      },
+      {
+        "name": "delegation off still validates and retains project selections",
+        "operation": "save",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "save without configuration is blocked before writing",
+        "operation": "save",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "unknown operation cannot borrow the config free view route",
+        "operation": "sync",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}

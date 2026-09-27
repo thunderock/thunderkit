@@ -15,6 +15,11 @@ h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(
 pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
 code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
 table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
 th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
 th{background:#0d1220}
@@ -24,21 +29,75 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
-<span class="tag">skill</span><h2>tk-audit</h2><p class="mut">Use to check a milestone actually achieved its intent before archiving: aggregates every lane&#x27;s verification, checks cross-lane integration and requirements coverage across all model families, and fails closed on orphaned or unverified requirements.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-audit -g</code></p><hr><h1>tk-audit — did the milestone actually land</h1>
-<p>The parallel-thunderkit analogue of GSD&#x27;s audit-milestone. Individual lanes passing doesn&#x27;t mean the milestone achieved its intent — integration can be broken, requirements can be orphaned. <code>tk-audit</code> aggregates the whole run and checks done-ness against the *original* intent, with the full reviewer set.</p>
-<p>Model class: <strong>reviewers</strong> (all authed families — the audit is the last blind-spot check).</p>
-<h2>Procedure</h2>
-<ol><li><strong>Aggregate verifications</strong> — collect every lane&#x27;s <code>REVIEW.md</code>/<code>UAT.md</code> result. A lane missing</li></ol>
-<p>   its verification is a blocker, not a pass.</p>
-<ol><li><strong>Cross-lane integration</strong> — check the seams: the disjoint lanes were merged; do the E2E user</li></ol>
-<p>   flows that cross lane boundaries actually work? A parallel decomposition&#x27;s risk is exactly at    the joints.</p>
-<ol><li><strong>Requirements coverage</strong> (3-source cross-reference) — every requirement in <code>SPEC.md</code> should</li></ol>
-<p>   appear satisfied in a lane&#x27;s verification AND exercised in <code>UAT.md</code>. Mismatches:</p>
-<ul><li>required but no lane verified it → <strong>orphaned</strong> (treat as unsatisfied)</li><li>verified but not in the spec → scope creep (flag it)</li></ul>
-<ol><li><strong>Fail gate</strong> — any orphaned or unverified requirement fails the audit. Fail closed.</li></ol>
-<h2>Output — <code>.thunderkit/AUDIT.md</code></h2>
-<p>Per-requirement final status (satisfied / partial / orphaned), the integration findings, and the overall milestone verdict. Only a clean audit clears the milestone for archive via <code>tk-memory</code>.</p>
-<h2>Why the full reviewer set</h2>
-<p>The audit is where a single family&#x27;s blind spot would do the most damage — a missed integration gap ships. Every authed family looks, and disagreement between them is surfaced, not averaged.</p>
+<span class="tag">audit</span><span class="tag">deliver</span><h2>tk-audit</h2><p class="mut">Use to check a milestone actually achieved its intent before archiving: aggregates every lane&#x27;s verification, checks cross-lane integration and requirements coverage across all model families, and fails closed on orphaned or unverified requirements.</p><p>Delegates: omh:reviewer/omh-verification-gate</p><p>Contract: 1</p><p>Python 3.11+ for the bundled read-only resolver; explicit project model selections and supported, model-bound read-only reviewer channels. Optional evidence assessment requires the pinned OMH peer on Hermes with verified provenance, tools and reviewer bindings.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-audit -g</code></p><hr><h1 id="tk-audit--did-the-milestone-actually-land">tk-audit — did the milestone actually land</h1>
+<p>Individual lanes passing does not mean the milestone achieved its intent: integration can be broken and requirements can be orphaned. Thunderkit owns the complete requirements-to-evidence audit and final acceptance decision. Native findings are inputs, not a replacement verdict.</p>
+<p>Model class: <strong>reviewers</strong> (all selected families — the last blind-spot check). The only operation is <code>audit</code>, including when omitted; every route is model-bearing.</p>
+<h2 id="reviewer-selection">Reviewer selection</h2>
+<p>Read the installed skill&#x27;s <a href="skills/tk-audit/references/model-roster.md.html">model roster</a>, <a href="skills/tk-audit/references/models.json.html">catalog</a> and <a href="skills/tk-audit/references/config.schema.json.html">config schema</a>. Validate the actual project&#x27;s selections with <a href="skills/tk-audit/scripts/model_config.py.html">model_config.py</a>. Preserve all three classes, explicit reviewer order, literal <code>&quot;all&quot;</code>, <code>review_families_min</code> (at least 2) and frozen paths. Legacy normalization is a preview, not a config write.</p>
+<ul><li>Every explicit reviewer must supply an independent assessment of the same complete audit</li></ul>
+<p>  target. <code>&quot;all&quot;</code> considers every catalog model, including those outside planner/executors;   retain reachable candidates and unavailable optional candidates with their actual outcomes.   A model explicitly required elsewhere does not become optional through <code>&quot;all&quot;</code>.</p>
+<ul><li>Count catalog families of actual identity-verified responding reviewers, not configured</li></ul>
+<p>  labels, providers, harnesses or native slots. Opus 4.8, Opus 5 and Fable 5.1 are one   <code>anthropic</code> family; Sol is <code>openai</code>. The unchanged minimum must independently be met.</p>
+<ul><li>Establish each lane author&#x27;s actual family from genuine run evidence and require a</li></ul>
+<p>  responding reviewer family different from that author. Missing author or reviewer identity   is unverified. Use separate read-only reviewer sessions, not the author&#x27;s session.</p>
+<ul><li>Give reviewers the same requirements, evidence and identities before sharing conclusions.</li></ul>
+<p>  Consolidate afterward, retaining attribution and disagreements. Do not average away an   unresolved blocker or major finding or let a majority vote erase a coverage gap.</p>
+<p>A native subset, preflight pong, initialization label or fixture route cannot prove serving identity or cross-family completion. Missing family access, quota loss or a required reviewer timeout blocks acceptance; it never lowers the threshold or silently changes the selection.</p>
+<h2 id="delegation">Delegation</h2>
+<p>Follow <a href="skills/tk-audit/references/delegation.md.html">delegation.md</a> and the exact audit entry in <a href="skills/tk-audit/references/dependencies.json.html">dependencies.json</a>. Resolve <code>SKILL_ROOT</code> to the directory of this loaded skill and <code>PROJECT_ROOT</code> to the actual audited project/worktree. Use only this skill&#x27;s own <code>scripts/</code> and <code>references/</code>; missing support files block routing rather than trigger a search of sibling installations or a repository checkout.</p>
+<p>For native consideration, <code>CAPABILITIES</code> names current project-contained host descriptors, loaded provenance, tools and effective reviewer bindings. Config and capability paths must resolve inside the explicit project root, with no symlink escape and no credential contents.</p>
+<pre><code>python3 &quot;$SKILL_ROOT/scripts/tk-resolve.py&quot; \
+  --skill tk-audit --operation audit --project-root &quot;$PROJECT_ROOT&quot; \
+  --config &quot;$PROJECT_ROOT/.thunderkit/config.json&quot; --capabilities &quot;$CAPABILITIES&quot; --json</code></pre>
+<p>With <code>delegation: off</code> or no enabled audit target, omit <code>--capabilities</code>: the local resolver still validates choices but dispatches nothing. Do not run native discovery, loading, routing helpers, doctor or installers on the off path.</p>
+<p>The sole optional target is <code>omh:reviewer/omh-verification-gate</code>, mode <strong><code>component</code></strong>, on Hermes: package <code>oh-my-hermes@2.0.3</code>, selector <code>reviewer/omh-verification-gate</code>, bare skill name <code>omh-verification-gate</code>, canonical manifest identity <code>verification-gate</code>. Require <code>tool:skill</code> and <code>model-binding:reviewers</code>. Verify the pinned package/source/version, bundle root containing <code>manifest.json</code>, loaded entrypoint and actual SHA-256 of every required file, including <code>guide/omh-routing/references/skill-common-rail.md</code> under the peer&#x27;s skills root. The bundle root is not <code>HERMES_HOME</code>. A listing, self-reported digest, missing companion or quarantined skill cannot qualify it.</p>
+<p>Only after <code>delegate</code> and dispatch consent, invoke the verified categorized selector through the host&#x27;s actual supported reviewer channel, bound to its selected member. Supply a bounded read-only evidence-gap question, the common audit target and the whole requirements inventory. The component may assess supplied evidence and return findings only: no code edits, fixes, test execution, archive transition, new workflow, config mutation or delivery authority. If that boundary cannot be enforced, do not invoke it. <code>omh-production-audit</code> is explicitly not equivalent: production readiness is narrower than complete milestone requirements coverage. No OMO audit target exists; OpenCode/Codex must use the guarded owned procedure, not an alias.</p>
+<p>Every model-bearing action, including owned/fallback assessment and controller synthesis, requires a real channel whose effective provider/wire-model and supported effort match a selected reviewer. Preserve each selected member&#x27;s ordered association; config validation, prompt labels and skill loading alone do not bind channels. Use proven effective mappings, not an invented <code>task(model=...)</code> argument or the arbitrary current root model. Do not assume a running root changes after a config edit. Hermes has no catalog Sol mapping; a compatible native subset under <code>&quot;all&quot;</code> cannot stand in for the remaining reviewer family.</p>
+<p>Use an already-proven nonmutating Hermes binding; this read-only assessment does not call <code>omh_delegate_route</code> or reconfigure shared homes. Never change global settings, auth, provider/effort choices or fallback chains to force readiness.</p>
+<p>Preserve the resolver&#x27;s fixed decision record unchanged: requested/effective bindings, null pre-invocation observation, target, reason and evidence paths. Exit 0 means routing was computed, not executed work or milestone success. A blocked result or malformed input stops dispatch. Record invocation failures/results separately, never rewrite the routing decision.</p>
+<h2 id="procedure">Procedure</h2>
+<ol><li><strong>Freeze the complete target.</strong> Read <code>.thunderkit/SPEC.md</code> and enumerate every specified</li></ol>
+<p>   requirement by stable ID or exact section, including required acceptance criteria and    approved scope changes. Do not derive the inventory from implemented lanes or silently    drop an uncovered requirement. Record the spec&#x27;s path/hash, approved scope and config    snapshot, source base/head commits and trees, exact diff hash, and content hashes for    included staged/unstaged/untracked changes. Missing identities stay null/unverified.</p>
+<ol><li><strong>Aggregate lane evidence.</strong> Collect each lane&#x27;s <code>REVIEW.md</code> and applicable <code>UAT.md</code>, their</li></ol>
+<p>   paths/hashes, author/reviewer identities, commands, cwd, exit/results and actual surface    observations. Match their source/diff/artifact identities to the audited integrated tree.    A lane branch pass is not proof after integration changed its target; any reuse needs    evidence covering the current target. File existence, timestamps and a success label    alone are insufficient. A missing required check is a blocker, not a skipped pass.</p>
+<ol><li><strong>Cross-reference every requirement.</strong> Map <code>SPEC.md</code> → lane verification → applicable UAT</li></ol>
+<p>   with precise evidence locations and identity matches. Assign exactly one coverage status:</p>
+<ul><li><strong>satisfied</strong>: every required acceptance item has fresh independent verification and</li></ul>
+<p>     applicable real-surface evidence on the current target.</p>
+<ul><li><strong>partial</strong>: a lane addresses it but verification, applicable UAT, freshness, identity or</li></ul>
+<p>     a required seam is missing, stale, failed or unverified; state exactly what remains.</p>
+<ul><li><strong>orphaned</strong>: no lane verification addresses the specified requirement; treat as unsatisfied.</li></ul>
+<p>   Mark UAT not applicable only with a requirement-specific, reviewed rationale showing no    relevant surface exists. An inaccessible environment is unverified, not not-applicable.    Flag verified work outside the spec as scope creep; it cannot compensate for an omission.</p>
+<ol><li><strong>Check cross-lane integration.</strong> Inventory every interface and E2E flow crossing lane</li></ol>
+<p>   boundaries and link it to affected requirements. Confirm integration membership and require    current integrated-tree evidence that the combined flow actually works, not just isolated    unit passes or conflict-free merges. Record broken seams and explicitly <strong>unverified</strong>    seams, including absent/unsafe/unavailable integration checks. Preserve useful lane passes    without promoting them to integration success.</p>
+<ol><li><strong>Collect independent full-set assessments.</strong> Each selected reviewer checks the complete</li></ol>
+<p>   matrix and seams, not only its native component&#x27;s subset. Retain no-finding responses,    disagreements, failures and the actual responding family count. Native findings may expose    gaps but Thunderkit decides acceptance under the unchanged requirements and family gates.</p>
+<ol><li><strong>Reconcile without repairing.</strong> Name correction owners and missing evidence. Return needed</li></ol>
+<p>   verification or UAT to the appropriate available sibling stage with its normal permissions;    do not manufacture evidence, modify code, weaken tests or start an automatic fix loop.    Recheck all relevant identities before the final decision; changed bytes invalidate the    affected coverage and dependent gates until fresh evidence is supplied.</p>
+<h2 id="archive-eligibility">Archive eligibility</h2>
+<p>Archive eligibility requires <strong>every required item covered</strong>, all requirements satisfied, fresh lane verification and applicable UAT, all required integrated seams verified, the full required independent reviewer set with actual family coverage meeting the minimum and a family different from each author, and no unresolved blocker/major finding or assessment. Missing scope or identity prevents eligibility; an empty inventory is not a vacuous pass.</p>
+<p>An orphaned requirement, stale evidence, broken/unverified seam or missing family blocks archive eligibility even when every implemented lane reports success. A narrower native PASS never satisfies the milestone. Retain partial findings and explicit fail/blocked reasons; neither a process exit 0 nor production readiness grants acceptance, archive or ship authority.</p>
+<h2 id="output--thunderkitauditmd">Output — <code>.thunderkit/AUDIT.md</code></h2>
+<p>The controller writes the audit with:</p>
+<ul><li>The complete scoped requirement inventory, spec/config/source/diff/artifact identities and</li></ul>
+<p>  per-requirement <strong>satisfied / partial / orphaned</strong> matrix, linked lane verification and UAT,   freshness checks, not-applicable rationale and every missing acceptance item.</p>
+<ul><li>Cross-lane seam/flow evidence on the integrated target, with broken and unverified seams</li></ul>
+<p>  explicit and linked to affected requirements; uncovered and out-of-scope work remain visible.</p>
+<ul><li>Ordered requested reviewers or literal <code>&quot;all&quot;</code> plus candidate outcomes; requested catalog</li></ul>
+<p>  identities, effective host/provider/model/effort and separately observed serving identities   and catalog families, author comparisons and actual family count versus the minimum.</p>
+<ul><li>Attributed findings, disagreements, required correction owners, overall pass/fail/blocked</li></ul>
+<p>  verdict and explicit archive eligibility with reasons. Report a narrower native claim&#x27;s scope   separately so its PASS cannot be mistaken for the milestone verdict.</p>
+<ul><li>The immutable resolver decision plus separate delegated-run records using the common fields</li></ul>
+<p>  <code>lane_id</code>, <code>ecosystem</code>, <code>package_version</code>, <code>skill_name</code>, <code>requested_model</code>, <code>effective_model</code>,   <code>observed_model</code>, <code>observed_family</code>, <code>artifact</code>, <code>artifact_sha256</code>, <code>session_id</code>, <code>status</code>,   <code>evidence_paths</code>. Preserve genuine session/resume IDs; unavailable facts stay null/unverified.</p>
+<p>Keep native artifacts at their real paths with content digests; do not rename them or mirror native state into a competing workflow. Redact credentials from evidence. User projects keep their <code>.thunderkit</code> context, including this audit, committed with the repo; transient runtime captures remain in the allowed runtime area. Only a clean audit clears archive eligibility via <code>tk-memory</code>; it does not itself archive, push, publish, create a PR or merge.</p>
+<h2 id="fallback">Fallback</h2>
+<ul><li><code>owned</code>/off/no enabled target or a named native denial uses the same complete owned audit</li></ul>
+<p>  only through genuinely bound selected reviewer channels, including synthesis. Valid choices   alone are not execution readiness. Missing configuration, required binding/reviewer/family   leaves a separate blocked outcome even if the resolver computed an owned/fallback route.</p>
+<ul><li>Preserve the exact failed native gate. Missing peers, unsupported hosts, tampered bytes or</li></ul>
+<p>  absent companions permit no install, doctor, guessed alias, silent model substitution or   undeclared production workflow. Give operator guidance without changing configuration.</p>
+<ul><li>On an uncertain timeout or in-flight component, preserve known session IDs, artifacts and</li></ul>
+<p>  partial output as unknown/unverified. Inspect that same session and establish its outcome   and ownership before any retry, replacement or fallback. If uncertain, remain blocked;   never create a duplicate owner merely because a response did not arrive.</p>
+<ul><li>Before any handoff to <code>tk-review</code>, <code>tk-verify-work</code>, <code>tk-memory</code>, <code>tk-router</code> or another</li></ul>
+<p>  sibling, check actual availability. Report a missing sibling as an unavailable prerequisite;   never read a presumed sibling path, invent a command or install it implicitly.</p>
 <footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
 </div></body></html>

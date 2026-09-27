@@ -1,0 +1,77 @@
+{
+  "skill": "tk-fast",
+  "cases": {
+    "happy": [
+      {
+        "name": "GSD host without GSD installed reports the missing fast peer",
+        "operation": "edit",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "peer_missing",
+          "target_ecosystem": "gsd",
+          "target_selector": "gsd-fast",
+          "target_mode": "handoff",
+          "exit": 0
+        },
+        "sections": [
+          "Delegation",
+          "Fallback",
+          "Output contract"
+        ],
+        "frontmatter": {
+          "thunderkit-role": "fast",
+          "thunderkit-tier": "execute",
+          "thunderkit-delegates": "gsd:gsd-fast",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "OpenCode host has no fast target and edits inline",
+        "operation": "edit",
+        "config": "sol",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        },
+        "sections": [
+          "Fallback",
+          "Escalation"
+        ]
+      }
+    ],
+    "failure": [
+      {
+        "name": "unknown operation is refused",
+        "operation": "quick",
+        "config": "sol",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2
+        }
+      },
+      {
+        "name": "edit without configuration is blocked",
+        "operation": "edit",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2
+        }
+      }
+    ]
+  }
+}

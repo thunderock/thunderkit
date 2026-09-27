@@ -1,0 +1,60 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-quick — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">quick</span><span class="tag">execute</span><h2>tk-quick</h2><p class="mut">Use when a task is small but not trivial: run it on one model (the planner class from .thunderkit/config.json, or model=&lt;key&gt; from models.json) with no plan document or parallel lanes, atomic commits and tests, and exactly one reviewer from a different model family before each commit.</p><p>Delegates: none</p><p>Contract: 1</p><p>Python 3.11+ standard library for the bundled resolver and model helpers; a shell, git and a supported channel for the selected model plus one reviewer of another family. No native peer is required.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-quick -g</code></p><hr><h1 id="tk-quick-a-small-task-on-one-model-with-one-review">tk-quick: a small task on one model, with one review</h1>
+<p><code>tk-quick</code> sits between <code>tk-fast</code> and the full lifecycle. It runs a small task on one chosen model, with atomic commits and tests, and gets exactly one review from a model of a different family before each commit. There is no plan document and there are no parallel lanes.</p>
+<h2 id="model-choice">Model choice</h2>
+<ul><li>Default author: the <code>classes.planner</code> model from <code>.thunderkit/config.json</code>.</li><li>Override: <code>model=&lt;key&gt;</code>, where <code>&lt;key&gt;</code> must be a key in <code>references/models.json</code>. An unknown</li></ul>
+<p>  key is rejected; never guess a nearby model.</p>
+<ul><li>Reviewer: one model from <code>classes.reviewers</code> whose family in <code>references/models.json</code> differs</li></ul>
+<p>  from the author&#x27;s. If no configured reviewer has a different family, stop as blocked; never   review with the same family.</p>
+<p>When the user must choose, use the host&#x27;s structured choice tool (options as buttons, the recommended one first, plus free text); fall back to a numbered list only when the host has none.</p>
+<h2 id="scope">Scope</h2>
+<p>Use it when the task needs a handful of files and one owner but is more than a trivial edit. If the task needs parallel lanes, a design decision or a plan review, route it to <code>tk-plan</code> through <code>tk-router</code>.</p>
+<h2 id="delegation">Delegation</h2>
+<p><code>tk-quick</code> delegates nothing (<code>thunderkit-delegates: none</code>). GSD quick mode requires a GSD project (<code>.planning/ROADMAP.md</code>), so it is not a target. After validating the configuration the resolver returns <code>owned</code>:</p>
+<pre><code>python3 scripts/tk-resolve.py --skill tk-quick --operation quick --config .thunderkit/config.json --json</code></pre>
+<p>That result proves only that the route is owned; it is not evidence the task ran.</p>
+<h2 id="fallback">Fallback</h2>
+<p>The owned procedure is the skill:</p>
+<ol><li>Confirm the author model (default or <code>model=</code>) and one different-family reviewer.</li><li>Make the change on the author model; keep each commit to one logical step.</li><li>Run the relevant tests before each commit.</li><li>Give the reviewer the diff and the test output; address findings or record why not.</li><li>Commit only after the review returns. No push, PR, tag or publish.</li></ol>
+<p>Without a valid configuration, stop as blocked and ask for one; never pick a model silently.</p>
+<h2 id="asking-the-user">Asking the user</h2>
+<p>When this skill needs a decision from the user, ask through the host&#x27;s structured choice tool as described in <code>references/asking.md</code>: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record <code>unknown</code> and stop at the gate.</p>
+<h2 id="output-contract">Output contract</h2>
+<pre><code>task: &lt;one sentence&gt;
+author: &lt;model key&gt; (&lt;family&gt;)
+reviewer: &lt;model key&gt; (&lt;family&gt;)
+commits: &lt;sha subject&gt;...
+tests: &lt;command&gt; -&gt; &lt;exit code&gt;
+review: approved | changes addressed | blocked: &lt;reason&gt;</code></pre>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

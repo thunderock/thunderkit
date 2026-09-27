@@ -1,0 +1,479 @@
+{
+  "skill": "tk-execute",
+  "cases": {
+    "happy": [
+      {
+        "name": "OMO execution route retains ordered selected classes",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "sections": [
+          "Inputs and paths",
+          "Model contract",
+          "Plan and approval gates",
+          "Delegation",
+          "Native handoff",
+          "Fallback",
+          "Portable dispatch",
+          "Layer gating and recovery",
+          "Output"
+        ],
+        "frontmatter": {
+          "thunderkit-role": "executor",
+          "thunderkit-tier": "execute",
+          "thunderkit-delegates": "omo:ulw-execute omh:ultrawork/ulw-work",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "OpenCode selects only its full-plan target with both peers present",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "target_mode": "handoff",
+          "exit": 0
+        }
+      },
+      {
+        "name": "OMH execution route requires its task home and selected roles",
+        "operation": "execute",
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-work",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Plan and approval gates", "Native handoff", "Layer gating and recovery", "Output"]
+      },
+      {
+        "name": "Default execute operation selects only OMH on Hermes",
+        "operation": null,
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-work",
+          "target_mode": "handoff",
+          "exit": 0
+        }
+      },
+      {
+        "name": "Codex host falls back from the OpenCode-only OMO ulw-execute target",
+        "operation": "execute",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+        },
+        "sections": ["Model contract", "Plan and approval gates"]
+      },
+      {
+        "name": "All reviewers remains a request distinct from the native subset",
+        "operation": "execute",
+        "config": "opencode_all",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {"planner": "opus5", "executors": ["fable51", "opus5"], "reviewers": "all"}
+        },
+        "sections": ["Model contract", "Plan and approval gates"]
+      },
+      {
+        "name": "Complete legacy choices remain a preview with a singleton executor",
+        "operation": "execute",
+        "config": "legacy_opencode",
+        "capabilities": "opencode_omo_legacy",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "Delegation off computes ownership without native discovery",
+        "operation": "execute",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        },
+        "sections": ["Fallback", "Portable dispatch", "Layer gating and recovery"]
+      },
+      {
+        "name": "No enabled peers retains selected models for the portable owner",
+        "operation": "execute",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {"planner": "opus48", "executors": ["opus48"], "reviewers": ["sol", "opus5"]}
+        },
+        "sections": ["Fallback", "Portable dispatch", "Output"]
+      }
+    ],
+    "failure": [
+      {
+        "name": "Missing peer cannot be rescued by a ready claim",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "peer_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "target_mode": "handoff",
+          "exit": 0
+        },
+        "sections": ["Fallback"]
+      },
+      {
+        "name": "Missing delivery opt-out blocks OMO execution",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "no_consents",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "capability_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "target_mode": "handoff",
+          "exit": 1
+        },
+        "sections": ["Native handoff"]
+      },
+      {
+        "name": "A shared Hermes home is not an active task-owned home",
+        "operation": "execute",
+        "config": "hermes",
+        "capabilities": "hermes_omh_shared_home",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "unsafe_runtime_home",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-work",
+          "target_mode": "handoff",
+          "exit": 1
+        },
+        "sections": ["Native handoff"]
+      },
+      {
+        "name": "Missing OMO root role evidence blocks handoff",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "missing_role",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "exit": 1
+        }
+      },
+      {
+        "name": "Missing OMH root role evidence blocks handoff",
+        "operation": "execute",
+        "config": "hermes",
+        "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-work",
+          "exit": 1
+        }
+      },
+      {
+        "name": "Wrong effective executor model blocks OMO handoff",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "binding_mismatch",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "exit": 1
+        }
+      },
+      {
+        "name": "Another harness provider mapping is not an OpenCode binding",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "wrong_host_bindings",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "exit": 1
+        }
+      },
+      {
+        "name": "Plural executor selection cannot collapse to the legacy singleton",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "opencode_omo_legacy",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "capability_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "exit": 1,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "Hermes cannot substitute its models for a selected Codex executor",
+        "operation": "execute",
+        "config": "sol",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-work",
+          "exit": 1,
+          "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+        }
+      },
+      {
+        "name": "OpenCode cannot substitute its models for a selected Codex executor",
+        "operation": "execute",
+        "config": "sol",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "exit": 1
+        }
+      },
+      {
+        "name": "Changed OMO entrypoint bytes deny native provenance",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "exit": 0
+        }
+      },
+      {
+        "name": "Self-hashing changed bytes does not renew pinned trust",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "self_hashed_tamper",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-execute",
+          "exit": 0
+        }
+      },
+      {
+        "name": "Changed OMH entrypoint bytes deny native provenance",
+        "operation": "execute",
+        "config": "hermes",
+        "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-work",
+          "exit": 0
+        }
+      },
+      {
+        "name": "Missing mandatory OMH companion denies native provenance",
+        "operation": "execute",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-work",
+          "exit": 0
+        }
+      },
+      {
+        "name": "Unsupported native host has no selected target",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "OMO capability evidence cannot replace missing model choices",
+        "operation": "execute",
+        "config": null,
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "OMH capability evidence cannot replace missing model choices",
+        "operation": "execute",
+        "config": null,
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "OpenCode config alone is not native capability evidence",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "Hermes config alone supplies no native home or role evidence",
+        "operation": "execute",
+        "config": "hermes",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "Planning is not an execute operation alias",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "Delegation off cannot admit an unknown bootstrap operation",
+        "operation": "bootstrap",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}

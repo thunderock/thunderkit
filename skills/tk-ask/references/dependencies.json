@@ -1,0 +1,998 @@
+{
+  "schema_version": 2,
+  "hosts": {
+    "hermes": "omh",
+    "opencode": "omo",
+    "default": "gsd"
+  },
+  "ecosystems": {
+    "omo": {
+      "package": "oh-my-openagent",
+      "channel": "max-prerelease:5.x:beta",
+      "source": "https://github.com/code-yeongyu/oh-my-openagent",
+      "source_commit": "a5eb7c130cae64125f31de13adee083eccc5d004",
+      "license": "SUL-1.0",
+      "license_url": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/a5eb7c130cae64125f31de13adee083eccc5d004/LICENSE.md",
+      "hosts": [
+        "opencode"
+      ],
+      "install_hint": "Host-native opencode.json plugin pin: {\"plugin\":[\"oh-my-openagent@<resolved 5.x beta>\"]}; Thunderkit never runs this installation.",
+      "doctor_hint": "bunx oh-my-openagent@<locked version> doctor",
+      "skill_source_dir": "dist/skills",
+      "provenance_root": {
+        "root_kind": "package",
+        "identity_file": "package.json",
+        "identity_fields": {
+          "name": "oh-my-openagent"
+        },
+        "entrypoint_pattern": "dist/skills/<skill_name>/SKILL.md",
+        "fingerprint_source": "SHA-256 of installed dist/skills/<skill_name>/** files, recorded in .thunderkit/peers.lock.json at lock time (trust on first lock)",
+        "note": "The installed package/ directory is the root. Its package.json name must match the manifest and its version must match the lock before any file digest is compared."
+      },
+      "invocation": "host skill tool (skill(name=...) / $name)",
+      "notes": "SUL-1.0 means no redistribution or relicensing by Thunderkit; skills load in-process, not via npx skills."
+    },
+    "omh": {
+      "package": "oh-my-hermes",
+      "channel": "dist-tag:latest",
+      "source": "https://github.com/rlaope/oh-my-hermes",
+      "license": "MIT",
+      "hosts": [
+        "hermes"
+      ],
+      "runtime": {
+        "node": ">=18",
+        "python": ">=3.11"
+      },
+      "install_hint": "npm install -g oh-my-hermes@latest && omh setup --full --yes --no-interactive --no-menubar --scope user",
+      "doctor_hint": "omh doctor",
+      "skills_root": "~/.omh/skills",
+      "manifest": "~/.omh/manifest.json",
+      "selector_style": "categorized path <category>/<skill>",
+      "shared_rail": "guide/omh-routing/references/skill-common-rail.md",
+      "provenance_root": {
+        "root_kind": "omh",
+        "identity_file": "manifest.json",
+        "identity_fields": {
+          "schema_version": 1,
+          "package": "oh-my-hermes"
+        },
+        "entrypoint_pattern": "skills/<category>/<skill_name>/SKILL.md",
+        "manifest_record_fields": [
+          "name",
+          "path",
+          "sha256",
+          "source"
+        ],
+        "manifest_source_values": [
+          "builtin"
+        ],
+        "fingerprint_source": "SHA-256 of deployed SKILL.md files under the OMH bundle home, recorded in .thunderkit/peers.lock.json at lock time; the wheel ships generators, not SKILL.md files.",
+        "note": "The OMH bundle home containing manifest.json and skills/ is the provenance root, distinct from skills_root and the task HERMES_HOME. A manifest record's source: builtin is the installer mode, not the repository URL. Its name matches the target-level canonical_name (for example ralplan), distinct from selector (ultrawork/ulw-plan). A record's sha256 is untrusted until the real file bytes match the pinned fingerprint."
+      },
+      "context_cost_note": "The full profile installs 123 skills; core installs 10.",
+      "notes": "omh doctor may record local state; it is not a guaranteed read-only probe."
+    },
+    "gsd": {
+      "package": "get-shit-done-cc",
+      "channel": "dist-tag:latest",
+      "source": "https://github.com/gsd-build/get-shit-done",
+      "license": "MIT",
+      "hosts": [
+        "claude",
+        "codex",
+        "copilot",
+        "gemini",
+        "cursor",
+        "windsurf"
+      ],
+      "runtime": {
+        "node": ">=22.0.0"
+      },
+      "install_hint": "npx get-shit-done-cc@latest --<runtime> --global (non-interactive: runtime flag plus location flag); Thunderkit never runs this installation.",
+      "skill_prefix": "gsd-",
+      "invocation": "host skill tool; installer converts commands/gsd/<name>.md into gsd-<name>/SKILL.md per host",
+      "notes": "Only project-free commands are targets (gsd-fast, gsd-debug, gsd-explore); commands that need a .planning/ project are never delegated.",
+      "provenance_root": {
+        "root_kind": "gsd",
+        "identity_file": "gsd-file-manifest.json",
+        "identity_fields": {},
+        "entrypoint_pattern": "skills/gsd-<name>/SKILL.md",
+        "note": "The host config directory (for example ~/.claude) is the root; its gsd-file-manifest.json version must equal the lock version."
+      }
+    }
+  },
+  "distribution_cli": {
+    "package": "skills",
+    "version": "1.7.0",
+    "node": ">=22.20.0",
+    "note": "vercel skills CLI used by bin/thunderkit.js install/list; not a peer ecosystem"
+  },
+  "skills": {
+    "tk-router": {
+      "role": "router",
+      "default_operation": "route",
+      "operations": [
+        "bootstrap",
+        "route"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns bootstrap and routing because model selection and lifecycle policy must remain local."
+    },
+    "tk-test": {
+      "role": "preflight",
+      "default_operation": "preflight",
+      "operations": [
+        "preflight"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns preflight because configured model reachability requires its own evidence checks."
+    },
+    "tk-ask": {
+      "role": "answer-discipline",
+      "default_operation": "validate",
+      "operations": [
+        "validate"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns answer validation because its response constraints must remain consistent across peers."
+    },
+    "tk-grill": {
+      "role": "interrogator",
+      "default_operation": "interview",
+      "operations": [
+        "interview"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-interview",
+          "selector": "ultrawork/ulw-interview",
+          "mode": "component",
+          "operations": [
+            "interview"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Return bounded clarification questions without writes; Thunderkit owns the interview and user decisions.",
+          "canonical_name": "deep-interview",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/ultrawork/ulw-interview/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/ultrawork/ulw-interview/SKILL.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "gsd",
+          "skill_name": "gsd-explore",
+          "selector": "gsd-explore",
+          "mode": "component",
+          "operations": [
+            "interview"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Return bounded Socratic questions without roadmap writes; Thunderkit owns the interview and user decisions.",
+          "provenance": {
+            "root_kind": "gsd",
+            "entrypoint": "skills/gsd-explore/SKILL.md",
+            "files": [
+              "skills/gsd-explore/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit conducts its own bounded intake when compatible native interview support is unavailable."
+    },
+    "tk-spec": {
+      "role": "spec",
+      "default_operation": "clarify",
+      "operations": [
+        "clarify"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-interview",
+          "selector": "ultrawork/ulw-interview",
+          "mode": "component",
+          "operations": [
+            "clarify"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Return ambiguity findings and questions without writes; Thunderkit owns specification acceptance.",
+          "canonical_name": "deep-interview",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/ultrawork/ulw-interview/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/ultrawork/ulw-interview/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit clarifies the specification itself when native interview findings cannot be safely obtained."
+    },
+    "tk-map": {
+      "role": "recon",
+      "default_operation": "map",
+      "operations": [
+        "map"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-research",
+          "selector": "ulw-research",
+          "mode": "component",
+          "operations": [
+            "map"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Read-only repository reconnaissance returning findings; do not start a second research workflow.",
+          "provenance": {
+            "root_kind": "package",
+            "entrypoint": "dist/skills/ulw-research/SKILL.md",
+            "files": [
+              "dist/skills/ulw-research/ATTRIBUTION.md",
+              "dist/skills/ulw-research/SKILL.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-codebase-onboarding",
+          "selector": "planner/omh-codebase-onboarding",
+          "mode": "component",
+          "operations": [
+            "map"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Read-only onboarding findings; Thunderkit assembles and persists the repository map.",
+          "canonical_name": "codebase-onboarding",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/planner/omh-codebase-onboarding/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/planner/omh-codebase-onboarding/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit maps the repository with its own scoped reconnaissance when no qualified native component is ready."
+    },
+    "tk-discuss": {
+      "role": "discuss",
+      "default_operation": "discuss",
+      "operations": [
+        "discuss"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-interview",
+          "selector": "ultrawork/ulw-interview",
+          "mode": "component",
+          "operations": [
+            "discuss"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Return decision questions and alternatives without writes; the user decides and Thunderkit records the choices.",
+          "canonical_name": "deep-interview",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/ultrawork/ulw-interview/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/ultrawork/ulw-interview/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit frames implementation choices itself when a qualified native interview component is unavailable."
+    },
+    "tk-research": {
+      "role": "research",
+      "default_operation": "research",
+      "operations": [
+        "research"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-research",
+          "selector": "ulw-research",
+          "mode": "handoff",
+          "operations": [
+            "research"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Own the native research workflow within the agreed scope; return findings and evidence to Thunderkit.",
+          "provenance": {
+            "root_kind": "package",
+            "entrypoint": "dist/skills/ulw-research/SKILL.md",
+            "files": [
+              "dist/skills/ulw-research/ATTRIBUTION.md",
+              "dist/skills/ulw-research/SKILL.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-research",
+          "selector": "ultrawork/ulw-research",
+          "mode": "handoff",
+          "operations": [
+            "research"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Own the native research workflow using the categorized selector and return sourced evidence.",
+          "canonical_name": "research",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/ultrawork/ulw-research/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/ultrawork/ulw-research/SKILL.md",
+              "skills/ultrawork/ulw-research/references/briefing-format.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit performs its own scoped research when native workflow provenance or model bindings cannot be proven."
+    },
+    "tk-learn": {
+      "role": "learner",
+      "default_operation": "research",
+      "operations": [
+        "research",
+        "discover"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-research",
+          "selector": "ulw-research",
+          "mode": "component",
+          "operations": [
+            "research"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Return read-only findings for a bounded knowledge question; Thunderkit owns synthesis and persistence.",
+          "provenance": {
+            "root_kind": "package",
+            "entrypoint": "dist/skills/ulw-research/SKILL.md",
+            "files": [
+              "dist/skills/ulw-research/ATTRIBUTION.md",
+              "dist/skills/ulw-research/SKILL.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-research",
+          "selector": "ultrawork/ulw-research",
+          "mode": "component",
+          "operations": [
+            "research"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Return read-only research findings rather than taking ownership of the learning workflow.",
+          "canonical_name": "research",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/ultrawork/ulw-research/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/ultrawork/ulw-research/SKILL.md",
+              "skills/ultrawork/ulw-research/references/briefing-format.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-skill-scout",
+          "selector": "operator/omh-skill-scout",
+          "mode": "component",
+          "operations": [
+            "discover"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors"
+          ],
+          "notes": "Read-only skill discovery and recommendations only; never install or activate discovered skills.",
+          "canonical_name": "skill-scout",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/operator/omh-skill-scout/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/operator/omh-skill-scout/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit answers knowledge questions or reports discovery limits itself when compatible native components are unavailable."
+    },
+    "tk-plan": {
+      "role": "planner",
+      "default_operation": "plan",
+      "operations": [
+        "plan"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-plan",
+          "selector": "ulw-plan",
+          "mode": "handoff",
+          "operations": [
+            "plan"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner",
+            "model-binding:executors",
+            "model-binding:reviewers"
+          ],
+          "notes": "Own native planning only with proven root, discovery and review role bindings; native review does not replace Thunderkit's later family gate.",
+          "native_roles": {
+            "root": "planner",
+            "explore": "executors",
+            "librarian": "executors",
+            "metis": "executors",
+            "momus": "reviewers",
+            "oracle": "reviewers"
+          },
+          "provenance": {
+            "root_kind": "package",
+            "entrypoint": "dist/skills/ulw-plan/SKILL.md",
+            "files": [
+              "dist/skills/ulw-plan/SKILL.md",
+              "dist/skills/ulw-plan/agents/openai.yaml",
+              "dist/skills/ulw-plan/references/full-workflow.md",
+              "dist/skills/ulw-plan/references/intent-clear.md",
+              "dist/skills/ulw-plan/references/intent-unclear.md",
+              "dist/skills/ulw-plan/scripts/scaffold-plan.mjs"
+            ]
+          }
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-plan",
+          "selector": "ultrawork/ulw-plan",
+          "mode": "handoff",
+          "operations": [
+            "plan"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Own native planning in one planner-bound session; its in-session critic is not an independent reviewer or a replacement for Thunderkit's later family gate.",
+          "native_roles": {
+            "root": "planner"
+          },
+          "canonical_name": "ralplan",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/ultrawork/ulw-plan/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/ultrawork/ulw-plan/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit writes its own scoped plan when neither qualified native planner can honor the requested model binding."
+    },
+    "tk-execute": {
+      "role": "executor",
+      "default_operation": "execute",
+      "operations": [
+        "execute"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "ulw-execute",
+          "selector": "ulw-execute",
+          "mode": "handoff",
+          "operations": [
+            "execute"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors",
+            "model-binding:reviewers",
+            "delivery:disabled"
+          ],
+          "notes": "Requires an approved plan and enforceable no-delivery opt-out: no --make-pr/--ship, push, PR, publish or master merge. No-plan bootstrap is outside execute; if needed, return capability_missing without invoking it.",
+          "native_roles": {
+            "root": "executors",
+            "worker": "executors",
+            "explore": "executors",
+            "librarian": "executors",
+            "gate-reviewer": "reviewers"
+          },
+          "provenance": {
+            "root_kind": "package",
+            "entrypoint": "dist/skills/ulw-execute/SKILL.md",
+            "files": [
+              "dist/skills/ulw-execute/SKILL.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "ulw-work",
+          "selector": "ultrawork/ulw-work",
+          "mode": "handoff",
+          "operations": [
+            "execute"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:executors",
+            "model-binding:reviewers",
+            "runtime_home:isolated"
+          ],
+          "notes": "Own native execution only with parent and dispatcher using the same task-owned HERMES_HOME and proven lane/review bindings. External-owner/ulw-maestro and durable_checkpoint/ulw-loop paths are unqualified; if needed, return capability_missing fallback or blocked without invoking them. No delivery approval is implied.",
+          "native_roles": {
+            "root": "executors",
+            "lane": "executors",
+            "verification": "executors",
+            "code-review-gate": "reviewers"
+          },
+          "canonical_name": "ultrawork",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/ultrawork/ulw-work/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/ultrawork/ulw-work/SKILL.md",
+              "skills/ultrawork/ulw-work/references/campaign-orchestrator.md",
+              "skills/ultrawork/ulw-work/references/dependency-topology.md",
+              "skills/ultrawork/ulw-work/references/tdd-red-green.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit coordinates its own scoped execution when native safety gates fail and approved model bindings remain provable."
+    },
+    "tk-review": {
+      "role": "reviewer",
+      "default_operation": "diff",
+      "operations": [
+        "diff",
+        "plan"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-code-review",
+          "selector": "reviewer/omh-code-review",
+          "mode": "component",
+          "operations": [
+            "diff"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "Return read-only diff findings; Thunderkit retains plan review and the cross-family review gate.",
+          "canonical_name": "code-review",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/reviewer/omh-code-review/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/reviewer/omh-code-review/SKILL.md",
+              "skills/reviewer/omh-code-review/references/review-dispatch.md",
+              "skills/reviewer/omh-code-review/references/review-response.md",
+              "skills/reviewer/omh-code-review/references/smell-baseline.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit owns plan review and performs its own diff review when the native component cannot satisfy review policy."
+    },
+    "tk-verify-work": {
+      "role": "uat",
+      "default_operation": "cli",
+      "operations": [
+        "cli",
+        "api",
+        "visual"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "visual-qa",
+          "selector": "visual-qa",
+          "mode": "component",
+          "operations": [
+            "visual"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "Return bounded visual findings without repairs; Thunderkit owns captures, acceptance checks, and persistence.",
+          "provenance": {
+            "root_kind": "package",
+            "entrypoint": "dist/skills/visual-qa/SKILL.md",
+            "files": [
+              "dist/skills/visual-qa/AGENTS.md",
+              "dist/skills/visual-qa/SKILL.md",
+              "dist/skills/visual-qa/references/browser-setup.md",
+              "dist/skills/visual-qa/scripts/ansi.test.ts",
+              "dist/skills/visual-qa/scripts/ansi.ts",
+              "dist/skills/visual-qa/scripts/cli.test.ts",
+              "dist/skills/visual-qa/scripts/cli.ts",
+              "dist/skills/visual-qa/scripts/east-asian-width.test.ts",
+              "dist/skills/visual-qa/scripts/east-asian-width.ts",
+              "dist/skills/visual-qa/scripts/image-diff.test.ts",
+              "dist/skills/visual-qa/scripts/image-diff.ts",
+              "dist/skills/visual-qa/scripts/png-crc.ts",
+              "dist/skills/visual-qa/scripts/png-decode.test.ts",
+              "dist/skills/visual-qa/scripts/png-decode.ts",
+              "dist/skills/visual-qa/scripts/png-synth.ts",
+              "dist/skills/visual-qa/scripts/tui-grid.test.ts",
+              "dist/skills/visual-qa/scripts/tui-grid.ts",
+              "dist/skills/visual-qa/scripts/types.ts",
+              "dist/skills/visual-qa/scripts/visual-qa.mjs"
+            ]
+          }
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-visual-qa",
+          "selector": "operator/omh-visual-qa",
+          "mode": "component",
+          "operations": [
+            "visual"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "prepares/assesses; wrapper collects captures",
+          "canonical_name": "visual-qa",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/operator/omh-visual-qa/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/operator/omh-visual-qa/SKILL.md",
+              "skills/operator/omh-visual-qa/references/visual-verdict-contract.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit owns CLI and API checks and evaluates visual evidence itself when native assessment is unavailable."
+    },
+    "tk-debug": {
+      "role": "debug",
+      "default_operation": "general",
+      "operations": [
+        "general",
+        "native-fault"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "debugging",
+          "selector": "debugging",
+          "mode": "handoff",
+          "operations": [
+            "general",
+            "native-fault"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Own the scoped native debugging workflow and return root-cause evidence plus verification results.",
+          "provenance": {
+            "root_kind": "package",
+            "entrypoint": "dist/skills/debugging/SKILL.md",
+            "files": [
+              "dist/skills/debugging/SKILL.md",
+              "dist/skills/debugging/references/methodology/00-setup.md",
+              "dist/skills/debugging/references/methodology/02-investigate.md",
+              "dist/skills/debugging/references/methodology/03-flaky-triage.md",
+              "dist/skills/debugging/references/methodology/04-oracle-triple.md",
+              "dist/skills/debugging/references/methodology/05-escalate.md",
+              "dist/skills/debugging/references/methodology/06-fix.md",
+              "dist/skills/debugging/references/methodology/08-qa.md",
+              "dist/skills/debugging/references/methodology/09-cleanup.md",
+              "dist/skills/debugging/references/methodology/partial-runtime-evidence.md",
+              "dist/skills/debugging/references/runtimes/bundled-js-binary.md",
+              "dist/skills/debugging/references/runtimes/go.md",
+              "dist/skills/debugging/references/runtimes/native-binary.md",
+              "dist/skills/debugging/references/runtimes/node.md",
+              "dist/skills/debugging/references/runtimes/python.md",
+              "dist/skills/debugging/references/runtimes/rust.md",
+              "dist/skills/debugging/references/scripts/dap.mjs",
+              "dist/skills/debugging/references/scripts/dap.test.ts",
+              "dist/skills/debugging/references/scripts/fixture-adapter.mjs",
+              "dist/skills/debugging/references/tools/dap.md",
+              "dist/skills/debugging/references/tools/frida.md",
+              "dist/skills/debugging/references/tools/ghidra.md",
+              "dist/skills/debugging/references/tools/playwright-cli.md",
+              "dist/skills/debugging/references/tools/pwndbg.md",
+              "dist/skills/debugging/references/tools/pwntools.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-native-debugging",
+          "selector": "reviewer/omh-native-debugging",
+          "mode": "component",
+          "operations": [
+            "native-fault"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "investigation plan only",
+          "canonical_name": "native-debugging",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/reviewer/omh-native-debugging/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/reviewer/omh-native-debugging/SKILL.md",
+              "skills/reviewer/omh-native-debugging/references/native-debug-loop.md"
+            ]
+          }
+        },
+        {
+          "ecosystem": "gsd",
+          "skill_name": "gsd-debug",
+          "selector": "gsd-debug",
+          "mode": "handoff",
+          "operations": [
+            "general",
+            "native-fault"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:planner"
+          ],
+          "notes": "Hand the investigation to GSD debugging on GSD hosts; Thunderkit keeps the planner binding and never treats a native fix as verified evidence.",
+          "provenance": {
+            "root_kind": "gsd",
+            "entrypoint": "skills/gsd-debug/SKILL.md",
+            "files": [
+              "skills/gsd-debug/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit runs its own evidence-driven debugging when native ownership is unavailable or only investigation advice can be returned."
+    },
+    "tk-ship": {
+      "role": "ship",
+      "default_operation": "prepare",
+      "operations": [
+        "prepare"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-verification-gate",
+          "selector": "reviewer/omh-verification-gate",
+          "mode": "component",
+          "operations": [
+            "prepare"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "Return read-only readiness findings; Thunderkit owns preparation and any separate delivery approval.",
+          "canonical_name": "verification-gate",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/reviewer/omh-verification-gate/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/reviewer/omh-verification-gate/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit prepares delivery evidence itself because native findings never authorize publication or merging."
+    },
+    "tk-docs": {
+      "role": "docs",
+      "default_operation": "docs",
+      "operations": [
+        "docs"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns documentation writing and verification because no qualified native target is declared."
+    },
+    "tk-audit": {
+      "role": "audit",
+      "default_operation": "audit",
+      "operations": [
+        "audit"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omh",
+          "skill_name": "omh-verification-gate",
+          "selector": "reviewer/omh-verification-gate",
+          "mode": "component",
+          "operations": [
+            "audit"
+          ],
+          "requires": [
+            "tool:skill",
+            "model-binding:reviewers"
+          ],
+          "notes": "Return read-only evidence gaps and findings; Thunderkit owns the audit and final acceptance decision.",
+          "canonical_name": "verification-gate",
+          "provenance": {
+            "root_kind": "omh",
+            "entrypoint": "skills/reviewer/omh-verification-gate/SKILL.md",
+            "files": [
+              "skills/guide/omh-routing/references/skill-common-rail.md",
+              "skills/reviewer/omh-verification-gate/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit audits the evidence itself when native findings are unavailable or insufficient for its acceptance policy."
+    },
+    "tk-memory": {
+      "role": "memory",
+      "default_operation": "view",
+      "operations": [
+        "view",
+        "save"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns memory viewing and saving because project context must remain under its persistence policy."
+    },
+    "tk-handoff": {
+      "role": "continuity",
+      "default_operation": "save",
+      "operations": [
+        "save",
+        "restore",
+        "lookup"
+      ],
+      "targets": [
+        {
+          "ecosystem": "omo",
+          "skill_name": "coding-agent-sessions",
+          "selector": "coding-agent-sessions",
+          "mode": "component",
+          "operations": [
+            "lookup"
+          ],
+          "requires": [
+            "tool:skill",
+            "user-request:explicit"
+          ],
+          "notes": "only explicit user-requested missing-session lookup",
+          "provenance": {
+            "root_kind": "package",
+            "entrypoint": "dist/skills/coding-agent-sessions/SKILL.md",
+            "files": [
+              "dist/skills/coding-agent-sessions/AGENTS.md",
+              "dist/skills/coding-agent-sessions/SKILL.md",
+              "dist/skills/coding-agent-sessions/agents/openai.yaml",
+              "dist/skills/coding-agent-sessions/references/all-platforms.md",
+              "dist/skills/coding-agent-sessions/references/claude.md",
+              "dist/skills/coding-agent-sessions/references/codex.md",
+              "dist/skills/coding-agent-sessions/references/opencode.md",
+              "dist/skills/coding-agent-sessions/references/senpi.md",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/__init__.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/aside_scanner.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/claude.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/cli.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/codex.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/file_scanners.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/jsonio.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/kiro_scanner.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/opencode.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/pi_family.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/scanners.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/sqlite_optional_scanners.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/sqlite_scanners.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/timeparse.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/transcript.py",
+              "dist/skills/coding-agent-sessions/scripts/agent_sessions/types.py",
+              "dist/skills/coding-agent-sessions/scripts/find-agent-sessions.py"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit owns handoff saving and restoration and reports lookup limits when explicitly requested session recovery is unavailable."
+    },
+    "tk-fast": {
+      "role": "fast",
+      "default_operation": "edit",
+      "operations": [
+        "edit"
+      ],
+      "targets": [
+        {
+          "ecosystem": "gsd",
+          "skill_name": "gsd-fast",
+          "selector": "gsd-fast",
+          "mode": "handoff",
+          "operations": [
+            "edit"
+          ],
+          "requires": [
+            "tool:skill"
+          ],
+          "notes": "Hand a trivial inline edit to GSD fast mode on GSD hosts; Thunderkit binds no model and adds no plan or review.",
+          "provenance": {
+            "root_kind": "gsd",
+            "entrypoint": "skills/gsd-fast/SKILL.md",
+            "files": [
+              "skills/gsd-fast/SKILL.md"
+            ]
+          }
+        }
+      ],
+      "fallback": "Thunderkit edits inline in the current session, runs the targeted test and makes one atomic commit when GSD fast mode is unavailable."
+    },
+    "tk-quick": {
+      "role": "quick",
+      "default_operation": "quick",
+      "operations": [
+        "quick"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns quick tasks because the model choice and the single cross-family review gate must stay local."
+    }
+  },
+  "excluded": [
+    "omc"
+  ],
+  "excluded_note": "not eligible as targets, fallbacks, or install hints"
+}

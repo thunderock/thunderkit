@@ -1,0 +1,228 @@
+{
+  "skill": "tk-handoff",
+  "cases": {
+    "happy": [
+      {
+        "name": "default save needs neither configuration nor capabilities",
+        "operation": null,
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {}
+        },
+        "sections": ["Delegation", "Save", "Restore", "Lookup", "Output contract", "Fallback"],
+        "frontmatter": {
+          "thunderkit-role": "continuity",
+          "thunderkit-tier": "context",
+          "thunderkit-delegates": "omo:coding-agent-sessions",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "explicit save remains config free",
+        "operation": "save",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "restore validates choices without borrowing the lookup target",
+        "operation": "restore",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "sections": ["Restore", "Output contract", "Fallback"]
+      },
+      {
+        "name": "explicit lookup consent qualifies the opencode component",
+        "operation": "lookup",
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "coding-agent-sessions",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "sections": ["Lookup", "Delegation", "Fallback"]
+      },
+      {
+        "name": "Codex host falls back from the OpenCode-only OMO coding-agent-sessions target",
+        "operation": "lookup",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "sol",
+            "executors": ["sol"],
+            "reviewers": ["sol"]
+          }
+        }
+      },
+      {
+        "name": "disabled delegation reads no native lookup capabilities",
+        "operation": "lookup",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "missing lookup consent denies the component",
+        "operation": "lookup",
+        "config": "opencode",
+        "capabilities": "no_consents",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omo",
+          "target_selector": "coding-agent-sessions",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing lookup peer cannot be rescued by a ready claim",
+        "operation": "lookup",
+        "config": "opencode",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "peer_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "coding-agent-sessions",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "unsupported lookup host selects no target",
+        "operation": "lookup",
+        "config": "opencode",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "restore without configuration is blocked",
+        "operation": "restore",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "lookup without configuration is blocked",
+        "operation": "lookup",
+        "config": null,
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "lookup without capability evidence is blocked",
+        "operation": "lookup",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 2,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "modified lookup source fails provenance qualification",
+        "operation": "lookup",
+        "config": "opencode",
+        "capabilities": "tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "coding-agent-sessions",
+          "target_mode": "component",
+          "exit": 0
+        }
+      }
+    ]
+  }
+}

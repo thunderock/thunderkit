@@ -1,0 +1,318 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>model_config — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="../../../index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="../../../index.html">Home</a><a href="../../../north-star.html">North Star</a><a href="../../../roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<pre><code>&quot;&quot;&quot;Read and normalize model selections without changing their source.&quot;&quot;&quot;
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from copy import deepcopy
+from dataclasses import dataclass
+import json
+from math import isfinite
+from pathlib import PureWindowsPath
+from typing import Literal, NoReturn, TypeAlias
+
+JsonValue: TypeAlias = str | int | float | bool | None | list[&quot;JsonValue&quot;] | dict[str, &quot;JsonValue&quot;]
+JsonObject: TypeAlias = dict[str, JsonValue]
+
+
+class ConfigError(ValueError):
+    &quot;&quot;&quot;Invalid configuration with a stable code and actionable detail.&quot;&quot;&quot;
+
+    code: Literal[&quot;invalid_config&quot;] = &quot;invalid_config&quot;
+
+    def __init__(self, detail: str) -&gt; None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+@dataclass(frozen=True, slots=True)
+class _Classes:
+    planner: str
+    executors: tuple[str, ...]
+    reviewers: Literal[&quot;all&quot;] | tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _Model:
+    label: str
+    provider: str
+    model_id: str
+    family: str
+
+
+def _assert_never(value: NoReturn) -&gt; NoReturn:
+    raise AssertionError(f&quot;Unexpected value: {value!r}&quot;)
+
+
+def _object(value: JsonValue, field: str) -&gt; JsonObject:
+    if not isinstance(value, dict):
+        raise ConfigError(f&quot;{field} must be a JSON object&quot;)
+    return value
+
+
+def _text(value: JsonValue, field: str) -&gt; str:
+    if not isinstance(value, str):
+        raise ConfigError(f&quot;{field} must be a string&quot;)
+    return value
+
+
+def _strings(value: JsonValue, field: str) -&gt; list[str]:
+    if not isinstance(value, list):
+        raise ConfigError(f&quot;{field} must be a list of strings&quot;)
+    return [_text(item, f&quot;{field}[{index}]&quot;) for index, item in enumerate(value)]
+
+
+def _nonempty_text(value: JsonValue, field: str) -&gt; str:
+    text = _text(value, field)
+    if not text or text != text.strip():
+        raise ConfigError(f&quot;{field} must be nonempty without surrounding whitespace&quot;)
+    return text
+
+
+def _known_keys(value: JsonObject, allowed: set[str], field: str) -&gt; None:
+    if value.keys() - allowed:
+        raise ConfigError(f&quot;{field} contains unknown keys; allowed keys: {&#x27;, &#x27;.join(sorted(allowed))}&quot;)
+
+
+def _models(catalog: JsonObject) -&gt; dict[str, _Model]:
+    source = _object(catalog, &quot;catalog&quot;)
+    entries = _object(source.get(&quot;models&quot;), &quot;catalog.models&quot;)
+    if not entries:
+        raise ConfigError(&quot;catalog.models must contain at least one model&quot;)
+    if type(source.get(&quot;schema_version&quot;)) is not int or source[&quot;schema_version&quot;] != 1:
+        raise ConfigError(&quot;catalog.schema_version must be 1&quot;)
+    models = {}
+    for index, (key, value) in enumerate(entries.items()):
+        field = f&quot;catalog.models[{index}]&quot;
+        _nonempty_text(key, f&quot;{field}.key&quot;)
+        metadata = _object(value, field)
+        model = _Model(
+            label=_nonempty_text(metadata.get(&quot;label&quot;), f&quot;{field}.label&quot;),
+            provider=_nonempty_text(metadata.get(&quot;provider&quot;), f&quot;{field}.provider&quot;),
+            model_id=_nonempty_text(metadata.get(&quot;model_id&quot;), f&quot;{field}.model_id&quot;),
+            family=_nonempty_text(metadata.get(&quot;family&quot;), f&quot;{field}.family&quot;),
+        )
+        harnesses = metadata.get(&quot;harnesses&quot;)
+        if not isinstance(harnesses, list) or not harnesses:
+            raise ConfigError(f&quot;{field}.harnesses must be a nonempty list of mappings&quot;)
+        names: set[str] = set()
+        for position, value in enumerate(harnesses):
+            location = f&quot;{field}.harnesses[{position}]&quot;
+            mapping = _object(value, location)
+            name = _nonempty_text(mapping.get(&quot;harness&quot;), f&quot;{location}.harness&quot;)
+            _nonempty_text(mapping.get(&quot;provider&quot;), f&quot;{location}.provider&quot;)
+            _nonempty_text(mapping.get(&quot;model_id&quot;), f&quot;{location}.model_id&quot;)
+            if name in names:
+                raise ConfigError(f&quot;{field}.harnesses contains duplicate harness mappings&quot;)
+            names.add(name)
+        models[key] = model
+    return models
+
+
+def _model_key(value: JsonValue, models: dict[str, _Model], field: str) -&gt; str:
+    key = _text(value, field)
+    if key not in models:
+        raise ConfigError(f&quot;{field}: unknown model key; choose a key from catalog.models&quot;)
+    return key
+
+
+def _model_keys(value: JsonValue, models: dict[str, _Model], field: str) -&gt; tuple[str, ...]:
+    keys = _strings(value, field)
+    if not keys:
+        raise ConfigError(f&quot;{field} must contain at least one model key&quot;)
+    if len(set(keys)) != len(keys):
+        raise ConfigError(f&quot;{field} contains duplicate model keys; remove repeated entries&quot;)
+    return tuple(_model_key(key, models, f&quot;{field}[{index}]&quot;) for index, key in enumerate(keys))
+
+
+def _classes(raw: JsonObject, models: dict[str, _Model]) -&gt; _Classes:
+    if &quot;models&quot; in raw:
+        legacy = raw[&quot;models&quot;]
+        if (&quot;classes&quot; in raw or not isinstance(legacy, dict)
+                or not {&quot;plan&quot;, &quot;critical_path&quot;, &quot;review&quot;}.issubset(legacy)):
+            raise ConfigError(&quot;mixed or incomplete legacy schema&quot;)
+        _known_keys(legacy, {&quot;plan&quot;, &quot;critical_path&quot;, &quot;review&quot;}, &quot;models&quot;)
+        planner = _model_key(legacy[&quot;plan&quot;], models, &quot;models.plan&quot;)
+        executors: tuple[str, ...] = (_model_key(legacy[&quot;critical_path&quot;], models, &quot;models.critical_path&quot;),)
+        review, review_field = legacy[&quot;review&quot;], &quot;models.review&quot;
+    else:
+        classes = _object(raw.get(&quot;classes&quot;), &quot;classes&quot;)
+        _known_keys(classes, {&quot;planner&quot;, &quot;executors&quot;, &quot;reviewers&quot;}, &quot;classes&quot;)
+        planner = _model_key(classes.get(&quot;planner&quot;), models, &quot;classes.planner&quot;)
+        executors = _model_keys(classes.get(&quot;executors&quot;), models, &quot;classes.executors&quot;)
+        review, review_field = classes.get(&quot;reviewers&quot;), &quot;classes.reviewers&quot;
+    reviewers: Literal[&quot;all&quot;] | tuple[str, ...] = (
+        &quot;all&quot; if review == &quot;all&quot; else _model_keys(review, models, review_field)
+    )
+    return _Classes(planner, executors, reviewers)
+
+
+def _minimum(value: JsonValue, field: str, minimum: int) -&gt; int:
+    if isinstance(value, bool) or not isinstance(value, int) or value &lt; minimum:
+        raise ConfigError(f&quot;{field} must be an integer &gt;= {minimum}&quot;)
+    return value
+
+
+def _unique_object(pairs: list[tuple[str, JsonValue]]) -&gt; JsonObject:
+    result: JsonObject = {}
+    for key, value in pairs:
+        if key in result:
+            raise ConfigError(&quot;JSON object contains duplicate keys; use each key only once&quot;)
+        result[key] = value
+    return result
+
+
+def _finite_float(number: str) -&gt; float:
+    value = float(number)
+    if not isfinite(value):
+        raise ConfigError(&quot;JSON numbers must be finite&quot;)
+    return value
+
+
+def load_json(path: str) -&gt; JsonObject:
+    &quot;&quot;&quot;Read a UTF-8 JSON object, reporting file and parse failures uniformly.&quot;&quot;&quot;
+    try:
+        with open(path, &quot;r&quot;, encoding=&quot;utf-8&quot;) as stream:
+            value: JsonValue = json.load(stream, object_pairs_hook=_unique_object,
+                                         parse_constant=_finite_float, parse_float=_finite_float)
+    except ConfigError as exc:
+        raise ConfigError(f&quot;{path}: {exc.detail}&quot;) from None
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f&quot;{path}: invalid JSON at line {exc.lineno}, column {exc.colno}&quot;) from None
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise ConfigError(f&quot;{path}: cannot load JSON ({type(exc).__name__})&quot;) from None
+    return _object(value, f&quot;{path}: JSON document&quot;)
+
+
+def normalize_config(raw: JsonObject, catalog: JsonObject) -&gt; tuple[JsonObject, list[str]]:
+    &quot;&quot;&quot;Return a detached canonical preview; never persist or replace selections.&quot;&quot;&quot;
+    source = _object(raw, &quot;config&quot;)
+    _known_keys(source, {&quot;schema_version&quot;, &quot;classes&quot;, &quot;models&quot;, &quot;review_families_min&quot;, &quot;max_layers&quot;,
+                         &quot;frozen_paths&quot;, &quot;ecosystems&quot;, &quot;delegation&quot;, &quot;decided_at&quot;}, &quot;config&quot;)
+    classes = _classes(source, _models(catalog))
+    legacy = &quot;models&quot; in source
+    version = source.get(&quot;schema_version&quot;, 2)
+    if type(version) is not int or version not in ((1, 2) if legacy else (2,)):
+        raise ConfigError(&quot;schema_version must be 2 (legacy models may use 1)&quot;)
+
+    normalized = deepcopy(source)
+    normalized.pop(&quot;models&quot;, None)
+    normalized[&quot;schema_version&quot;] = 2
+    reviewers: JsonValue
+    match classes.reviewers:
+        case &quot;all&quot;:
+            reviewers = &quot;all&quot;
+        case tuple() as keys:
+            reviewers = list(keys)
+        case unreachable:
+            _assert_never(unreachable)
+    normalized[&quot;classes&quot;] = {
+        &quot;planner&quot;: classes.planner, &quot;executors&quot;: list(classes.executors), &quot;reviewers&quot;: reviewers,
+    }
+    normalized[&quot;review_families_min&quot;] = _minimum(source.get(&quot;review_families_min&quot;, 2),
+                                                &quot;review_families_min&quot;, 2)
+    normalized[&quot;max_layers&quot;] = _minimum(source.get(&quot;max_layers&quot;, 3), &quot;max_layers&quot;, 1)
+
+    paths = _strings(source.get(&quot;frozen_paths&quot;, []), &quot;frozen_paths&quot;)
+    for index, path in enumerate(paths):
+        if (not path or any(ord(char) &lt; 32 or ord(char) == 127 for char in path)
+                or &quot;\\&quot; in path or path.startswith(&quot;/&quot;)
+                or PureWindowsPath(path).drive or &quot;..&quot; in path.split(&quot;/&quot;)):
+            raise ConfigError(f&quot;frozen_paths[{index}] must be repo-relative using forward slashes, &quot;
+                              &quot;without a drive, &#x27;..&#x27; segments or ASCII control characters&quot;)
+    normalized[&quot;frozen_paths&quot;] = list(paths)
+    ecosystems = _strings(source.get(&quot;ecosystems&quot;, [&quot;omo&quot;, &quot;omh&quot;, &quot;gsd&quot;]), &quot;ecosystems&quot;)
+    if len(set(ecosystems)) != len(ecosystems):
+        raise ConfigError(&quot;ecosystems contains duplicate entries; choose each ecosystem only once&quot;)
+    for ecosystem in ecosystems:
+        if ecosystem not in (&quot;omo&quot;, &quot;omh&quot;, &quot;gsd&quot;):
+            raise ConfigError(&quot;ecosystems: unsupported value; choose &#x27;omo&#x27;, &#x27;omh&#x27; or &#x27;gsd&#x27;&quot;)
+    normalized[&quot;ecosystems&quot;] = list(ecosystems)
+    delegation = _text(source.get(&quot;delegation&quot;, &quot;auto&quot;), &quot;delegation&quot;)
+    if delegation not in (&quot;auto&quot;, &quot;off&quot;):
+        raise ConfigError(&quot;delegation must be &#x27;auto&#x27; or &#x27;off&#x27;&quot;)
+    normalized[&quot;delegation&quot;] = delegation
+    if &quot;decided_at&quot; in source:
+        _text(source[&quot;decided_at&quot;], &quot;decided_at&quot;)
+
+    warnings = []
+    if legacy:
+        warnings.append(&quot;legacy models schema converted (preview only; not saved)&quot;)
+    elif &quot;schema_version&quot; not in source:
+        warnings.append(&quot;schema_version absent; assuming 2&quot;)
+    return normalized, warnings
+
+
+def selected_models(cfg: JsonObject, catalog: JsonObject) -&gt; dict[str, str | list[str]]:
+    &quot;&quot;&quot;Separate required selections from the full-catalog review candidate pool.&quot;&quot;&quot;
+    models = _models(catalog)
+    classes = _classes(_object(cfg, &quot;config&quot;), models)
+    explicit = {classes.planner, *classes.executors}
+    candidates: list[str] = []
+    match classes.reviewers:
+        case &quot;all&quot;:
+            mode = &quot;all&quot;
+            candidates = sorted(models)
+            reviewers = candidates.copy()
+        case tuple() as keys:
+            mode = &quot;explicit&quot;
+            reviewers = list(keys)
+            explicit.update(keys)
+        case unreachable:
+            _assert_never(unreachable)
+    return {&quot;planner&quot;: classes.planner, &quot;executors&quot;: list(classes.executors),
+            &quot;reviewers&quot;: reviewers, &quot;reviewers_mode&quot;: mode,
+            &quot;explicit&quot;: sorted(explicit), &quot;candidates&quot;: candidates}
+
+
+def family_of(key: str, catalog: JsonObject) -&gt; str:
+    &quot;&quot;&quot;Resolve a model&#x27;s family independently of its provider or harness.&quot;&quot;&quot;
+    models = _models(catalog)
+    known = _model_key(key, models, &quot;model&quot;)
+    return models[known].family
+
+
+def distinct_families(keys: Iterable[str], catalog: JsonObject) -&gt; set[str]:
+    models = _models(catalog)
+    return {models[_model_key(key, models, &quot;model&quot;)].family for key in keys}
+
+
+def menu(catalog: JsonObject, availability: dict[str, str] | None = None) -&gt; list[dict[str, str]]:
+    &quot;&quot;&quot;List catalog entries in catalog order; unprobed availability is &#x27;unknown&#x27;.&quot;&quot;&quot;
+    return [{&quot;key&quot;: key, &quot;family&quot;: model.family, &quot;label&quot;: model.label,
+             &quot;provider&quot;: model.provider, &quot;model_id&quot;: model.model_id,
+             &quot;available&quot;: availability.get(key, &quot;unknown&quot;) if availability is not None else &quot;unknown&quot;}
+            for key, model in _models(catalog).items()]
+</code></pre>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

@@ -15,6 +15,11 @@ h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(
 pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
 code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
 table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
 th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
 th{background:#0d1220}
@@ -24,31 +29,56 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
-<span class="tag">skill</span><h2>tk-ask</h2><p class="mut">Use when you need a harness or model to answer in a very limited set of simple words: enforces yes/no, one-word, number, or path answers with a hard word cap, so answers are checkable and cannot hide uncertainty in prose.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-ask -g</code></p><hr><h1>tk-ask — answer in simple words, or say <code>unknown</code></h1>
-<p>A model asked an open question returns a paragraph, and a paragraph can hide &quot;I&#x27;m not sure&quot; in confident prose. <code>tk-ask</code> is the answer discipline the rest of thunderkit relies on: a question is posed with an <strong>allowed answer set</strong>, and the reply must be <strong>one item from that set</strong> — or the literal word <code>unknown</code>.</p>
-<p>Use it standalone to get a checkable fact out of any harness, or as the protocol <code>tk-grill</code> and <code>tk-review</code> apply to every question they ask.</p>
-<h2>The five allowed answer shapes</h2>
-<table><thead><tr><th>Shape</th><th>Allowed replies</th><th>Example</th></tr></thead><tbody><tr><td><strong>bool</strong></td><td><code>yes</code> <code>no</code></td><td>&quot;Tests exist for this file?&quot; → <code>no</code></td></tr><tr><td><strong>word</strong></td><td>exactly one token, ≤ 20 chars</td><td>&quot;Language?&quot; → <code>rust</code></td></tr><tr><td><strong>number</strong></td><td>an integer or decimal, unit stated in the question</td><td>&quot;LOC touched?&quot; → <code>340</code></td></tr><tr><td><strong>path</strong></td><td>one repo-relative path per line, nothing else</td><td>&quot;Entry point?&quot; → <code>src/main.rs</code></td></tr><tr><td><strong>enum</strong></td><td>one of the options listed in the question</td><td>&quot;Model? (opus48/opus5/sol)&quot; → <code>opus5</code></td></tr></tbody></table>
-<p>Plus, always allowed: <strong><code>unknown</code></strong> — the honest answer. It is never a failure; a confident wrong <code>yes</code> is.</p>
-<h2>How to pose a question (the asker&#x27;s side)</h2>
+<span class="tag">answer-discipline</span><span class="tag">intake</span><h2>tk-ask</h2><p class="mut">Use when you need a harness, a dispatched lane, or a person to answer one question in a checkable closed shape: enforces yes/no, one-word, number, path, or enum answers with a hard word cap, so an answer is either a listed value or the literal `unknown` and cannot hide uncertainty in prose.</p><p>Delegates: none</p><p>Contract: 1</p><p>Any host with a skill loader and a shell; validation is model-free and needs no project configuration, catalog access, or native peer.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-ask -g</code></p><hr><h1 id="tk-ask-answer-in-a-closed-shape-or-say-unknown">tk-ask: answer in a closed shape, or say <code>unknown</code></h1>
+<p>A model asked an open question returns a paragraph, and a paragraph can hide &quot;I&#x27;m not sure&quot; in confident prose. <code>tk-ask</code> is the answer discipline the rest of thunderkit relies on. A question is posed with one <strong>requested answer shape</strong>, and the reply must be one value that fits that shape, or the literal word <code>unknown</code>. Nothing else counts as an answer.</p>
+<p>Use it standalone to get a checkable fact out of any harness, or as the protocol <code>tk-grill</code> and <code>tk-review</code> apply to every question they ask. It is a protocol, not an advisor: it never decides what the answer should be, only whether a reply is one.</p>
+<h2 id="the-five-answer-shapes">The five answer shapes</h2>
+<div class='tbl'><table><thead><tr><th>Shape</th><th>Allowed replies</th><th>Example</th></tr></thead><tbody><tr><td><strong>bool</strong></td><td><code>yes</code> <code>no</code></td><td>&quot;Tests exist for this file?&quot; → <code>no</code></td></tr><tr><td><strong>word</strong></td><td>exactly one token, at most 20 chars</td><td>&quot;Language?&quot; → <code>rust</code></td></tr><tr><td><strong>number</strong></td><td>an integer or decimal; the question states the unit</td><td>&quot;LOC touched?&quot; → <code>340</code></td></tr><tr><td><strong>path</strong></td><td>one repo-relative path per line, nothing else</td><td>&quot;Entry point?&quot; → <code>src/main.rs</code></td></tr><tr><td><strong>enum</strong></td><td>one of the options listed in the question</td><td>&quot;Model? (a / b / c)&quot; → <code>b</code></td></tr></tbody></table></div>
+<p>Plus, always allowed: <strong><code>unknown</code></strong>, the honest answer. It is never a failure; a confident wrong <code>yes</code> is. The shapes stay distinct on purpose: a <code>bool</code> is not a <code>word</code> that happens to be <code>yes</code>, and a <code>path</code> is not an <code>enum</code> of files. Validate against the shape that was requested.</p>
+<h3 id="enum-options-come-from-the-current-catalog">Enum options come from the current catalog</h3>
+<p>When the enum is a model choice, list the config keys read from the catalog beside this file (<code>references/models.json</code>, described in <code>references/model-roster.md</code>) at the moment you ask. The examples in this document are illustrations of the shape, not a second roster. Never promote them to options, never invent a key, and never pick a model on the answerer&#x27;s behalf: an enum question offers choices, the answer selects one, and configuring a host with that selection is a separate, user-approved step owned by <code>tk-router</code>.</p>
+<h2 id="how-to-pose-a-question-the-askers-side">How to pose a question (the asker&#x27;s side)</h2>
 <p>Every question states its shape and, for enum, its options:</p>
 <pre><code>Q: Does src/auth/ have integration tests?   [bool]
 Q: Which dir owns the token refresh logic?  [path]
-Q: Preferred critical-path model?           [enum: opus48 | opus5 | sol]
+Q: Planner model?                           [enum: &lt;catalog keys&gt;]
 Q: How many dependency layers?              [number]</code></pre>
-<p>Ask several at once to a harness; ask <strong>one at a time</strong> to a human.</p>
-<h2>How to answer (the harness&#x27;s side — enforce this on yourself and on dispatched lanes)</h2>
-<ol><li>Reply with the answer only. No preamble, no &quot;I think&quot;, no explanation.</li><li>If you&#x27;re below ~80% sure, reply <code>unknown</code>. Don&#x27;t round up.</li><li>If the shape doesn&#x27;t fit reality (two entry points, not one), reply <code>unknown</code> and let the asker</li></ol>
-<p>   re-shape — don&#x27;t smuggle a list into a <code>word</code> slot.</p>
-<ol><li>Hard cap: <strong>the whole reply is ≤ 3 words</strong> except <code>path</code>, which is one path per line.</li></ol>
-<h2>Validation (the asker checks, mechanically)</h2>
-<ul><li><code>bool</code> → must be exactly <code>yes</code>/<code>no</code>/<code>unknown</code>.</li><li><code>word</code> → one token, no spaces, ≤ 20 chars.</li><li><code>number</code> → parses as a number.</li><li><code>path</code> → each line exists in the repo (check it!) or reply was <code>unknown</code>.</li><li><code>enum</code> → exact match to a listed option.</li></ul>
-<p>An invalid reply gets <strong>one</strong> re-ask with the shape restated. A second invalid reply is recorded as <code>unknown</code>. Never accept prose as an answer.</p>
-<h2>Why so strict</h2>
-<p>Because every downstream thunderkit skill *acts* on these answers — <code>tk-plan</code> cuts lanes along the paths, <code>tk-execute</code> picks the enum&#x27;d model, <code>tk-review</code> trusts the bool &quot;tests exist&quot;. A paragraph can&#x27;t be acted on; <code>no</code> can. And <code>unknown</code> is the single most useful word in the pack: it&#x27;s the exact place where <code>tk-map</code>, <code>tk-learn</code>, or the user has to fill a gap before work starts.</p>
-<h2><code>unknown</code> routing (where a gap goes)</h2>
-<p><code>unknown</code> is not a dead end — it&#x27;s a dispatch. The asker routes each <code>unknown</code> by *what kind* of gap it is, so no gap silently becomes an assumption:</p>
-<table><thead><tr><th>The <code>unknown</code> is about…</th><th>Route it to</th></tr></thead><tbody><tr><td>repo structure / where something lives</td><td><code>tk-map</code> (recon fills it)</td></tr><tr><td>external behavior / a library / a domain rule</td><td><code>tk-learn</code> (research fills it)</td></tr><tr><td>a product decision / intent / scope</td><td>the <strong>user</strong> (one closed question)</td></tr></tbody></table>
-<p>This is the contract that lets <code>tk-grill</code> interrogate a harness safely: the harness answering <code>unknown</code> is a *feature*, because the answer is actionable — it names exactly who fills the gap.</p>
+<p>Ask several at once to a harness; ask <strong>one at a time</strong> to a person.</p>
+<h2 id="how-to-answer-the-answerers-side-enforce-this-on-yourself-and-on-dispatched-lanes">How to answer (the answerer&#x27;s side; enforce this on yourself and on dispatched lanes)</h2>
+<ol><li>Reply with the answer only. No preamble, no &quot;I think&quot;, no explanation.</li><li>If you&#x27;re below roughly 80% sure, reply <code>unknown</code>. Don&#x27;t round up.</li><li>If the shape doesn&#x27;t fit reality (two entry points, not one), reply <code>unknown</code> and let the asker</li></ol>
+<p>   re-shape the question. Don&#x27;t smuggle a list into a <code>word</code> slot.</p>
+<ol><li>Hard cap: the whole reply is <strong>at most 3 words</strong>, except <code>path</code>, which is one path per line.</li></ol>
+<h2 id="validation-the-asker-checks-mechanically">Validation (the asker checks, mechanically)</h2>
+<ul><li><code>bool</code> → exactly <code>yes</code>, <code>no</code>, or <code>unknown</code>.</li><li><code>word</code> → one token, no spaces, at most 20 chars.</li><li><code>number</code> → parses as a number.</li><li><code>path</code> → each line exists in the repo (check it), or the reply was <code>unknown</code>.</li><li><code>enum</code> → exact match to a listed option, or <code>unknown</code>.</li></ul>
+<p>An invalid reply gets <strong>one</strong> re-ask with the shape restated and, for enum, the options repeated. A second invalid reply is recorded as <code>unknown</code>, never as a best guess extracted from the prose. Two invalid replies mean the question or the shape is wrong, and <code>unknown</code> is what sends it back to whoever can fix that. Never accept prose as an answer.</p>
+<h2 id="why-so-strict">Why so strict</h2>
+<p>Every downstream thunderkit skill *acts* on these answers: <code>tk-plan</code> cuts lanes along the paths, <code>tk-execute</code> binds the enum&#x27;d model, <code>tk-review</code> trusts the bool &quot;tests exist&quot;. A paragraph can&#x27;t be acted on; <code>no</code> can. And <code>unknown</code> is the single most useful word in the pack: it marks the exact place where evidence, or the user, has to fill a gap before work starts.</p>
+<h2 id="unknown-routing-where-a-gap-goes"><code>unknown</code> routing (where a gap goes)</h2>
+<p><code>unknown</code> is not a dead end. The asker routes each one by *what kind* of gap it is, so no gap silently becomes an assumption. Two kinds exist, and they go to different places:</p>
+<div class='tbl'><table><thead><tr><th>The <code>unknown</code> is about…</th><th>Kind</th><th>Route it to</th></tr></thead><tbody><tr><td>repo structure, where something lives</td><td>discoverable fact</td><td><code>tk-map</code> (recon fills it)</td></tr><tr><td>external behavior, a library, a domain rule</td><td>discoverable fact</td><td><code>tk-learn</code> (research fills it)</td></tr><tr><td>a product decision, intent, scope, a preference</td><td>owner decision</td><td>the <strong>user</strong>, as one closed question</td></tr></tbody></table></div>
+<p>A discoverable fact is settled by gathering evidence through a research skill that is actually available and scoped to the gap. An owner decision is never researched into existence; only the user answers it. If the sibling skill a gap should go to is not installed on this host, report the gap as <strong>unfilled: <code>tk-map</code> unavailable</strong> (or <code>tk-learn</code>) and stop there. Do not invent a dispatch, install anything, or answer the question yourself.</p>
+<h2 id="delegation">Delegation</h2>
+<p><code>tk-ask</code> delegates nothing (<code>thunderkit-delegates: none</code>). Its only operation is <code>validate</code>, and the registry declares no native target for it, so the resolver beside this file always returns <code>owned</code> / <code>owned_policy</code>, before reading any project configuration or capability snapshot:</p>
+<pre><code>python3 scripts/tk-resolve.py --skill tk-ask --operation validate --json</code></pre>
+<p>That call is a routing check. It proves the operation is owned; it is not evidence that any answer was validated, and it involves no model. The shared policy for decisions and reason codes is <code>references/delegation.md</code>; the paths above resolve from this skill&#x27;s directory.</p>
+<p>Do not substitute another skill for this protocol. An external advisor (a skill that hands the question to a second model and returns its opinion) answers questions; <code>tk-ask</code> only checks answers, and an advisor&#x27;s confident paragraph is exactly what this protocol exists to refuse. An interviewer that accepts free-form replies, a host&#x27;s native ask tool, or a workflow framework does not enforce shapes and is not a valid stand-in. Native evidence about such tools, whether compatible, tampered, or missing, does not change this decision.</p>
+<h2 id="fallback">Fallback</h2>
+<p>There is no native route to fall back from, so the fallback is the protocol itself, run by hand:</p>
+<ul><li>No project configuration or catalog: <code>bool</code>, <code>word</code>, <code>number</code>, and <code>path</code> validate exactly as</li></ul>
+<p>  above. An enum that needs model keys cannot be posed; record <code>unknown</code> for it and route the gap   to the user, who owns the catalog choice.</p>
+<ul><li>No shell: validate by inspection against the rules in <strong>Validation</strong>; <code>path</code> existence checks</li></ul>
+<p>  still require a way to list the repo, otherwise record <code>unknown</code>.</p>
+<ul><li>Unknown operation requested of this skill: refuse it. <code>tk-ask</code> has one operation; anything</li></ul>
+<p>  else belongs to a different skill and is reported as unavailable, not improvised.</p>
+<p>The fallback never widens the accepted set, and it never converts an <code>unknown</code> into a guess.</p>
+<h2 id="asking-the-user">Asking the user</h2>
+<p>When this skill needs a decision from the user, ask through the host&#x27;s structured choice tool as described in <code>references/asking.md</code>: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record <code>unknown</code> and stop at the gate.</p>
+<h2 id="output-contract">Output contract</h2>
+<p>Every posed question yields exactly one record:</p>
+<pre><code>Q: &lt;question&gt;  [&lt;shape&gt;(: &lt;options&gt;)]
+A: &lt;valid value&gt; | unknown
+outcome: accepted | re-asked-then-accepted | unknown-after-re-ask | unknown
+route: none | tk-map | tk-learn | user | unfilled: &lt;sibling&gt; unavailable</code></pre>
+<p><code>A</code> is always a value that passed validation for the requested shape, or the literal <code>unknown</code>. <code>outcome</code> records whether the re-ask was used, so a caller can see how much the answerer had to be steered. <code>route</code> is set only when <code>A</code> is <code>unknown</code>, and names where the gap went. Nothing in the record is prose from the answerer.</p>
 <footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
 </div></body></html>

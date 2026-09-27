@@ -1,0 +1,391 @@
+{
+  "skill": "tk-review",
+  "cases": {
+    "happy": [
+      {
+        "name": "default diff uses the Hermes reviewer component",
+        "operation": null,
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-code-review",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Two modes", "Reviewer selection", "Delegation", "Fallback", "Independent review", "Evidence gate", "Output contract"],
+        "frontmatter": {
+          "thunderkit-role": "reviewer",
+          "thunderkit-tier": "review",
+          "thunderkit-delegates": "omh:reviewer/omh-code-review",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "diff selects only the declared peer when both are present",
+        "operation": "diff",
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-code-review",
+          "target_mode": "component",
+          "exit": 0
+        },
+        "sections": ["Delegation", "Independent review"]
+      },
+      {
+        "name": "native subset retains the literal all reviewer request",
+        "operation": "diff",
+        "config": "opencode_all",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-code-review",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        },
+        "sections": ["Reviewer selection", "Evidence gate"]
+      },
+      {
+        "name": "diff remains owned when no ecosystem is selected",
+        "operation": "diff",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["sol", "opus5"]
+          }
+        },
+        "sections": ["Fallback", "Reviewer selection"]
+      },
+      {
+        "name": "OMO only does not introduce a review-work target",
+        "operation": "diff",
+        "config": "omo_only",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0
+        },
+        "sections": ["Delegation", "Fallback"]
+      },
+      {
+        "name": "plan stays owned with both native peers available",
+        "operation": "plan",
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Two modes", "Independent review", "Evidence gate"]
+      },
+      {
+        "name": "plan requires choices but no native snapshot",
+        "operation": "plan",
+        "config": "canonical",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      },
+      {
+        "name": "off diff preserves all explicit choices without native inputs",
+        "operation": "diff",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        },
+        "sections": ["Fallback", "Evidence gate"]
+      },
+      {
+        "name": "off plan stays a separate owned operation",
+        "operation": "plan",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "target_mode": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        },
+        "sections": ["Two modes", "Fallback"]
+      },
+      {
+        "name": "owned plan retains recognized legacy reviewer order",
+        "operation": "plan",
+        "config": "legacy",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "OpenCode cannot substitute its review workflow for the Hermes component",
+        "operation": "diff",
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "Codex reviewer selection does not qualify a native diff target",
+        "operation": "diff",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "sol",
+            "executors": ["sol"],
+            "reviewers": ["sol"]
+          }
+        }
+      },
+      {
+        "name": "diff rejects changed native source bytes",
+        "operation": "diff",
+        "config": "hermes",
+        "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-code-review",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "diff rejects a missing required native companion",
+        "operation": "diff",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-code-review",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "diff requires a proven reviewer binding",
+        "operation": "diff",
+        "config": "hermes",
+        "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-code-review",
+          "target_mode": "component",
+          "exit": 0
+        }
+      },
+      {
+        "name": "diff rejects a reviewer outside the requested class",
+        "operation": "diff",
+        "config": "opencode",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-code-review",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "diff cannot collapse explicit reviewers to a native subset",
+        "operation": "diff",
+        "config": "canonical",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "capability_missing",
+          "target_ecosystem": "omh",
+          "target_selector": "reviewer/omh-code-review",
+          "target_mode": "component",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        }
+      },
+      {
+        "name": "diff without config is blocked before native qualification",
+        "operation": "diff",
+        "config": null,
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "owned plan still requires explicit model configuration",
+        "operation": "plan",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "diff cannot qualify without a capability snapshot",
+        "operation": "diff",
+        "config": "hermes",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "review-work is not a plan operation alias",
+        "operation": "review-work",
+        "config": "hermes",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "native code-review name is not a plan operation alias",
+        "operation": "code-review",
+        "config": "hermes",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}

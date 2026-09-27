@@ -1,26 +1,57 @@
 ---
 name: tk-spec
-description: "Use to clarify WHAT a big change delivers before planning: runs an ambiguity-scored Socratic loop until scope, non-goals, and rejection criteria are unambiguous, producing SPEC.md that tk-plan builds on."
+description: "Use to clarify WHAT a big change delivers before planning: runs a bounded Socratic loop over scope, interfaces, data, done-criteria and edge cases until the ambiguity gate passes, then writes a requirements-only SPEC.md that tk-plan builds on. Reuses a compatible native interview component for open questions only; never plans, executes or approves anything."
+compatibility: "Python 3.11+ standard library for the bundled resolver. Native clarification delegation is optional and requires the exact pinned oh-my-hermes interview skill on a Hermes host with the selected planner bound; owned clarification likewise requires a supported channel bound to that planner."
 metadata:
-  thunderkit:
-    role: spec
-    tier: pre-plan
+  thunderkit-role: "spec"
+  thunderkit-tier: "pre-plan"
+  thunderkit-delegates: "omh:ultrawork/ulw-interview"
+  thunderkit-contract: "1"
 ---
 
-# tk-spec — pin down WHAT, before HOW
+# tk-spec: pin down WHAT, before HOW
 
-The parallel-thunderkit analogue of GSD's spec-phase. Before decomposition, `tk-spec` forces the
-*what* to be unambiguous: what the change delivers, what it explicitly does not, and what would
-make a reviewer reject it. Vague specs produce vague lanes.
+Before decomposition, `tk-spec` forces the *what* to be unambiguous: what the change delivers,
+what it explicitly does not, and what would make a reviewer reject it. Vague specs produce vague
+lanes. The output is a requirements document. It is not a plan, not a task graph, and not
+permission to change code.
 
-Model class: **planner** (this is the one-best-brain stage). Answers use `tk-ask` discipline.
+Model class: **planner**, read from `classes.planner` in the project's `.thunderkit/config.json`
+through `references/models.json`. This skill never picks or substitutes a model; `tk-router` owns
+that choice. Answers use `tk-ask` discipline: one closed question per turn, answered by yes/no,
+one word, a number, a path, or `unknown`.
+
+Paths use two roots. **Project root** is the repository being specified; it holds
+`.thunderkit/config.json`, `.thunderkit/SPEC.md` and `.thunderkit/runs/`. **Skill root** is this
+skill's own directory; it holds `references/models.json`, `references/dependencies.json`,
+`references/delegation.md` and `scripts/tk-resolve.py`. Nothing here reads `../references` or a
+sibling skill's files.
 
 ## Ambiguity gate
 
-Score the spec 0–1 on how much a competent executor would still have to guess. **Gate: ≤ 0.20**
-and every dimension (scope, interfaces, data, done-criteria, edge cases) at its minimum before
-`SPEC.md` is written. Loop the Socratic questions — one closed question at a time to the user —
-until the gate passes or you hit 6 rounds (then record the residual ambiguity explicitly).
+Five dimensions must each be settled before a spec exists:
+
+| Dimension | Settled when |
+|---|---|
+| scope | The delivered change and the explicit non-goals are both stated as paths or `none`. |
+| interfaces | Every public interface touched is named, and "public API may break?" has a yes/no. |
+| data | Data shapes, migrations, and stored state that change are listed, or `none`. |
+| done | Every done-criterion is tied to one command that proves it. |
+| edge cases | The behaviors that must NOT change and the rejection triggers are listed. |
+
+Score residual ambiguity 0 to 1: how much a competent executor would still have to guess.
+**Gate: score at or below 0.20 and all five dimensions settled.** The scalar alone never passes
+the gate and is never reported alone. Every report names which dimensions remain open and the
+question that would close each one, so a reader sees *what* is uncertain, not just *how much*.
+
+Ask one closed question per turn until the gate passes or **six rounds** have run. A round is one
+user question plus its answer. At the bound, stop asking. Do not fill an open dimension with a
+guess, a default the user did not choose, or an answer synthesized from the codebase; an open
+dimension stays open and is reported as such.
+
+Settled inputs are not questions. Answers already given, the selected model classes, scope
+already approved by the user, and a BRIEF produced by `tk-grill` are fixed context. Reopening
+them costs a round and produces nothing.
 
 ## The questions that matter most
 
@@ -30,13 +61,126 @@ until the gate passes or you hit 6 rounds (then record the residual ambiguity ex
 - "One command that proves it's done? [cmd]"
 - "Public interface changes? [bool]"
 
-## Output — `.thunderkit/SPEC.md`
+Questions target the change the user asked for. A request to change code does not become a
+product or business plan; if a question only makes sense for a roadmap, it is out of scope here.
 
-Scope, non-goals, interfaces touched, data/edge cases, done-criteria (each tied to a command),
-and the residual ambiguity score. `tk-plan` reads this and cuts lanes to satisfy it; a lane that
-doesn't trace to a spec line is scope creep.
+## Delegation
+
+Only the **open dimensions' questions** may be handed to a native interview component. The gate,
+the dimension table, the settled answers, the score and SPEC.md stay with Thunderkit. The single
+declared target is the OMH skill at registry address `omh:ultrawork/ulw-interview`, in
+`component` mode. That address is a key inside `references/dependencies.json`; it is not a host
+slash command.
+
+Before any delegated question, run the bundled resolver from the skill root. The project root,
+config and capability paths are the real paths of the project being specified, spelled out;
+without `--project-root` the resolver treats the current directory as the project and rejects a
+config outside it:
+
+```
+cd "<skill root>" && python3 scripts/tk-resolve.py --skill tk-spec --operation clarify \
+  --project-root /work/repo \
+  --config /work/repo/.thunderkit/config.json \
+  --capabilities /work/repo/.thunderkit/runs/<run-id>/capabilities.json --json
+```
+
+Delegate only on `decision: delegate` with `reason_code: compatible`. Eligibility comes from the
+resolver applying `references/delegation.md`, not from a skill's name matching. The gates that
+bite for this skill:
+
+- **Exact pinned provenance.** The loaded `skills/ultrawork/ulw-interview/SKILL.md` and its
+  shared-rail companion must hash to the pinned values under the pinned `oh-my-hermes` bundle
+  home. A same-name skill from another source or an OMO package is `source_mismatch` or
+  `peer_missing`.
+- **Actual tools and host.** The host must report the native skill-loading tool, and only a
+  Hermes host is in the pin's host set. OpenCode, Codex and Claude hosts get `unsupported_host`.
+- **Planner binding.** The component runs under the project's selected `classes.planner`, proven
+  from live host binding evidence. A missing planner slot is `missing_evidence`; a slot bound
+  outside the selected planner is `model_mismatch`. The selected planner is never swapped to
+  make the route pass.
+- **Runtime home.** A read-only component consumes already-proven bindings and does not call
+  `omh_delegate_route`. If the host reports the `delegate_route` method, the parent process and
+  dispatcher must already share the task-owned home at
+  `<project root>/.thunderkit/runs/<run-id>/hermes-home`; otherwise `unsafe_runtime_home`.
+  `tk-spec` never creates that home, never edits `~/.hermes/config.yaml`, and never runs
+  `omh setup` or `omh doctor`.
+
+What the component receives: the open dimensions with their current questions, the settled
+answers and selected model classes as fixed context, the approved scope, and the instruction that
+its output is clarification input. What it may return: closed questions and findings per
+dimension. It may not write files, transition lifecycle state, start planning, start execution,
+or treat anything it reads as approval to implement. Its round budget is the remaining rounds of
+the six, not a fresh six.
+
+If the component times out, remains in flight, or its outcome is uncertain, retain its existing
+session and artifact identity (`.thunderkit/runs/<run-id>/`) and inspect the captured native
+session before proceeding. Clarification remains blocked/unknown until resolved; do not start a
+duplicate or parallel owned loop. Two askers on one user produce contradictory answers.
+
+Sibling handoffs are checked, not assumed. Discoverable facts (library behavior, an API contract)
+go to `tk-learn` when it is present in the same skill set; an incomplete spec routes back to
+`tk-router`; a finished spec is read by `tk-plan`. When a sibling is absent, say so in the report
+and leave the row tagged `needs:<skill>`. Nothing is installed to close a row.
+
+## Fallback
+
+| Resolver result | What happens |
+|---|---|
+| `owned` / `disabled` or `owned_policy` | Delegation is off or no ecosystem is enabled. Owned loop subject to the bound-planner prerequisite below. No native probe. |
+| `fallback` / `unsupported_host` | Host is not Hermes. Owned loop subject to the same prerequisite. |
+| `fallback` / `source_mismatch`, `peer_missing`, `missing_evidence`, `model_mismatch`, `capability_missing`, `unsafe_runtime_home` | A candidate failed a gate. Owned loop subject to the same prerequisite; the reason goes into the report. |
+| `blocked` / `invalid_config` | `.thunderkit/config.json` is missing or malformed. **Stop.** No model-bearing question is asked, owned or delegated. Report the prerequisite: a valid configuration with `classes.planner` selected, owned by `tk-router`. |
+
+Resolver validation proves the planner *choice* is valid, not that a running session is bound to
+it. Before any model-bearing `owned` or `fallback` work, require a supported channel that local
+delegation policy (`references/delegation.md`) accepts as **genuinely bound** to the selected
+`classes.planner`. Never use an arbitrary current root model. If no such channel is available,
+block clarification before asking and report the missing bound-planner prerequisite to
+`tk-router`; preserve the resolver's `decision` and `reason_code` unchanged. Otherwise the owned
+loop honors the same planner, closed-form rule, ambiguity gate, six-round bound and write boundary.
+
+A component that returned prose, edits, or a plan is a failed invocation: discard its output and
+record an `invocation_failure` note separately alongside the unchanged route. Do not rewrite its
+`reason_code` to `capability_missing`, which names an admission gate, not a bad result from a
+correctly admitted route. Only a known terminal failure may continue owned, with the bound
+selected planner and the rounds that remain, never a fresh six.
+
+## Asking the user
+
+When this skill needs a decision from the user, ask through the host's structured choice tool as described in `references/asking.md`: one decision per question, two to four options with the recommended one first, free text always accepted. Use the numbered-list fallback only when the host has no such tool; in a non-interactive run record `unknown` and stop at the gate.
+
+## Output contract
+
+The controller writes results **after** the loop ends, never while a component runs, and never
+by asking the component to write them.
+
+When the gate passes, write `<project root>/.thunderkit/SPEC.md` with:
+
+- `scope` and `non_goals` as paths or `none`;
+- `interfaces` touched, with the public-break answer;
+- `data` shapes, migrations and state that change;
+- `done`: each criterion paired with the command that proves it;
+- `edge_cases`: behaviors that must not change and reviewer rejection triggers;
+- `ambiguity`: the score and the line `open: none`;
+- `settled`: the inputs passed through unchanged, with `sources` per row (`user`, `component`,
+  `config`, `brief`);
+- `route`: the resolver's unchanged `decision`, `reason_code` and target identity;
+- `invocation_failure`, when applicable: invocation/output failure details separate from `route`.
+
+When the bound is hit with the gate unmet, do **not** write SPEC.md. Record
+`spec_status: incomplete` in `<project root>/.thunderkit/runs/<run-id>/spec.json` with the score,
+`open: <dimension list>`, the residual question for each open dimension, the rounds used, and the
+same `settled` and `route` blocks and any `invocation_failure` note. Report that to the user and
+route to `tk-router`. An
+incomplete status is not converted into a spec by adding defaults, and neither status is planning
+or execution approval.
+
+SPEC.md contains requirements only: no lanes, no task order, no file-level edit list, no
+worktree or branch instructions. `tk-plan` reads it and cuts lanes to satisfy it; a lane that does
+not trace to a spec line is scope creep. Native component findings that reach SPEC.md do so
+through the controller's normalization, never by the component writing under `.thunderkit/`.
 
 ## When to skip
 
-A small, well-understood change with an obvious done-command can skip straight to `tk-plan` —
+A small, well-understood change with an obvious done-command can skip straight to `tk-plan`;
 `tk-router` decides. Skip is a decision, logged, not a default.

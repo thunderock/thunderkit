@@ -2,15 +2,24 @@
 __pycache__/
 *.pyc
 
-# thunderkit lane execution is machine-local (worktrees + dispatch run records)
-.thunderkit/runs/
+# Repository-local context
+.thunderkit/*
+!.thunderkit/NORTH_STAR.md
+!.thunderkit/PHILOSOPHY.md
+!.thunderkit/config.json
 wt-*/
 
 # macOS
 .DS_Store
 
-# oh-my-claudecode / harness state written by tk-test CLI probes — never ours to commit
+# Local tool state
+.omo/
+.omo-tmp/
+.omh/
 .omc/
+.planning/
+node_modules/
+*.tgz
 
 # Note: site/_site IS committed (GitHub Pages serves it, and tests/site_drift.py
-# gates the committed skills.json against skills/ on disk).
+# checks the complete public file set, contents and local links).

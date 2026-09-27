@@ -1,0 +1,55 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tk-fast — thunderkit</title><style>
+:root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:820px;margin:0 auto;padding:2.5rem 1.25rem}
+header.site{border-bottom:1px solid var(--brd);margin-bottom:2rem}
+h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(--brd);padding-bottom:.3rem}
+.tag{display:inline-block;font-size:.72rem;color:var(--acc);border:1px solid var(--acc);border-radius:99px;padding:.05rem .55rem;margin-right:.4rem}
+.mut{color:var(--mut)}
+.card{background:var(--card);border:1px solid var(--brd);border-radius:10px;padding:1rem 1.25rem;margin:.8rem 0}
+.card h3{margin:.1rem 0}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
+code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
+table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
+th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#0d1220}
+nav.top a{margin-right:1rem}
+footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:var(--mut);font-size:.85rem}
+</style></head>
+<body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
+<p class="mut">Opinionated multi-model delegation for very large repos.</p>
+<nav class="top"><a href="index.html">Home</a><a href="north-star.html">North Star</a><a href="roster.html">Model Roster</a><a href="https://github.com/thunderock/thunderkit">GitHub</a></nav></header>
+<span class="tag">fast</span><span class="tag">execute</span><h2>tk-fast</h2><p class="mut">Use when a change is trivial and local (a typo, a rename, a one-line fix, a config value): edit inline in the current session with no model selection, plan, subagents or review, run the targeted test and make one atomic commit; escalate to tk-quick when it stops being trivial.</p><p>Delegates: gsd:gsd-fast</p><p>Contract: 1</p><p>Any host with a skill loader, a shell and git; Python 3.11+ for the bundled resolver. On Claude Code, Codex, Copilot and other GSD hosts the locked GSD gsd-fast skill is used when installed; OpenCode and Hermes use the owned inline path.</p><p class="mut">Install: <code>npx skills add thunderock/thunderkit -s tk-fast -g</code></p><hr><h1 id="tk-fast-trivial-edits-inline">tk-fast: trivial edits, inline</h1>
+<p><code>tk-fast</code> is the smallest path through thunderkit. It is for a change you can describe in one sentence and verify with one command: a typo, a rename inside one module, a one-line fix, a config value. It does not choose a model, write a plan, spawn subagents or ask for a review. The current session does the edit.</p>
+<h2 id="when-to-use">When to use</h2>
+<p>All of these must hold before starting:</p>
+<ul><li>the change touches at most 3 files;</li><li>no path listed in <code>frozen_paths</code> in <code>.thunderkit/config.json</code> is touched;</li><li>one targeted test or check command can show the change works.</li></ul>
+<h2 id="escalation">Escalation</h2>
+<p>Stop and hand the task to <code>tk-quick</code> (or <code>tk-router</code> for larger work) when any of these becomes true during the edit:</p>
+<ul><li>a fourth file needs changing;</li><li>a frozen path would change;</li><li>the targeted test still fails after one fix attempt.</li></ul>
+<p>Report the escalation with the files touched so far; do not commit partial work.</p>
+<h2 id="delegation">Delegation</h2>
+<p>On Claude Code, Codex, Copilot and other GSD hosts the only native target is GSD <code>gsd-fast</code> (<code>thunderkit-delegates: gsd:gsd-fast</code>). It needs no GSD project under <code>.planning/</code> and binds no model class. Check the route first:</p>
+<pre><code>python3 scripts/tk-resolve.py --skill tk-fast --operation edit --config .thunderkit/config.json --capabilities &lt;snapshot&gt; --lock .thunderkit/peers.lock.json --json</code></pre>
+<p><code>delegate</code> means hand the task to <code>gsd-fast</code> and keep this skill&#x27;s scope and escalation rules. <code>fallback</code> means use the inline procedure below. <code>blocked</code> means stop and report the reason. OpenCode and Hermes have no fast target, so the resolver returns <code>fallback</code> / <code>unsupported_host</code> there. A missing lock returns <code>peer_unlocked</code>: print <code>npx thunderkit peers --host &lt;host&gt;</code> and use the fallback. The resolver result is a routing decision, not evidence that an edit happened.</p>
+<h2 id="fallback">Fallback</h2>
+<ol><li>Read the files you will change.</li><li>Make the edit.</li><li>Run the targeted test or check.</li><li>Make one atomic Conventional Commit containing only this change.</li></ol>
+<p>No push, PR, tag or publish. Never skip the test to make the path faster.</p>
+<h2 id="output-contract">Output contract</h2>
+<pre><code>change: &lt;one sentence&gt;
+files: &lt;paths&gt;
+check: &lt;command&gt; -&gt; &lt;exit code&gt;
+commit: &lt;sha&gt; &lt;subject&gt; | none (escalated)
+route: delegate gsd-fast | inline (&lt;reason_code&gt;) | escalated -&gt; tk-quick</code></pre>
+<footer>Generated from <code>skills/*/SKILL.md</code> — do not edit by hand. MIT.</footer>
+</div></body></html>

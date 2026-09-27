@@ -1,0 +1,170 @@
+{
+  "schema_version": 2,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "classes"
+  ],
+  "properties": {
+    "classes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planner",
+        "executors",
+        "reviewers"
+      ],
+      "properties": {
+        "executors": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "model_key": true
+          }
+        },
+        "planner": {
+          "type": "string",
+          "model_key": true
+        },
+        "reviewers": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "all"
+              ]
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "model_key": true
+              }
+            }
+          ]
+        }
+      }
+    },
+    "decided_at": {
+      "type": "string",
+      "description": "Optional date recorded by the choice writer; readers preserve a supplied string and never fabricate one."
+    },
+    "delegation": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "off"
+      ]
+    },
+    "ecosystems": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "omo",
+          "omh",
+          "gsd"
+        ]
+      }
+    },
+    "frozen_paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\u0000-\\u001f\\u007f]+(?![\\s\\S])",
+        "description": "Nonempty repository-relative path using forward slashes; no absolute path, drive prefix, parent traversal, backslash, or ASCII control character (U+0000-U+001F or U+007F)."
+      }
+    },
+    "max_layers": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "review_families_min": {
+      "type": "integer",
+      "minimum": 2
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 2
+    }
+  },
+  "legacy": {
+    "root": "models",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "plan",
+      "critical_path",
+      "review"
+    ],
+    "properties": {
+      "critical_path": {
+        "type": "string",
+        "model_key": true
+      },
+      "plan": {
+        "type": "string",
+        "model_key": true
+      },
+      "review": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": [
+              "all"
+            ]
+          },
+          {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "model_key": true
+            }
+          }
+        ]
+      }
+    },
+    "mapping": {
+      "critical_path": "classes.executors",
+      "plan": "classes.planner",
+      "review": "classes.reviewers"
+    },
+    "wrap_in_array": [
+      "critical_path"
+    ]
+  },
+  "defaults": {
+    "schema_version": 2,
+    "review_families_min": 2,
+    "max_layers": 3,
+    "frozen_paths": [],
+    "ecosystems": [
+      "omo",
+      "omh",
+      "gsd"
+    ],
+    "delegation": "auto"
+  },
+  "notes": [
+    "This catalog-aware contract uses model_key: true for membership in models.json.models, not a hardcoded enum. model_config.py owns runtime validation; generic JSON Schema validation alone cannot enforce model membership or raw JSON parsing rules.",
+    "Canonical writes use schema_version: 2. A classes config may omit schema_version; readers assume 2 without rewriting the file. An explicit version other than 2 is invalid for classes.",
+    "All three model classes are required user selections and have no defaults. Missing operational fields receive only the defaults listed here, in memory. Explicit values are preserved or rejected, never replaced with defaults.",
+    "decided_at is optional for readers. Preserve a supplied string, including an empty string; never fabricate a date or placeholder.",
+    "ecosystems is a unique list containing only omo, omh and/or gsd. An empty list selects neither ecosystem; it is not replaced by the default.",
+    "The only recognized legacy shape is models.{plan,critical_path,review}: plan becomes classes.planner, critical_path becomes a singleton classes.executors array, and review becomes classes.reviewers, retaining all or a nonempty unique catalog-key list. No other aliases are recognized.",
+    "Legacy input may omit schema_version or specify 1 or 2. Only a complete valid legacy object produces a normalized preview with a migration warning; saving requires user approval. Preserve known operational fields and decided_at. Mixed models/classes or incomplete legacy shapes are invalid.",
+    "Reject unknown object keys at the config root and within classes or legacy models. The legacy root permits models in place of classes plus the same operational fields and optional decided_at.",
+    "Reject duplicate JSON object keys before constructing dictionaries and reject non-finite numbers, including NaN, Infinity, -Infinity and numeric overflow. Integers exclude booleans and floating-point values.",
+    "Reject repeated model keys within each class array, duplicate ecosystems and escaping/nonportable frozen paths. Frozen paths are literal repository-relative POSIX paths; do not expand home directories or environment variables.",
+    "reviewers: all draws candidates from every catalog model, not merely the planner and executors. Preflight forms the reachable reviewer set from successful responses and reports unavailable optional candidates. Explicit model selections must succeed without substitution; the distinct-family minimum is an independent gate.",
+    "defaults.review_families_min matches models.json.families_min_default. Three Anthropic variants still count as one family."
+  ]
+}

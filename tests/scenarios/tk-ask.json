@@ -1,0 +1,159 @@
+{
+  "skill": "tk-ask",
+  "cases": {
+    "happy": [
+      {
+        "name": "owned validate without config or capabilities",
+        "operation": "validate",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        },
+        "sections": ["Delegation", "Fallback", "Output contract"],
+        "frontmatter": {
+          "thunderkit-role": "answer-discipline",
+          "thunderkit-tier": "intake",
+          "thunderkit-delegates": "none",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "default operation is validate",
+        "operation": null,
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "compatible opencode host stays owned",
+        "operation": "validate",
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        },
+        "frontmatter": {
+          "thunderkit-delegates": "none"
+        }
+      },
+      {
+        "name": "compatible hermes host stays owned",
+        "operation": "validate",
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        },
+        "sections": ["Delegation", "Fallback"]
+      },
+      {
+        "name": "delegation off still owned",
+        "operation": "validate",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "advisor operation denied",
+        "operation": "advise",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        },
+        "frontmatter": {
+          "thunderkit-delegates": "none"
+        }
+      },
+      {
+        "name": "interview operation denied",
+        "operation": "interview",
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2
+        }
+      },
+      {
+        "name": "unsupported host evidence ignored",
+        "operation": "validate",
+        "config": "opencode",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "missing consent evidence ignored",
+        "operation": "validate",
+        "config": "opencode",
+        "capabilities": "no_consents",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing peer evidence ignored",
+        "operation": "validate",
+        "config": "hermes",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        }
+      }
+    ]
+  }
+}

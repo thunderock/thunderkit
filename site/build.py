@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-"""thunderkit static site generator. Stdlib only, no deps.
-
-Builds one HTML page per skill (from SKILL.md frontmatter + body), plus a north-star page and
-a roster page, into --out (default site/_site). The published skill set is written to
-_site/skills.json so the drift test can assert it equals skills/ on disk.
-
-Usage: python3 site/build.py [--out DIR]
-"""
+"""Build public skill documentation: python3 site/build.py [--out DIR]."""
 import argparse
+from collections.abc import Callable
 import html
 import json
 import os
+from pathlib import Path
 import re
+import sys
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKILLS = os.path.join(ROOT, "skills")
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from tools.skill_frontmatter import Frontmatter, parse_skill_file, validate_thunderkit
 
 CSS = """
 :root{--bg:#0b0f17;--fg:#e6edf3;--mut:#8b949e;--acc:#f0b429;--card:#111725;--brd:#222b3a}
@@ -31,6 +29,11 @@ h1{font-size:2rem;margin:.2rem 0}h2{margin-top:2rem;border-bottom:1px solid var(
 pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 pre{background:#0d1220;border:1px solid var(--brd);border-radius:8px;padding:1rem;overflow:auto;font-size:.85rem}
 code{background:#0d1220;border-radius:4px;padding:.08rem .35rem;font-size:.88em}
+.tbl{overflow-x:auto;margin:1rem 0;max-width:100%}
+pre{max-width:100%}
+code{overflow-wrap:anywhere}
+pre code{overflow-wrap:normal}
+.tbl table{margin:0}
 table{border-collapse:collapse;width:100%;margin:1rem 0;font-size:.9rem}
 th,td{border:1px solid var(--brd);padding:.45rem .6rem;text-align:left;vertical-align:top}
 th{background:#0d1220}
@@ -39,21 +42,17 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 """
 
 
-def parse(text):
-    """Split SKILL.md into (frontmatter dict, markdown body)."""
-    fm = {}
-    body = text
-    m = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", text, re.S)
-    if m:
-        for line in m.group(1).splitlines():
-            km = re.match(r"^([a-zA-Z_]+):\s*(.*)$", line)
-            if km:
-                fm[km.group(1)] = km.group(2).strip().strip('"').strip("'")
-        body = m.group(2)
-    return fm, body
+def safe_url(url: str) -> str:
+    decoded = html.unescape(url)
+    parts = urlsplit(decoded)
+    if (any(ord(c) < 33 or ord(c) == 127 for c in decoded) or "\\" in decoded
+            or decoded.startswith("/") or parts.scheme not in ("", "https", "http", "mailto")
+            or (parts.scheme in ("http", "https") and not parts.netloc)):
+        raise ValueError("unsafe link")
+    return decoded
 
 
-def md_to_html(md):
+def md_to_html(md: str, link: Callable[[str], str] = safe_url) -> str:
     """Tiny, safe markdown subset: headings, code fences, inline code, tables, bold, lists, paragraphs."""
     lines = md.splitlines()
     out = []
@@ -76,20 +75,21 @@ def md_to_html(md):
             while i < len(lines) and "|" in lines[i]:
                 rows.append(lines[i])
                 i += 1
-            out.append(render_table(rows))
+            out.append(render_table(rows, link))
             continue
         # headings
         h = re.match(r"^(#{1,4})\s+(.*)$", line)
         if h:
             lvl = len(h.group(1))
-            out.append(f"<h{lvl}>{inline(h.group(2))}</h{lvl}>")
+            anchor = re.sub(r"[^\w -]", "", h.group(2)).lower().replace(" ", "-")
+            out.append(f'<h{lvl} id="{html.escape(anchor)}">{inline(h.group(2), link)}</h{lvl}>')
             i += 1
             continue
         # list block
         if re.match(r"^\s*[-*]\s+", line):
             items = []
             while i < len(lines) and re.match(r"^\s*[-*]\s+", lines[i]):
-                items.append("<li>" + inline(re.sub(r"^\s*[-*]\s+", "", lines[i])) + "</li>")
+                items.append("<li>" + inline(re.sub(r"^\s*[-*]\s+", "", lines[i]), link) + "</li>")
                 i += 1
             out.append("<ul>" + "".join(items) + "</ul>")
             continue
@@ -97,7 +97,7 @@ def md_to_html(md):
         if re.match(r"^\s*\d+\.\s+", line):
             items = []
             while i < len(lines) and re.match(r"^\s*\d+\.\s+", lines[i]):
-                items.append("<li>" + inline(re.sub(r"^\s*\d+\.\s+", "", lines[i])) + "</li>")
+                items.append("<li>" + inline(re.sub(r"^\s*\d+\.\s+", "", lines[i]), link) + "</li>")
                 i += 1
             out.append("<ol>" + "".join(items) + "</ol>")
             continue
@@ -110,33 +110,51 @@ def md_to_html(md):
         while i < len(lines) and lines[i].strip() and not re.match(r"^(#{1,4}\s|```|\s*[-*]\s|\s*\d+\.\s)", lines[i]) and "|" not in lines[i]:
             para.append(lines[i])
             i += 1
-        out.append("<p>" + inline(" ".join(para)) + "</p>")
+        out.append("<p>" + inline(" ".join(para), link) + "</p>")
     return "\n".join(out)
 
 
-def render_table(rows):
-    def cells(r):
+def render_table(rows: list[str], link: Callable[[str], str]) -> str:
+    def cells(r: str) -> list[str]:
         return [c.strip() for c in r.strip().strip("|").split("|")]
     head = cells(rows[0])
     body = [cells(r) for r in rows[2:]]
-    h = "".join(f"<th>{inline(c)}</th>" for c in head)
-    b = "".join("<tr>" + "".join(f"<td>{inline(c)}</td>" for c in r) + "</tr>" for r in body)
-    return f"<table><thead><tr>{h}</tr></thead><tbody>{b}</tbody></table>"
+    h = "".join(f"<th>{inline(c, link)}</th>" for c in head)
+    b = "".join("<tr>" + "".join(f"<td>{inline(c, link)}</td>" for c in r) + "</tr>" for r in body)
+    return f"<div class='tbl'><table><thead><tr>{h}</tr></thead><tbody>{b}</tbody></table></div>"
 
 
-def inline(s):
-    s = html.escape(s)
-    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
-    s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
-    s = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', s)
-    return s
+def inline(s: str, link: Callable[[str], str] = safe_url) -> str:
+    out = []
+    end = 0
+    pattern = (r"`([^`]+)`|\*\*([^*]+)\*\*|"
+               r"\[(!\[[^\]]*\]\([^)]+\)|[^\]]+)\]\(([^)]+)\)")
+    for m in re.finditer(pattern, s):
+        out.append(html.escape(s[end:m.start()]))
+        if m[1] is not None:
+            out.append(f"<code>{html.escape(m[1])}</code>")
+        elif m[2] is not None:
+            out.append(f"<strong>{inline(m[2], link)}</strong>")
+        else:
+            label = m[3]
+            badge = re.fullmatch(r"!\[([^\]]*)\]\(([^)]+)\)", label)
+            if badge:
+                link(badge[2])
+                label = badge[1]
+            out.append(f'<a href="{html.escape(link(m[4]))}">{inline(label, link)}</a>')
+        end = m.end()
+    return "".join(out) + html.escape(s[end:])
 
 
-def page(title, nav, body_html):
+def page(title: str, body_html: str, public: Path = Path("index.html")) -> str:
+    prefix = "../" * (len(public.parts) - 1)
+    nav = (f'<a href="{prefix}index.html">Home</a><a href="{prefix}north-star.html">North Star</a>'
+           f'<a href="{prefix}roster.html">Model Roster</a>'
+           '<a href="https://github.com/thunderock/thunderkit">GitHub</a>')
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)} — thunderkit</title><style>{CSS}</style></head>
-<body><div class="wrap"><header class="site"><h1><a href="index.html">⏩ thunderkit</a></h1>
+<body><div class="wrap"><header class="site"><h1><a href="{prefix}index.html">⏩ thunderkit</a></h1>
 <p class="mut">Opinionated multi-model delegation for very large repos.</p>
 <nav class="top">{nav}</nav></header>
 {body_html}
@@ -144,26 +162,72 @@ def page(title, nav, body_html):
 </div></body></html>"""
 
 
-def build(out):
-    os.makedirs(out, exist_ok=True)
-    skills = []
-    for name in sorted(os.listdir(SKILLS)):
-        d = os.path.join(SKILLS, name)
-        if not os.path.isdir(d) or name == "references":
-            continue
-        fm, body = parse(open(os.path.join(d, "SKILL.md"), encoding="utf-8").read())
-        skills.append({"name": name, "desc": fm.get("description", ""),
-                       "role": fm.get("role", ""), "body": body})
+def build(out: str | Path, root: Path = ROOT) -> list[str]:
+    root = root.resolve()
+    sources = {root / "NORTH_STAR.md": Path("north-star.html"),
+               root / "skills/references/model-roster.md": Path("roster.html")}
+    skills: dict[Path, Frontmatter] = {}
+    for d in sorted((root / "skills").iterdir()):
+        if d.is_dir() and d.name != "references" and not d.name.startswith("."):
+            source = d / "SKILL.md"
+            if source.resolve() != source:
+                raise ValueError("skill is not a regular public source")
+            fm = parse_skill_file(source)
+            validate_thunderkit(fm, d.name)
+            skills[source] = fm
+            sources[source] = Path(f"{fm.name}.html")
 
-    nav = ('<a href="index.html">Home</a><a href="north-star.html">North Star</a>'
-           '<a href="roster.html">Model Roster</a>'
-           '<a href="https://github.com/thunderock/thunderkit">GitHub</a>')
+    pending = list(sources)
+    def link_from(source: Path, url: str) -> str:
+        parts = urlsplit(safe_url(url))
+        if parts.scheme or not parts.path:
+            return safe_url(url)
+        target = Path(os.path.abspath(source.parent / unquote(parts.path)))
+        if not target.is_file() or target.resolve() != target:
+            raise ValueError(f"link does not name a regular public source: {url}")
+        if target == root / "README.md":
+            return urlunsplit(("https", "github.com", "/thunderock/thunderkit/blob/master/README.md",
+                               parts.query, parts.fragment))
+        if target not in sources:
+            rel = target.relative_to(root) if target.is_relative_to(root) else Path(".")
+            common = len(rel.parts) == 3 and rel.parts[:2] == ("skills", "references")
+            local = (len(rel.parts) == 4 and rel.parts[0] == "skills"
+                     and root / "skills" / rel.parts[1] / "SKILL.md" in skills
+                     and rel.parts[2] in ("references", "scripts"))
+            public_doc = rel.as_posix() in ("DEPENDENCIES.md", "LICENSE")
+            asset = ((common or local) and target.suffix in (".md", ".json", ".py")
+                     and not target.name.startswith("."))
+            if not (public_doc or asset):
+                raise ValueError(f"link does not name a public source: {url}")
+            sources[target] = Path(str(rel) + ".html")
+            pending.append(target)
+        mapped = quote(os.path.relpath(sources[target], sources[source].parent).replace(os.sep, "/"))
+        return urlunsplit(("", "", mapped, parts.query, parts.fragment))
+
+    pages: dict[Path, str] = {}
+    for source in pending:
+        if not source.is_file() or source.resolve() != source:
+            raise ValueError(f"not a regular public source: {source.relative_to(root)}")
+        fm = skills.get(source)
+        text = fm.body if fm else source.read_text(encoding="utf-8")
+        body = (md_to_html(text, lambda url: link_from(source, url)) if source.suffix == ".md"
+                else "<pre><code>" + html.escape(text) + "</code></pre>")
+        head = ""
+        if fm:
+            tags = "".join(f'<span class="tag">{html.escape(fm.metadata["thunderkit-" + key])}</span>'
+                           for key in ("role", "tier"))
+            head = (f'{tags}<h2>{html.escape(fm.name)}</h2><p class="mut">{html.escape(fm.description)}</p>'
+                    f'<p>Delegates: {html.escape(fm.metadata["thunderkit-delegates"])}</p>'
+                    f'<p>Contract: {html.escape(fm.metadata["thunderkit-contract"])}</p>'
+                    f'<p>{html.escape(fm.compatibility or "")}</p>'
+                    f'<p class="mut">Install: <code>npx skills add thunderock/thunderkit -s {html.escape(fm.name)} -g</code></p><hr>')
+        pages[sources[source]] = page(fm.name if fm else source.stem, head + body, sources[source])
 
     # index
     cards = []
-    for s in skills:
-        cards.append(f'<div class="card"><h3><a href="{s["name"]}.html">{s["name"]}</a></h3>'
-                     f'<p>{html.escape(s["desc"])}</p></div>')
+    for s in skills.values():
+        cards.append(f'<div class="card"><h3><a href="{html.escape(s.name)}.html">{html.escape(s.name)}</a></h3>'
+                     f'<p>{html.escape(s.description)}</p></div>')
     idx = ("<h2>The thesis</h2><p>Big work in big repos is won by <strong>decomposition + "
            "heterogeneity</strong>, not by one smart model. thunderkit turns a large change into "
            "disjoint parallel lanes and routes each to the best model and harness — asking you to "
@@ -171,33 +235,21 @@ def build(out):
            "<h2>Install</h2><pre><code>npx skills add thunderock/thunderkit -s '*' -g</code></pre>"
            "<p class='mut'>Or one skill: <code>npx skills add thunderock/thunderkit -s tk-router -g</code></p>"
            "<h2>Skills</h2>" + "".join(cards))
-    write(out, "index.html", page("Home", nav, idx))
-
-    # per-skill
-    for s in skills:
-        head = (f'<span class="tag">{html.escape(s["role"] or "skill")}</span>'
-                f'<h2>{s["name"]}</h2><p class="mut">{html.escape(s["desc"])}</p>'
-                f'<p class="mut">Install: <code>npx skills add thunderock/thunderkit -s {s["name"]} -g</code></p><hr>')
-        write(out, f"{s['name']}.html", page(s["name"], nav, head + md_to_html(s["body"])))
-
-    # north star + roster from source files
-    ns = open(os.path.join(ROOT, "NORTH_STAR.md"), encoding="utf-8").read()
-    write(out, "north-star.html", page("North Star", nav, md_to_html(ns)))
-    roster = open(os.path.join(SKILLS, "references", "model-roster.md"), encoding="utf-8").read()
-    write(out, "roster.html", page("Model Roster", nav, md_to_html(roster)))
-
-    # machine-readable published set for the drift gate
-    write(out, "skills.json", json.dumps(sorted(s["name"] for s in skills), indent=2))
-    print(f"built {len(skills)} skill pages + index + north-star + roster → {out}")
-    return [s["name"] for s in skills]
-
-
-def write(out, name, content):
-    with open(os.path.join(out, name), "w", encoding="utf-8") as f:
-        f.write(content)
+    pages[Path("index.html")] = page("Home", idx)
+    names = sorted(s.name for s in skills.values())
+    pages[Path("skills.json")] = json.dumps(names, indent=2)
+    for name, content in pages.items():
+        destination = Path(out) / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+    print(f"built {len(skills)} skill pages; {len(pages)} public files → {out}")
+    return names
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=os.path.join(ROOT, "site", "_site"))
-    build(ap.parse_args().out)
+    ap.add_argument("--out", default=ROOT / "site/_site")
+    try:
+        build(ap.parse_args().out)
+    except (OSError, ValueError) as error:
+        ap.exit(1, f"site build failed: {error}\n")

@@ -1,0 +1,478 @@
+{
+  "skill": "tk-plan",
+  "cases": {
+    "happy": [
+      {
+        "name": "OMO admission with six native slots and ordered plural selections",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        },
+        "frontmatter": {
+          "thunderkit-role": "planner",
+          "thunderkit-tier": "plan",
+          "thunderkit-delegates": "omo:ulw-plan omh:ultrawork/ulw-plan",
+          "thunderkit-contract": "1"
+        },
+        "sections": [
+          "Inputs and paths",
+          "Delegation",
+          "Native ownership and return",
+          "Fallback",
+          "What a lane is",
+          "Procedure",
+          "The parallelism check (do this before declaring the plan done)",
+          "Record unresolved tradeoffs",
+          "Plan review and execution approval"
+        ]
+      },
+      {
+        "name": "OMH planner-bound root admission preserves later-stage selections",
+        "operation": "plan",
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["opus48", "opus5"]
+          }
+        },
+        "sections": ["Delegation", "Native ownership and return", "Plan review and execution approval"]
+      },
+      {
+        "name": "OpenCode chooses OMO when both same-name peers are present",
+        "operation": null,
+        "config": "opencode",
+        "capabilities": "opencode_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "target_mode": "handoff",
+          "exit": 0
+        }
+      },
+      {
+        "name": "Hermes chooses the categorized OMH selector when both peers are present",
+        "operation": null,
+        "config": "hermes",
+        "capabilities": "hermes_both_peers",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "target_mode": "handoff",
+          "exit": 0
+        }
+      },
+      {
+        "name": "all reviewers survives native subset admission without family-gate proof",
+        "operation": "plan",
+        "config": "opencode_all",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": "all"
+          }
+        },
+        "sections": ["Inputs and paths", "Plan review and execution approval"]
+      },
+      {
+        "name": "Codex host falls back from the OpenCode-only OMO ulw-plan target",
+        "operation": "plan",
+        "config": "sol",
+        "capabilities": "codex_omo_full",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+        },
+        "sections": ["Plan review and execution approval"]
+      },
+      {
+        "name": "complete legacy selection is normalized without changing its models",
+        "operation": "plan",
+        "config": "legacy_opencode",
+        "capabilities": "opencode_omo_legacy",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "target_mode": "handoff",
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "OMH configured planning needs no mutating delegation route",
+        "operation": "plan",
+        "config": "hermes",
+        "capabilities": "hermes_omh_shared_home",
+        "expect": {
+          "decision": "delegate",
+          "reason_code": "compatible",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "target_mode": "handoff",
+          "exit": 0
+        },
+        "sections": ["Delegation", "Native ownership and return"]
+      },
+      {
+        "name": "disabled delegation computes an owned route without native evidence",
+        "operation": "plan",
+        "config": "delegation_off",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "disabled",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48", "opus5", "fable51"],
+            "reviewers": ["opus48", "opus5", "fable51", "sol"]
+          }
+        },
+        "sections": ["Fallback", "Plan review and execution approval"]
+      },
+      {
+        "name": "no enabled peers computes owned policy without proving planner binding",
+        "operation": "plan",
+        "config": "owned",
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {
+            "planner": "opus48",
+            "executors": ["opus48"],
+            "reviewers": ["sol", "opus5"]
+          }
+        },
+        "sections": ["Fallback"]
+      }
+    ],
+    "failure": [
+      {
+        "name": "missing OMO peer cannot be rescued by a ready flag",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "peer_missing",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "peer_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 0
+        },
+        "sections": ["Fallback"]
+      },
+      {
+        "name": "tampered OMO entrypoint is denied",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 0
+        }
+      },
+      {
+        "name": "self-hashed OMO tampering cannot redefine trusted bytes",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "self_hashed_tamper",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing OMO planning companion is denied",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 0
+        }
+      },
+      {
+        "name": "tampered OMH entrypoint is denied independently",
+        "operation": "plan",
+        "config": "hermes",
+        "capabilities": "hermes_tampered_peer",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing OMH shared rail is denied",
+        "operation": "plan",
+        "config": "hermes",
+        "capabilities": "hermes_missing_companion",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "exit": 0
+        }
+      },
+      {
+        "name": "OMO bytes cannot satisfy the same-name OMH planner",
+        "operation": "plan",
+        "config": "hermes",
+        "capabilities": "mixed_same_name",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "source_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "exit": 0
+        }
+      },
+      {
+        "name": "missing OMO root role evidence blocks the handoff",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "missing_role",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 1
+        },
+        "sections": ["Delegation", "Fallback"]
+      },
+      {
+        "name": "missing OMH root role evidence blocks the handoff",
+        "operation": "plan",
+        "config": "hermes",
+        "capabilities": "hermes_missing_role",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "missing_evidence",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "exit": 1
+        },
+        "sections": ["Delegation", "Fallback"]
+      },
+      {
+        "name": "wrong OMO effective model blocks the handoff",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "binding_mismatch",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 1
+        }
+      },
+      {
+        "name": "Hermes provider mappings do not bind OpenCode native roles",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "wrong_host_bindings",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 1
+        }
+      },
+      {
+        "name": "OMO discovery cannot collapse two selected executors into one",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "opencode_omo_legacy",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "capability_missing",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 1,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "OMO discovery cannot add an unselected executor",
+        "operation": "plan",
+        "config": "legacy_opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 1
+        }
+      },
+      {
+        "name": "OMH cannot substitute its configured root for the selected planner",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "exit": 1
+        }
+      },
+      {
+        "name": "OMH cannot replace a selected planner unsupported by its catalog mapping",
+        "operation": "plan",
+        "config": "sol",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omh",
+          "target_selector": "ultrawork/ulw-plan",
+          "exit": 1,
+          "requested_bindings": {"planner": "sol", "executors": ["sol"], "reviewers": ["sol"]}
+        }
+      },
+      {
+        "name": "OpenCode cannot silently replace an unsupported explicit planner",
+        "operation": "plan",
+        "config": "canonical",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "model_mismatch",
+          "target_ecosystem": "omo",
+          "target_selector": "ulw-plan",
+          "exit": 1
+        }
+      },
+      {
+        "name": "unsupported host has no native planner candidate",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": "unsupported_host",
+        "expect": {
+          "decision": "fallback",
+          "reason_code": "unsupported_host",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0
+        },
+        "sections": ["Fallback"]
+      },
+      {
+        "name": "missing model configuration blocks before native admission",
+        "operation": "plan",
+        "config": null,
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "missing capability snapshot cannot imply native readiness",
+        "operation": "plan",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {
+            "planner": "opus5",
+            "executors": ["fable51", "opus5"],
+            "reviewers": ["fable51", "opus5"]
+          }
+        }
+      },
+      {
+        "name": "planning cannot select the execution operation",
+        "operation": "execute",
+        "config": "opencode",
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        },
+        "sections": ["Plan review and execution approval"]
+      }
+    ]
+  }
+}
