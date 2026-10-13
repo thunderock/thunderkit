@@ -806,6 +806,24 @@ class BackupStoreTests(Fixture):
         self.assertNotIn("tracked.txt", paths)
         self.assertEqual(self.tree(self.project), before)
 
+    def test_index_removal_is_not_a_tombstone_for_recreated_worktree_paths(self) -> None:
+        self.init_git()
+        self.git("rm", "--cached", "--", "notes.md")
+        self.git("mv", "--", "tracked.txt", "renamed.txt")
+        self.write("tracked.txt", b"new untracked replacement\n")
+        self.git("rm", "--", "deleted.txt")
+        self.write("deleted.txt/child.md", b"replacement directory content\n")
+        before = self.tree(self.project)
+        try:
+            result = self.capture(self.request(history=True))
+        except C.ContinuityError as error:
+            self.fail("Index removal incorrectly conflicts with present worktree bytes: " + error.code)
+        manifest = self.assert_complete(result)
+        self.assertEqual(manifest.deleted_paths, ())
+        self.assertTrue({"notes.md", "tracked.txt", "renamed.txt", "deleted.txt/child.md"}.issubset(
+            {entry.relpath for entry in manifest.files}))
+        self.assertEqual(self.tree(self.project), before)
+
     def test_corrupt_locator_and_disabled_policy_do_not_publish_or_rewrite_settings(self) -> None:
         first = self.capture()
         self.assert_complete(first)
