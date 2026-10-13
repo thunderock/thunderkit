@@ -30,10 +30,11 @@ model — plus a static docs site generated from the skills.
 
 ## Preservation boundary
 
-Only the checkpoint controller may perform an authorized checkpoint push, bound to the
+Only the checkpoint controller may perform a checkpoint push with current authority, bound to the
 exact repository, remote and working-branch ref, with remote commit readback.
 Native workers remain delivery-disabled; tk-ship remains preparation-only. This grants
 no force, tags, PR, release, merge or default-branch writes.
+Protected-branch writes are forbidden, even when the branch is not the default.
 
 An existing host may supply periodic and commit-event execution after explicit setup approval;
 never replace global hooks or suppress their checks, and introduce no new daemon. Installation

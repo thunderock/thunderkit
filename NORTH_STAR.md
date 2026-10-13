@@ -37,6 +37,7 @@ The checkpoint controller is the only narrow exception to stage-wide no-push rul
 current authority for the exact repository, remote and working-branch ref and verifies the
 captured commit remotely. Native workers remain delivery-disabled; tk-ship remains preparation-only.
 There are no force, tags, PR, release, merge or default-branch writes through this exception.
+Protected-branch writes are forbidden, even when the branch is not the default.
 
 Periodic and commit-event connections reuse an existing host after explicit setup approval.
 Setup must preserve existing checks and never replace global hooks; no new daemon or
