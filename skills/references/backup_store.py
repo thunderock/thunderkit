@@ -639,6 +639,12 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | 
         try:
             allowed = _git_paths(git, root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], limits)
             deleted = _git_paths(git, root, ["ls-files", "-z", "--deleted"], limits)
+            # Index-only enumeration misses paths removed by git rm/mv. Compare
+            # the literal working tree to recorded HEAD without filters/hooks.
+            deleted |= _git_paths(git, root, [
+                "diff-index", "-z", "--name-only", "--no-renames", "--no-ext-diff",
+                "--no-textconv", "--diff-filter=D", head, "--",
+            ], limits)
         except C.ContinuityError:
             # A bounded scoped walk remains possible, but incomplete enumeration
             # cannot silently claim protection or include ignored files.
