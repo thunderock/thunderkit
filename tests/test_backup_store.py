@@ -792,6 +792,20 @@ class BackupStoreTests(Fixture):
         with patch.dict(os.environ, {"TMPDIR": str(self.base / "missing-scratch")}):
             self.error("scratch_unavailable", lambda: self.api.verify_snapshot(snapshot, self.identity, self.settings.limits))
 
+    def test_staged_deletions_and_renames_record_head_relative_tombstones(self) -> None:
+        self.init_git()
+        self.git("rm", "--", "deleted.txt")
+        self.git("mv", "--", "tracked.txt", "renamed.txt")
+        before = self.tree(self.project)
+        result = self.capture(self.request(history=True))
+        manifest = self.assert_complete(result)
+        self.assertEqual(manifest.deleted_paths, ("deleted.txt", "tracked.txt"))
+        paths = {entry.relpath for entry in manifest.files}
+        self.assertIn("renamed.txt", paths)
+        self.assertNotIn("deleted.txt", paths)
+        self.assertNotIn("tracked.txt", paths)
+        self.assertEqual(self.tree(self.project), before)
+
     def test_corrupt_locator_and_disabled_policy_do_not_publish_or_rewrite_settings(self) -> None:
         first = self.capture()
         self.assert_complete(first)
