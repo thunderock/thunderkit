@@ -78,10 +78,41 @@ class RestoreCLITests(unittest.TestCase):
         self.assertEqual(denied.returncode, 2)
         self.assertEqual(json.loads(denied.stderr)["error"]["code"], "approval_required")
         self.assertFalse(destination.exists())
-        exported = self.output(self.run_cli("export", *args, "--approve"))
+        exported = self.output(self.run_cli("export", *args, "--approve", "--expect-manifest-sha256",
+                                            str(preview["manifest_sha256"])))
         self.assertEqual(exported["status"], "complete")
         self.assertEqual((destination / "notes/context.md").read_text(), fixtures.CONTEXT)
         self.assertFalse((destination / ".thunderkit").exists())
+
+    def test_approval_without_preview_digest_refuses_before_writing(self) -> None:
+        destination = self.fixture.work / "unbound-export"
+        before = self.fixture.tree()
+        process = self.run_cli("export", "--context", str(self.source), "--identity", self.identity,
+                               "--destination", str(destination), "--approve")
+        self.assertEqual(process.returncode, 2, "Fresh approval must also name the previewed content")
+        self.assertEqual(json.loads(process.stderr)["error"]["code"], "preview_required")
+        self.assertFalse(destination.exists())
+        self.assertEqual(self.fixture.tree(), before)
+
+    def test_preview_digest_rejects_rehashed_same_identity_replacement(self) -> None:
+        destination = self.fixture.work / "changed-export"
+        args = ("--context", str(self.source), "--destination", str(destination), "--identity", self.identity)
+        preview = self.output(self.run_cli("preview", *args))
+        raw = json.loads(self.source.read_text())
+        raw["files"][0]["mode"] = 0o755
+        (self.source.parent / "payload/app.py").chmod(0o755)
+        self.source.write_text(json.dumps(raw))
+        # This is a valid, same-identity snapshot, not corrupt payload rejection.
+        replacement = fixtures.S.verify_snapshot(self.source, self.fixture.identity, self.fixture.limits)
+        self.assertEqual(replacement.identity, self.fixture.identity)
+        self.assertEqual(replacement.files[0].mode, 0o755)
+        before = self.fixture.tree()
+        process = self.run_cli("export", *args, "--approve", "--expect-manifest-sha256",
+                               str(preview["manifest_sha256"]))
+        self.assertEqual(process.returncode, 2)
+        self.assertEqual(json.loads(process.stderr)["error"]["code"], "integrity_mismatch")
+        self.assertFalse(destination.exists())
+        self.assertEqual(self.fixture.tree(), before)
 
     def test_relocated_cli_keeps_legacy_text_inert_and_enforces_byte_limits(self) -> None:
         relocated = self.fixture.work / "single-skill/scripts"

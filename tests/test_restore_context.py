@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import FrozenInstanceError
 import importlib
+import inspect
 import os
 from pathlib import Path
 import shutil
@@ -230,7 +231,10 @@ class RestoreContextTests(unittest.TestCase):
             export_fn(selected, destination, self.identity, self.limits)
         self.assertEqual(caught.exception.code, "approval_required")
         self.assertFalse(destination.exists())
-        result = export_fn(selected, destination, self.identity, self.limits, approval=True)
+        self.assertIn("expected_manifest_sha256", inspect.signature(export_fn).parameters,
+                      "Missing preview-bound export approval API")
+        result = export_fn(selected, destination, self.identity, self.limits, approval=True,
+                           expected_manifest_sha256=preview.manifest_sha256)
         self.assertIsInstance(result, C.ExportResult)
         self.assertEqual((result.status, result.destination), ("complete", destination))
         self.assertEqual(result.exported_paths, ("app.py", "notes/context.md"))
@@ -243,7 +247,8 @@ class RestoreContextTests(unittest.TestCase):
         self.assertFalse(self.project.exists())
         before = self.tree()
         with self.assertRaises(C.ContinuityError) as caught:
-            export_fn(selected, destination, self.identity, self.limits, approval=True)
+            export_fn(selected, destination, self.identity, self.limits, approval=True,
+                      expected_manifest_sha256=preview.manifest_sha256)
         self.assertEqual(caught.exception.code, "destination_not_empty")
         self.assertEqual(self.tree(), before, "Existing recovery must not be overwritten")
 
@@ -257,10 +262,13 @@ class RestoreContextTests(unittest.TestCase):
         self.assertTrue(callable(export_fn), "Missing separately approved snapshot export")
         assert callable(preview_fn) and callable(export_fn)
         destination = self.work / "new-recovery"
-        preview_fn(selected, destination, self.identity, self.limits)
+        preview = preview_fn(selected, destination, self.identity, self.limits)
         (selected.parent / "payload/app.py").write_bytes(b"corrupt\n")
+        self.assertIn("expected_manifest_sha256", inspect.signature(export_fn).parameters,
+                      "Missing preview-bound export approval API")
         with self.assertRaises(C.ContinuityError) as caught:
-            export_fn(selected, destination, self.identity, self.limits, approval=True)
+            export_fn(selected, destination, self.identity, self.limits, approval=True,
+                      expected_manifest_sha256=preview.manifest_sha256)
         self.assertEqual(caught.exception.code, "integrity_mismatch")
         self.assertFalse(destination.exists(), "Invalid snapshot cannot create recovery output")
     def test_export_recovers_exact_branch_and_dirty_files_after_checkout_loss(self) -> None:
@@ -312,7 +320,10 @@ class RestoreContextTests(unittest.TestCase):
         try:
             preview = api.export_preview(source, destination, self.identity, self.limits)
             self.assertEqual(preview.history_status, "bundled")
-            result = api.export_snapshot(source, destination, self.identity, self.limits, approval=True)
+            self.assertIn("expected_manifest_sha256", inspect.signature(api.export_snapshot).parameters,
+                          "Missing preview-bound export approval API")
+            result = api.export_snapshot(source, destination, self.identity, self.limits, approval=True,
+                                         expected_manifest_sha256=preview.manifest_sha256)
         except C.ContinuityError as error:
             self.fail("Verified branch history must be recoverable: " + error.code)
         self.assertEqual((result.status, result.history_status), ("complete", "bundled"))
