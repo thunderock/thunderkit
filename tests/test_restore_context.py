@@ -207,6 +207,62 @@ class RestoreContextTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, "context_not_found")
         self.assertEqual(self.tree(), before, "missing explicit context must not trigger fallback writes")
 
+    def test_export_preview_and_approved_files_roundtrip_without_source_checkout(self) -> None:
+        selected, manifest = self.snapshot_without_checkout()
+        self.load_api()
+        module = importlib.import_module("restore_context")
+        preview_fn = getattr(module, "export_preview", None)
+        export_fn = getattr(module, "export_snapshot", None)
+        self.assertTrue(callable(preview_fn), "Missing read-only export preview")
+        self.assertTrue(callable(export_fn), "Missing separately approved snapshot export")
+        assert callable(preview_fn) and callable(export_fn)
+        destination = self.work / "new-recovery"
+        before = self.tree()
+        preview = preview_fn(selected, destination, self.identity, self.limits)
+        self.assertEqual(preview.identity, self.identity)
+        self.assertEqual(preview.source, selected)
+        self.assertEqual(preview.destination, destination)
+        self.assertEqual(preview.exported_paths, ("app.py", "notes/context.md"))
+        self.assertEqual(preview.deleted_paths, ())
+        self.assertEqual(self.tree(), before, "Preview is read-only")
+        with self.assertRaises(C.ContinuityError) as caught:
+            export_fn(selected, destination, self.identity, self.limits)
+        self.assertEqual(caught.exception.code, "approval_required")
+        self.assertFalse(destination.exists())
+        result = export_fn(selected, destination, self.identity, self.limits, approval=True)
+        self.assertIsInstance(result, C.ExportResult)
+        self.assertEqual((result.status, result.destination), ("complete", destination))
+        self.assertEqual(result.exported_paths, ("app.py", "notes/context.md"))
+        self.assertEqual((destination / "notes/context.md").read_text(encoding="utf-8"), CONTEXT)
+        self.assertEqual((destination / "app.py").read_bytes(), b'print("NOT CONTEXT")\n')
+        self.assertEqual({str(p.relative_to(destination)) for p in destination.rglob("*") if p.is_file()},
+                         {"app.py", "notes/context.md"})
+        self.assertFalse((destination / ".git").exists())
+        self.assertEqual(S.verify_snapshot(selected, self.identity, self.limits), manifest)
+        self.assertFalse(self.project.exists())
+        before = self.tree()
+        with self.assertRaises(C.ContinuityError) as caught:
+            export_fn(selected, destination, self.identity, self.limits, approval=True)
+        self.assertEqual(caught.exception.code, "destination_not_empty")
+        self.assertEqual(self.tree(), before, "Existing recovery must not be overwritten")
+
+    def test_export_revalidates_corruption_before_creating_destination(self) -> None:
+        selected, _ = self.snapshot_without_checkout()
+        self.load_api()
+        module = importlib.import_module("restore_context")
+        preview_fn = getattr(module, "export_preview", None)
+        export_fn = getattr(module, "export_snapshot", None)
+        self.assertTrue(callable(preview_fn), "Missing read-only export preview")
+        self.assertTrue(callable(export_fn), "Missing separately approved snapshot export")
+        assert callable(preview_fn) and callable(export_fn)
+        destination = self.work / "new-recovery"
+        preview_fn(selected, destination, self.identity, self.limits)
+        (selected.parent / "payload/app.py").write_bytes(b"corrupt\n")
+        with self.assertRaises(C.ContinuityError) as caught:
+            export_fn(selected, destination, self.identity, self.limits, approval=True)
+        self.assertEqual(caught.exception.code, "integrity_mismatch")
+        self.assertFalse(destination.exists(), "Invalid snapshot cannot create recovery output")
+
 
 if __name__ == "__main__":
     unittest.main()
