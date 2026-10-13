@@ -759,6 +759,39 @@ class BackupStoreTests(Fixture):
         manifest = self.assert_complete(result)
         self.assertEqual({f.relpath for f in manifest.files}, {"notes.md"})
 
+    def test_non_git_capture_without_tmpdir_or_git_needs_no_history_scratch(self) -> None:
+        environment = {key: value for key, value in os.environ.items() if key != "TMPDIR"}
+        with patch.dict(os.environ, environment, clear=True), patch("shutil.which", return_value=None):
+            try:
+                result = self.capture()
+                manifest = self.assert_complete(result)
+            except C.ContinuityError as error:
+                self.fail("Non-Git capture unnecessarily requires history scratch: " + error.code)
+        self.assertEqual(manifest.history.status, "not-applicable")
+        self.assertEqual({f.relpath for f in manifest.files}, {"notes.md"})
+
+    def test_bundle_reads_without_tmpdir_use_platform_scratch_not_corruption(self) -> None:
+        self.init_git()
+        result = self.capture(self.request(history=True))
+        self.assert_complete(result)
+        snapshot = self.snapshot(result)
+        scratch = self.base / "platform-scratch"
+        scratch.mkdir()
+        environment = {key: value for key, value in os.environ.items() if key != "TMPDIR"}
+        with patch.dict(os.environ, environment, clear=True), patch("tempfile.tempdir", str(scratch)):
+            try:
+                manifest = self.api.verify_snapshot(snapshot, self.identity, self.settings.limits)
+                bundle = self.api.read_history(snapshot, self.identity, self.settings.limits)
+                same = self.capture(self.request(history=True))
+            except C.ContinuityError as error:
+                self.fail("Valid backup treated as corrupt without TMPDIR: " + error.code)
+        self.assertEqual(manifest.history.status, "bundled")
+        self.assertEqual(hashlib.sha256(bundle).hexdigest(), manifest.history.sha256)
+        self.assertEqual((same.status, same.snapshot_path), ("unchanged", snapshot))
+        self.assertEqual(tuple(scratch.iterdir()), ())
+        with patch.dict(os.environ, {"TMPDIR": str(self.base / "missing-scratch")}):
+            self.error("scratch_unavailable", lambda: self.api.verify_snapshot(snapshot, self.identity, self.settings.limits))
+
     def test_corrupt_locator_and_disabled_policy_do_not_publish_or_rewrite_settings(self) -> None:
         first = self.capture()
         self.assert_complete(first)
