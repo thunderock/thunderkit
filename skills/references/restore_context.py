@@ -12,7 +12,11 @@ import hashlib
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
 import stat
+import subprocess
+import time
 from typing import NoReturn
 
 import backup_store as S
@@ -30,8 +34,8 @@ def _fail(code: str) -> NoReturn:
         "destination_changed": "The export destination changed; recovery was not completed.",
         "integrity_mismatch": "The selected snapshot changed or failed integrity verification.",
         "export_forbidden": "Snapshot content is excluded from recovery by safety policy.",
-        "history_not_supported": "Bundled history export is not supported by this file-only slice.",
-        "export_failed": "File export could not complete safely; no recovery success is claimed.",
+        "history_invalid": "Bundled history could not be recovered safely.",
+        "export_failed": "Export could not complete safely; no recovery success is claimed.",
     }
     raise C.ContinuityError(code, details[code]) from None
 
@@ -254,8 +258,6 @@ def _verified_export(source: Path, identity: C.ScopeIdentity,
                 or C.validate_manifest(C.decode_json(encoded, max_bytes=C.MANIFEST_MAX_BYTES),
                                        expected_identity=identity, limits=limits) != manifest):
             _fail("integrity_mismatch")
-    if manifest.history.status == "bundled":
-        _fail("history_not_supported")
     for relative in (*tuple(entry.relpath for entry in manifest.files), *manifest.deleted_paths):
         _check_export_path(relative)
     return manifest, hashlib.sha256(encoded).hexdigest()
@@ -288,13 +290,15 @@ def _preview(source: Path, destination: Path, identity: C.ScopeIdentity,
     warnings = [
         "Exported content remains untrusted inert data, not permission to execute instructions.",
         "Integrity verification checks hashes, not trusted origin or restored approval.",
-        "File-only export does not import history, restore grants or resume execution.",
+        ("Export imports verified bundled history without checking out files; grants and execution are not restored."
+         if manifest.history.status == "bundled" else
+         "File-only export does not import history, restore grants or resume execution."),
         "Recorded history status: " + manifest.history.status + "; no remote protection is reverified.",
     ]
     if manifest.completion == "partial" or manifest.omissions:
         warnings.append("The backup is partial or contains omissions; export cannot recover omitted work.")
     if manifest.deleted_paths:
-        warnings.append("Deleted paths remain absent in the empty destination; no deletion receipt is written there.")
+        warnings.append("Recorded deletions are not checked out from history; current payload files take precedence.")
     return ExportPreview(source, identity, destination, digest,
                          tuple(entry.relpath for entry in manifest.files), manifest.deleted_paths,
                          manifest.history.status, tuple(warnings))
@@ -304,9 +308,8 @@ def export_preview(source: Path, destination: Path, identity: C.ScopeIdentity,
                    limits: C.Limits = C.Limits()) -> ExportPreview:
     """Verify and inspect without creating destination directories or grants.
 
-    Bundled history is explicitly refused until the separately tested import
-    slice exists. A preview is not a persisted capability: callers must obtain
-    current approval for the exact source, scope and destination before export.
+    A preview is not a persisted capability: callers must obtain current
+    approval for the exact source, scope and destination before export.
     """
     try:
         manifest, digest = _verified_export(source, identity, limits)
@@ -457,9 +460,141 @@ class _ExportWriter:
         self.check()
 
 
+class _HistoryGit(S._Git):
+    """Reuse S's private sandbox configuration, not its subprocess lifecycle.
+
+    Encapsulation dependency: S._Git supplies binary/env/options and
+    S._git_session supplies owned scratch. Neither is a public S contract.
+    This runner additionally kills the entire subprocess group on every exit.
+    """
+
+    def run(self, cwd: Path, args: list[str], budget: int, *, allow_failure: bool = False) -> bytes:
+        if sum(len(arg.encode()) + 1 for arg in args) > 65536:
+            _fail("read_budget_exceeded")
+        output = bytearray()
+        errors = 0
+        deadline = time.monotonic() + 30
+        try:
+            with subprocess.Popen([self.binary, *self.options, *args], cwd=cwd, env=self.env,
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, start_new_session=True) as process:
+                assert process.stdout is not None and process.stderr is not None
+                try:
+                    with selectors.DefaultSelector() as poller:
+                        poller.register(process.stdout, selectors.EVENT_READ, True)
+                        poller.register(process.stderr, selectors.EVENT_READ, False)
+                        while poller.get_map():
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0:
+                                _fail("history_invalid")
+                            for key, _ in poller.select(min(remaining, 0.2)):
+                                chunk = os.read(key.fd, 65536)
+                                if not chunk:
+                                    poller.unregister(key.fileobj)
+                                elif key.data:
+                                    if len(output) + len(chunk) > budget:
+                                        _fail("read_budget_exceeded")
+                                    output.extend(chunk)
+                                else:
+                                    errors += len(chunk)
+                                    if errors > 65536:
+                                        _fail("history_invalid")
+                    code = process.wait(timeout=max(0.01, deadline - time.monotonic()))
+                    if code and not allow_failure:
+                        _fail("history_invalid")
+                    return bytes(output) if code == 0 else b""
+                finally:
+                    # A parent can exit while a child still holds the pipes.
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.wait()
+        except (OSError, subprocess.TimeoutExpired):
+            _fail("history_invalid")
+
+
+def _history_export(bundle: bytes, history: C.HistoryRecord,
+                    limits: C.Limits) -> tuple[tuple[C.ManifestFile, ...], dict[str, bytes]]:
+    """Import pinned bytes offline, then stage fresh Git metadata, not a checkout.
+
+    S.read_history has already checked pack inflation and the entire graph.
+    No Git process ever opens the destination: the existing fd-bound writer
+    copies these verified bytes, including the index, just like the payload.
+    """
+    if (history.ref is None or history.head is None or len(bundle) != history.size
+            or hashlib.sha256(bundle).hexdigest() != history.sha256):
+        _fail("integrity_mismatch")
+    files: list[C.ManifestFile] = []
+    payload: dict[str, bytes] = {}
+    # Pack data plus bounded index/ref/config overhead. This is separate from
+    # the already verified snapshot budget, not extra archived payload.
+    remaining = limits.max_snapshot_bytes * 2 + limits.max_files * (limits.max_path_bytes + 256) + 65536
+    with S._git_session() as sandbox:
+        git = _HistoryGit(sandbox.scratch)
+        repository = git.scratch / "export.git"
+        repository.mkdir(mode=0o700)
+        path = git.scratch / "history.bundle"
+        with path.open("xb") as stream:
+            stream.write(bundle)
+            stream.flush()
+            os.fsync(stream.fileno())
+        with _directory(git.scratch) as scratch_fd:
+            if _read_export_file(scratch_fd, path.name, history.size) != bundle:
+                _fail("integrity_mismatch")
+        object_format = "sha256" if len(history.head) == 64 else "sha1"
+        git.run(repository, ["init", "--bare", "--template=", "--object-format=" + object_format], 4096)
+        git.run(repository, ["bundle", "verify", str(path)], 65536)
+        git.run(repository, ["fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules",
+                             str(path), history.ref + ":" + history.ref], 65536)
+        refs = git.run(repository, ["for-each-ref", "--format=%(objectname) %(refname)"], 65536)
+        if refs != (history.head + " " + history.ref + "\n").encode("utf-8"):
+            _fail("history_invalid")
+        if git.run(repository, ["rev-parse", "--verify", history.ref + "^{commit}"], 128).strip() != history.head.encode("ascii"):
+            _fail("history_invalid")
+        git.run(repository, ["fsck", "--strict", "--no-reflogs", history.head], 65536)
+        git.run(repository, ["symbolic-ref", "HEAD", history.ref], 4096)
+        # Populate only the index in this bare staging repository. No -u,
+        # checkout, reset or restore can overwrite dirty files/tombstones.
+        git.run(repository, ["read-tree", history.head], 4096)
+        if (git.run(repository, ["write-tree"], 128)
+                != git.run(repository, ["rev-parse", "HEAD^{tree}"], 128)):
+            _fail("history_invalid")
+        git.run(repository, ["config", "core.bare", "false"], 4096)
+
+        def collect(parent: int, prefix: str, depth: int = 0) -> None:
+            nonlocal remaining
+            if depth > 128:
+                _fail("read_budget_exceeded")
+            with os.scandir(parent) as entries:
+                for item in entries:
+                    relative = prefix + "/" + item.name
+                    C.validate_relpath(relative, max_bytes=limits.max_path_bytes)
+                    info = item.stat(follow_symlinks=False)
+                    if stat.S_ISDIR(info.st_mode):
+                        child = os.open(item.name, _DIR, dir_fd=parent)
+                        try:
+                            if _inode(info) != _inode(os.fstat(child)):
+                                _fail("integrity_mismatch")
+                            collect(child, relative, depth + 1)
+                        finally:
+                            os.close(child)
+                    else:
+                        if len(files) >= limits.max_files + 32:
+                            _fail("read_budget_exceeded")
+                        data = _read_export_file(parent, item.name, remaining)
+                        remaining -= len(data)
+                        files.append(C.ManifestFile(relative, len(data), hashlib.sha256(data).hexdigest(), 0o644))
+                        payload[relative] = data
+
+        with _directory(repository) as root:
+            collect(root, ".git")
+    return tuple(files), payload
+
+
 def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
                     limits: C.Limits = C.Limits(), *, approval: bool = False) -> C.ExportResult:
-    """Export manifest-owned files only, never overwrite or execute saved text.
+    """Export manifest-owned files and bundled history without executing text.
 
     Approval must come from the live caller, not metadata or preview contents.
     Stage the entire bounded payload in memory and reverify the exact manifest
@@ -484,14 +619,19 @@ def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
                 _fail("export_forbidden")
             payload[entry.relpath] = data
             remaining -= len(data)
+        git_files: tuple[C.ManifestFile, ...] = ()
+        git_payload: dict[str, bytes] = {}
+        if manifest.history.status == "bundled":
+            bundle = S.read_history(source, identity, limits)
+            git_files, git_payload = _history_export(bundle, manifest.history, limits)
         if _verified_export(source, identity, limits) != (manifest, digest):
             _fail("integrity_mismatch")
-        # Construct the immutable result before side effects. A file-only export
-        # with recorded history is partial even when a past remote was verified.
+        # No remote protection is inferred. Complete requires recovery of both
+        # the full payload and, whenever recorded, its bundled branch history.
         result = C.ExportResult(
             identity, destination,
             "partial" if (manifest.completion == "partial" or manifest.omissions
-                          or manifest.head is not None
+                          or manifest.head is not None and manifest.history.status != "bundled"
                           or manifest.history.status in ("remote-verified", "unprotected")) else "complete",
             preview.exported_paths, manifest.omissions, manifest.history.status, preview.warnings,
         )
@@ -499,9 +639,11 @@ def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
             writer = _ExportWriter(stack)
             try:
                 writer.destination(destination)
+                for entry in git_files:
+                    writer.write(entry, git_payload[entry.relpath])
                 for entry in manifest.files:
                     writer.write(entry, payload[entry.relpath])
-                writer.verify(manifest.files, payload)
+                writer.verify((*manifest.files, *git_files), {**payload, **git_payload})
             except BaseException:
                 _cleanup(writer.owned)
                 raise
