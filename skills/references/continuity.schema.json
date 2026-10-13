@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:thunderkit:continuity:v1",
+  "title": "Thunderkit model-free continuity v1",
+  "$comment": "No settings object carries authority. Runtime decoding additionally enforces UTF-8 byte/depth/duplicate-key bounds, exact identity/index/path bindings and merged numeric cross-field limits. Paths are literal POSIX paths; filesystem safety is checked separately. Integer tokens must be JSON integers, not bool or floating-point spellings.",
+  "oneOf": [
+    {"$ref": "#/$defs/policy"},
+    {"$ref": "#/$defs/project-settings"},
+    {"$ref": "#/$defs/global-settings"},
+    {"$ref": "#/$defs/context-pointer"}
+  ],
+  "$defs": {
+    "token": {
+      "type": "string", "minLength": 1, "maxLength": 128,
+      "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(?![\\s\\S])"
+    },
+    "path": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^(?!//)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\:\u0000-\u001f\u007f-\u009f\\ud800-\\udfff]+(?![\\s\\S])"
+    },
+    "absolute-path": {
+      "allOf": [{"$ref": "#/$defs/path"}, {"pattern": "^/"}]
+    },
+    "identity": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id"],
+      "properties": {
+        "kind": {"enum": ["project", "global"]}, "id": {"$ref": "#/$defs/token"}
+      }
+    },
+    "project-identity": {
+      "allOf": [{"$ref": "#/$defs/identity"}, {"properties": {"kind": {"const": "project"}}}]
+    },
+    "global-identity": {
+      "allOf": [{"$ref": "#/$defs/identity"}, {"properties": {"kind": {"const": "global"}}}]
+    },
+    "locator": {
+      "type": "object", "additionalProperties": false, "required": ["identity", "path"],
+      "properties": {"identity": {"$ref": "#/$defs/identity"}, "path": {"$ref": "#/$defs/path"}}
+    },
+    "policy": {
+      "type": "object", "additionalProperties": false, "required": ["schema"],
+      "properties": {
+        "schema": {"type": "integer", "const": 1},
+        "backup": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "interval_minutes": {"type": "integer", "minimum": 1, "maximum": 10080, "default": 15},
+            "retention": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 20},
+            "prune": {"type": "boolean", "default": false},
+            "limits": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "max_file_bytes": {"type": "integer", "minimum": 1, "maximum": 1073741824, "default": 10485760},
+                "max_snapshot_bytes": {"type": "integer", "minimum": 1, "maximum": 10737418240, "default": 104857600},
+                "max_files": {"type": "integer", "minimum": 1, "maximum": 100000, "default": 10000},
+                "max_path_bytes": {"type": "integer", "minimum": 1, "maximum": 4096, "default": 4096},
+                "max_sources": {"type": "integer", "minimum": 1, "maximum": 10000, "default": 1000}
+              }
+            }
+          }
+        },
+        "restore": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "max_context_bytes": {"type": "integer", "minimum": 1, "maximum": 16777216, "default": 65536}
+          }
+        },
+        "git": {
+          "type": "object", "additionalProperties": false,
+          "properties": {"push_after_commit": {"type": "boolean", "default": true}}
+        }
+      }
+    },
+    "project-entry": {
+      "type": "object", "additionalProperties": false, "required": ["identity", "project_root"],
+      "properties": {
+        "identity": {"$ref": "#/$defs/project-identity"},
+        "project_root": {"$ref": "#/$defs/absolute-path"},
+        "backup_root": {"$ref": "#/$defs/absolute-path"},
+        "latest_context": {"$ref": "#/$defs/locator"}
+      }
+    },
+    "project-settings": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema", "kind", "identity", "project_root"],
+      "properties": {
+        "schema": {"type": "integer", "const": 1}, "kind": {"const": "project-settings"},
+        "identity": {"$ref": "#/$defs/project-identity"},
+        "project_root": {"$ref": "#/$defs/absolute-path"},
+        "backup_root": {"$ref": "#/$defs/absolute-path"},
+        "latest_context": {"$ref": "#/$defs/locator"}
+      }
+    },
+    "global-entry": {
+      "type": "object", "additionalProperties": false, "required": ["identity"],
+      "properties": {
+        "identity": {"$ref": "#/$defs/global-identity"},
+        "backup_root": {"$ref": "#/$defs/absolute-path"},
+        "latest_context": {"$ref": "#/$defs/locator"},
+        "approved_sources": {
+          "type": "array", "maxItems": 10000, "uniqueItems": true,
+          "items": {"$ref": "#/$defs/absolute-path"}
+        }
+      }
+    },
+    "global-settings": {
+      "type": "object", "additionalProperties": false, "required": ["schema", "kind"],
+      "properties": {
+        "schema": {"type": "integer", "const": 1}, "kind": {"const": "global-settings"},
+        "policy": {"$ref": "#/$defs/policy"}, "global": {"$ref": "#/$defs/global-entry"},
+        "projects": {
+          "type": "object", "maxProperties": 10000,
+          "propertyNames": {"$ref": "#/$defs/token"},
+          "additionalProperties": {"$ref": "#/$defs/project-entry"}
+        }
+      }
+    },
+    "context-pointer": {
+      "type": "object", "additionalProperties": false, "required": ["schema", "kind", "identity", "path"],
+      "properties": {
+        "schema": {"type": "integer", "const": 1}, "kind": {"const": "context-pointer"},
+        "identity": {"$ref": "#/$defs/identity"}, "path": {"$ref": "#/$defs/path"}
+      }
+    }
+  }
+}

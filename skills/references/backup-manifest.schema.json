@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:thunderkit:backup-manifest:v1",
+  "title": "Thunderkit inert backup manifest v1",
+  "$comment": "Mandatory runtime validation additionally enforces byte/depth/duplicate-key bounds, exact scope/ref/HEAD equality, file-path uniqueness and prefix collisions, entrypoint membership, no live/deleted overlap and configured aggregate byte/count budgets. Schema validity is not payload/hash/history verification, storage qualification, trusted origin or current authority. No executable/grant fields are supported.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema", "identity", "snapshot_id", "timestamp", "repository", "ref", "head", "base", "files", "deleted_paths", "context_entrypoints", "history", "omissions", "completion"],
+  "properties": {
+    "schema": {"type": "integer", "const": 1},
+    "identity": {"$ref": "#/$defs/identity"},
+    "snapshot_id": {"$ref": "#/$defs/token"},
+    "timestamp": {"type": "string", "format": "date-time", "maxLength": 40, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?(?:Z|[+-][0-9]{2}:[0-9]{2})(?![\\s\\S])"},
+    "repository": {"anyOf": [{"$ref": "#/$defs/absolute-path"}, {"type": "null"}]},
+    "ref": {"anyOf": [{"$ref": "#/$defs/ref"}, {"type": "null"}]},
+    "head": {"anyOf": [{"$ref": "#/$defs/oid"}, {"type": "null"}]},
+    "base": {"anyOf": [{"$ref": "#/$defs/oid"}, {"type": "null"}]},
+    "files": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/file"}},
+    "deleted_paths": {"$ref": "#/$defs/paths"},
+    "context_entrypoints": {"$ref": "#/$defs/paths"},
+    "history": {"$ref": "#/$defs/history"},
+    "omissions": {"type": "array", "maxItems": 100000, "items": {"$ref": "#/$defs/text"}},
+    "completion": {"enum": ["complete", "partial"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"completion": {"const": "complete"}}},
+      "then": {"properties": {
+        "files": {"minItems": 1}, "omissions": {"maxItems": 0},
+        "history": {"properties": {"status": {"not": {"const": "unprotected"}}}}
+      }}
+    },
+    {
+      "if": {"properties": {"head": {"type": "null"}}},
+      "then": {"properties": {"ref": {"type": "null"}, "base": {"type": "null"}}},
+      "else": {
+        "if": {"properties": {"completion": {"const": "complete"}}},
+        "then": {"properties": {"history": {"properties": {"status": {"enum": ["bundled", "remote-verified"]}}}}}
+      }
+    },
+    {
+      "if": {"properties": {"identity": {"properties": {"kind": {"const": "global"}}}}},
+      "then": {"properties": {"repository": {"type": "null"}, "ref": {"type": "null"}, "head": {"type": "null"}, "base": {"type": "null"}}}
+    }
+  ],
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[^\u0000-\u001f\u007f-\u009f\\ud800-\\udfff]+(?![\\s\\S])"},
+    "token": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9_.-]{0,127}(?![\\s\\S])"},
+    "identity": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id"],
+      "properties": {"kind": {"enum": ["project", "global"]}, "id": {"$ref": "#/$defs/token"}}
+    },
+    "absolute-path": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^(?!//)(?!.*(?:^|/)\\.\\.(?:/|$))/[^\\\\:\u0000-\u001f\u007f-\u009f\\ud800-\\udfff]*(?![\\s\\S])"
+    },
+    "relpath": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*//)(?!.*?/$)[^\\\\:\u0000-\u001f\u007f-\u009f\\ud800-\\udfff]+(?![\\s\\S])"
+    },
+    "paths": {"type": "array", "maxItems": 100000, "uniqueItems": true, "items": {"$ref": "#/$defs/relpath"}},
+    "oid": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})(?![\\s\\S])"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"},
+    "ref": {
+      "type": "string", "maxLength": 1024,
+      "pattern": "^(?!.*\\.\\.)(?!.*@\\{)(?!.*//)(?!.*(?:^|/)\\.)(?!.*\\.lock(?:/|$))(?!.*[/.]$)refs/heads/[^ ~^:?*\\[\\\\\u0000-\u001f\u007f-\u009f\\ud800-\\udfff]+(?![\\s\\S])"
+    },
+    "file": {
+      "type": "object", "additionalProperties": false, "required": ["relpath", "size", "sha256", "mode"],
+      "properties": {
+        "relpath": {"$ref": "#/$defs/relpath"},
+        "size": {"type": "integer", "minimum": 0, "maximum": 1073741824},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "mode": {"type": "integer", "enum": [420, 493]}
+      }
+    },
+    "history": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "file", "size", "sha256", "ref", "head"],
+      "properties": {
+        "status": {"enum": ["not-requested", "not-applicable", "remote-verified", "bundled", "unprotected"]},
+        "file": {"anyOf": [{"$ref": "#/$defs/relpath"}, {"type": "null"}]},
+        "size": {"type": "integer", "minimum": 0, "maximum": 10737418240},
+        "sha256": {"anyOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]},
+        "ref": {"anyOf": [{"$ref": "#/$defs/ref"}, {"type": "null"}]},
+        "head": {"anyOf": [{"$ref": "#/$defs/oid"}, {"type": "null"}]},
+        "remote_oid": {"anyOf": [{"$ref": "#/$defs/oid"}, {"type": "null"}]},
+        "remote_evidence": {"anyOf": [{"$ref": "#/$defs/text"}, {"type": "null"}]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "bundled"}}},
+          "then": {"properties": {
+            "file": {"$ref": "#/$defs/relpath"}, "size": {"minimum": 1},
+            "sha256": {"$ref": "#/$defs/sha256"}, "ref": {"$ref": "#/$defs/ref"}, "head": {"$ref": "#/$defs/oid"}
+          }},
+          "else": {"properties": {"file": {"type": "null"}, "size": {"const": 0}, "sha256": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "remote-verified"}}},
+          "then": {
+            "required": ["remote_oid", "remote_evidence"],
+            "properties": {"remote_oid": {"$ref": "#/$defs/oid"}, "remote_evidence": {"$ref": "#/$defs/text"}, "head": {"$ref": "#/$defs/oid"}, "ref": {"$ref": "#/$defs/ref"}}
+          },
+          "else": {"properties": {"remote_oid": {"type": "null"}, "remote_evidence": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"ref": {"type": "null"}}},
+          "then": {"properties": {"head": {"type": "null"}}},
+          "else": {"properties": {"head": {"$ref": "#/$defs/oid"}}}
+        },
+        {
+          "if": {"properties": {"status": {"const": "not-applicable"}}},
+          "then": {"properties": {"head": {"type": "null"}, "ref": {"type": "null"}}}
+        }
+      ]
+    }
+  }
+}
