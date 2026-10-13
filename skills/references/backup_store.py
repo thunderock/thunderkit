@@ -749,9 +749,36 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | 
         mode = 0o755 if info.st_mode & 0o111 else 0o644
         payload[relative] = data
         records.append(C.ManifestFile(relative, len(data), _hash(data), mode))
-    scoped_deleted = tuple(sorted(p for p in deleted if not _forbidden(p) and root is not None
-                                 and any((root / p).is_relative_to(s) for s in request.approved_sources)))
-    return payload, tuple(records), tuple(omissions), scoped_deleted
+    scoped_deleted: list[str] = []
+    if root is not None:
+        with _directory(root, "source_changed") as root_fd:
+            for relative in sorted(deleted):
+                if _forbidden(relative) or not any((root / relative).is_relative_to(s) for s in request.approved_sources):
+                    continue
+                # An index removal is not necessarily a deleted working file.
+                # Recreated bytes and file/directory transitions win; never emit
+                # contradictory tombstones beside captured paths.
+                if any(relative == p or relative.startswith(p + "/") or p.startswith(relative + "/") for p in payload):
+                    continue
+                if _absent_worktree_path(root_fd, relative):
+                    scoped_deleted.append(relative)
+    return payload, tuple(records), tuple(omissions), tuple(scoped_deleted)
+
+
+def _absent_worktree_path(root: int, relative: str) -> bool:
+    """Check presence without following a link, including any replaced ancestor."""
+    parts = relative.split("/")
+    with ExitStack() as stack:
+        parent = root
+        for index, part in enumerate(parts):
+            try:
+                info = os.stat(part, dir_fd=parent, follow_symlinks=False)
+            except FileNotFoundError:
+                return True
+            if index == len(parts) - 1 or not stat.S_ISDIR(info.st_mode):
+                return False
+            parent = stack.enter_context(_child_directory(parent, part))
+    return False
 
 
 def _scan_graph(git: _Git, repository: Path, head: str, limits: C.Limits) -> None:
