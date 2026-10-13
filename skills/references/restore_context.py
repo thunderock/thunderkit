@@ -5,10 +5,12 @@ execute saved instructions. Loading never recreates the original checkout.
 """
 from __future__ import annotations
 
+import argparse
 from collections.abc import Iterator
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -16,6 +18,7 @@ import selectors
 import signal
 import stat
 import subprocess
+import sys
 import time
 from typing import NoReturn
 
@@ -36,6 +39,7 @@ def _fail(code: str) -> NoReturn:
         "export_forbidden": "Snapshot content is excluded from recovery by safety policy.",
         "history_invalid": "Bundled history could not be recovered safely.",
         "export_failed": "Export could not complete safely; no recovery success is claimed.",
+        "invalid_config": "Recovery arguments do not satisfy the command schema.",
     }
     raise C.ContinuityError(code, details[code]) from None
 
@@ -163,6 +167,13 @@ def load_context(source: Path, identity: C.ScopeIdentity,
             history_status=manifest.history.status,
         ),
     )
+
+
+def load_resolved(settings: C.ResolvedSettings) -> C.ContextLoad:
+    """Consume the exact resolved locator, identity and limits; never resolve again."""
+    if settings.context_path is None:
+        _fail("context_not_found")
+    return load_context(settings.context_path, settings.identity, settings.limits)
 
 
 @dataclass(frozen=True)
@@ -650,3 +661,101 @@ def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
         return result
     except OSError:
         _fail("export_failed")
+
+
+class _SafeParser(argparse.ArgumentParser):
+    def error(self, message: str) -> NoReturn:
+        # argparse diagnostics contain raw arguments, which may be private.
+        _fail("invalid_config")
+
+
+def _cli_path(value: str) -> Path:
+    # Validate the original token before Path can normalize it. No expansion,
+    # cwd inference or remembered-path update is part of this command surface.
+    return C.literal_path(value, absolute=True)
+
+
+def _context_budget(value: str) -> int:
+    # Reject floats, booleans, signs and oversized decimal strings before int().
+    if (len(value) > len(str(C.MAXIMUMS["max_context_bytes"]))
+            or re.fullmatch(r"[0-9]+", value) is None):
+        _fail("invalid_config")
+    return C.Limits(max_context_bytes=int(value)).max_context_bytes
+
+
+def _json_path(value: object) -> str:
+    if isinstance(value, Path):
+        return str(value)
+    raise TypeError("Unsupported recovery result value.")
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Model-free load/preview/export; saved data never activates or executes work."""
+    parser = _SafeParser(
+        prog="restore_context.py", allow_abbrev=False,
+        description="Model-free recovery of inert context and verified files; no activation or execution.",
+        epilog="The default command is load. All paths must be literal absolute paths; no shell or home expansion.",
+    )
+    commands = parser.add_subparsers(dest="command", required=True)
+    load = commands.add_parser(
+        "load", allow_abbrev=False, help="Read explicit or exact-scope remembered context without writes",
+        description="Read inert context without activation or execution. All paths must be literal absolute paths.",
+    )
+    preview = commands.add_parser(
+        "preview", allow_abbrev=False, help="Verify and preview export without writing",
+        description="Read-only export preview, not approval. All paths must be literal absolute paths.",
+    )
+    export = commands.add_parser(
+        "export", allow_abbrev=False, help="Export only with fresh --approve; never execute recovered files",
+        description="Export verified files without activation or execution. All paths must be literal absolute paths.",
+    )
+    for command in (load, preview, export):
+        command.add_argument("--context", type=_cli_path, required=command is not load)
+        command.add_argument("--identity", required=command is not load,
+                             help="Exact scope ID; load may instead use a bound private identity")
+        command.add_argument("--scope", choices=("project", "global"), default="project")
+    load.add_argument("--project-root", type=_cli_path, help="Explicit project binding; never inferred from cwd")
+    load.add_argument("--global-config", type=_cli_path)
+    load.add_argument("--memory-pointer", type=_cli_path, help="Already available matching context-pointer JSON")
+    load.add_argument("--max-context-bytes", type=_context_budget,
+                      help="Positive decimal read limit within Limits bounds; other policy limits remain unchanged")
+    for command in (preview, export):
+        command.add_argument("--destination", type=_cli_path, required=True)
+    export.add_argument("--approve", action="store_true", default=False,
+                        help="Fresh approval for this exact source, scope and new/empty destination only")
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if not arguments or (arguments[0].startswith("-") and arguments[0] not in ("-h", "--help")):
+        arguments.insert(0, "load")
+    try:
+        args = parser.parse_args(arguments)
+        identity = C.ScopeIdentity(args.scope, args.identity) if args.identity is not None else None
+        result: C.ContextLoad | ExportPreview | C.ExportResult
+        if args.command == "load":
+            settings = C.resolve_continuity(
+                project_root=args.project_root, global_config=args.global_config,
+                explicit_backup_path=args.context, scope=args.scope,
+                expected_identity=identity, memory_pointer=args.memory_pointer,
+            )
+            if args.max_context_bytes is not None:
+                settings = replace(settings, limits=replace(settings.limits, max_context_bytes=args.max_context_bytes))
+            result = load_resolved(settings)
+        else:
+            # Export never consults remembered paths, settings, grants or cwd.
+            assert identity is not None  # Required by the preview/export parser.
+            if args.command == "preview":
+                result = export_preview(args.context, args.destination, identity)
+            else:
+                result = export_snapshot(args.context, args.destination, identity, approval=args.approve)
+        encoded = json.dumps(asdict(result), default=_json_path, ensure_ascii=True, allow_nan=False)
+    except C.ContinuityError as error:
+        print(json.dumps({"error": {"code": error.code, "detail": error.detail}}, ensure_ascii=True), file=sys.stderr)
+        return 2
+    except OSError:
+        print(json.dumps({"error": {"code": "read_failed", "detail": "Recovery could not access its inputs or destination safely."}}), file=sys.stderr)
+        return 2
+    print(encoded)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
