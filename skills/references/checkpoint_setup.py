@@ -41,6 +41,9 @@ class SetupRequest:
     integration_root: Path
     scheduler: str = "none"
     per_commit: bool = False
+    context_entrypoints: tuple[str, ...] = ()
+    include_history: bool = False
+    history_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,7 @@ class Capability:
 class SetupFingerprint:
     path: Path
     digest: str
+    payload: C.ManifestFile | None = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +114,13 @@ class SetupResult:
     retained_paths: tuple[Path, ...] = ()
 
 
+@dataclass(frozen=True)
+class _CapturedScope:
+    snapshot: Path
+    manifest_sha256: str
+    fingerprints: tuple[SetupFingerprint, ...]
+
+
 def _fail(code: str) -> NoReturn:
     raise C.ContinuityError(code, "Setup inspection refused.")
 
@@ -155,7 +166,8 @@ def _git_read(project: Path, args: tuple[str, ...]) -> tuple[int, bytes]:
         _fail("git_inspection_unavailable")
     deadline = time.monotonic() + _GIT_TIMEOUT
     try:
-        with subprocess.Popen((binary, *args), cwd=project, env=_git_environment(),
+        with subprocess.Popen((binary, "-c", "core.excludesFile=/dev/null", *args),
+                              cwd=project, env=_git_environment(),
                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, shell=False,
                               start_new_session=True) as process:
@@ -215,6 +227,10 @@ def _private_git_check(project: Path, private: Path, integration: Path) -> None:
         origin, record = fields[index:index + 2]
         key, _, value = record.partition(b"\n")
         key = key.lower()
+        # Only this invocation's fixed override is allowed. A repository-declared
+        # excludesFile remains refused even when overridden on the command line.
+        if (origin, key, value) == (b"command line:", b"core.excludesfile", b"/dev/null"):
+            continue
         if (not origin.startswith(b"file:") or not key
                 or key.startswith((b"include.", b"includeif.", b"extensions."))
                 or key in (b"core.fsmonitor", b"core.worktree", b"core.excludesfile")
@@ -288,11 +304,19 @@ def _documents(request: SetupRequest, manifest: Path | None = None) -> tuple[C.J
         "schema": 1, "kind": "checkpoint-settings", "settings": C.settings_to_json(settings),
         "approved_sources": [str(path) for path in request.approved_sources],
         "scheduler": request.scheduler, "per_commit": request.per_commit,
+        "context_entrypoints": list(request.context_entrypoints),
+        "include_history": request.include_history, "history_ref": request.history_ref,
     }
     return document, integration_document
 
 
-def _inspect(request: SetupRequest) -> tuple[C.StorageIdentity, tuple[SetupMutation, ...]]:
+def _scope_path(request: SetupRequest) -> Path:
+    assert request.settings.backup_root is not None
+    return request.settings.backup_root / "projects" / request.settings.identity.id
+
+
+def _inspect(request: SetupRequest, captured: _CapturedScope | None = None
+             ) -> tuple[C.StorageIdentity, tuple[SetupMutation, ...]]:
     settings = replace(request.settings)
     # Reuse C validation; no resolver re-read of model/global configuration.
     replace(settings.identity)
@@ -327,13 +351,23 @@ def _inspect(request: SetupRequest) -> tuple[C.StorageIdentity, tuple[SetupMutat
     if _overlap(backup, project) or _overlap(backup, integration):
         _fail("unsafe_path")
     storage = S.inspect_storage(backup)
-    C.SnapshotRequest(settings, storage, request.approved_sources)
+    scope = C.safe_path(_scope_path(request))
+    if captured is None:
+        if scope.exists():
+            _fail("scope_exists")
+    elif _scope_fingerprints(request, captured.snapshot, captured.manifest_sha256) != captured.fingerprints:
+        _fail("scope_changed")
+    C.SnapshotRequest(settings, storage, request.approved_sources, request.context_entrypoints,
+                      request.include_history, request.history_ref)
     if not request.approved_sources:
         _fail("sources_required")
     for source in request.approved_sources:
         C.validate_path_text(str(source), absolute=True, max_bytes=settings.limits.max_path_bytes)
         C.safe_path(source, root=project, must_exist=True)
-        if any(_overlap(source, path) for path in (backup, integration, private, project / ".git")):
+        # Ancestor approval is not approval of excluded descendants. S owns the
+        # mandatory payload policy; explicit private/runtime sources still fail.
+        if (_source_excluded(request, source)
+                or _overlap(source, backup)):
             _fail("unsafe_path")
         info = source.lstat()
         if stat.S_ISREG(info.st_mode) and info.st_nlink != 1:
@@ -343,6 +377,11 @@ def _inspect(request: SetupRequest) -> tuple[C.StorageIdentity, tuple[SetupMutat
         _fail("storage_readonly")
     for path in (private, integration / "config.json"):
         _new_private_path(path, project)
+    if integration.exists():
+        with _directory(integration) as fd:
+            with os.scandir(fd) as entries:
+                if next(entries, None) is not None:
+                    _fail("private_storage_exists")
     _private_git_check(project, private, integration)
     if S.inspect_storage(backup) != storage:
         _fail("storage_changed")
@@ -399,6 +438,14 @@ def _owned(path: Path, info: os.stat_result, digest: str | None = None) -> Owned
     return OwnedPath(path, info.st_dev, info.st_ino, info.st_uid, info.st_mode, digest)
 
 
+def _source_excluded(request: SetupRequest, path: Path) -> bool:
+    project = request.settings.project_root
+    assert project is not None
+    return (path.is_relative_to(request.integration_root)
+            or path.is_relative_to(project / _LOCK)
+            or S._forbidden(path.relative_to(project).as_posix()))
+
+
 def _fingerprints(request: SetupRequest) -> tuple[SetupFingerprint, ...]:
     """Bound source bytes and config/ignore/hooks state, not only path strings."""
     project = request.settings.project_root
@@ -408,8 +455,10 @@ def _fingerprints(request: SetupRequest) -> tuple[SetupFingerprint, ...]:
     count = 0
     result: list[SetupFingerprint] = []
 
-    def visit(path: Path, recursive: bool = False) -> None:
+    def visit(path: Path, recursive: bool = False, source: bool = False) -> None:
         nonlocal remaining, count
+        if source and _source_excluded(request, path):
+            return
         count += 1
         if count > limits.max_files + limits.max_sources + 100:
             _fail("inspection_budget_exceeded")
@@ -421,9 +470,12 @@ def _fingerprints(request: SetupRequest) -> tuple[SetupFingerprint, ...]:
             result.append(SetupFingerprint(path, "missing"))
             return
         if stat.S_ISDIR(info.st_mode):
-            # Directory membership is separately traversed where relevant. Do
-            # not bind atime or our own lock's effects on parent timestamps.
-            data = repr((info.st_dev, info.st_ino, info.st_uid, info.st_mode)).encode()
+            # Only the project root is affected by our own setup lock. Nested
+            # membership changes must remain detectable even after deletion.
+            identity: tuple[int, ...] = (info.st_dev, info.st_ino, info.st_uid, info.st_mode)
+            if path != project:
+                identity += (info.st_mtime_ns, info.st_ctime_ns)
+            data = repr(identity).encode()
             result.append(SetupFingerprint(path, hashlib.sha256(data).hexdigest()))
             if recursive:
                 with _directory(path) as fd:
@@ -434,12 +486,16 @@ def _fingerprints(request: SetupRequest) -> tuple[SetupFingerprint, ...]:
                             if len(names) + count > limits.max_files + limits.max_sources + 100:
                                 _fail("inspection_budget_exceeded")
                     for name in sorted(names):
-                        visit(path / name, True)
+                        visit(path / name, True, source)
             return
         with _directory(path.parent) as fd:
             content, info = _read_file(fd, path.name, min(remaining, max(limits.max_file_bytes, _GIT_BYTES)))
         remaining -= len(content)
-        result.append(SetupFingerprint(path, hashlib.sha256(repr(_signature(info)).encode() + content).hexdigest()))
+        payload = None if not source else C.ManifestFile(
+            path.relative_to(project).as_posix(), len(content), hashlib.sha256(content).hexdigest(),
+            0o755 if info.st_mode & 0o111 else 0o644)
+        result.append(SetupFingerprint(path, hashlib.sha256(repr(_signature(info)).encode() + content).hexdigest(),
+                                       payload))
 
     paths = {project, project / ".git"}
     for target in (project / ".thunderkit/continuity.local.json", request.integration_root / "config.json"):
@@ -466,12 +522,16 @@ def _fingerprints(request: SetupRequest) -> tuple[SetupFingerprint, ...]:
                 _fail("unsupported_repository")
     visit(hooks, True)
     for source in request.approved_sources:
-        visit(source, True)
+        visit(source, True, True)
     return tuple(result)
 
 
 def preview_setup(request: SetupRequest) -> SetupPreview:
     """Inspect literal scope and private targets; never capture, probe or install."""
+    return _preview_setup(request)
+
+
+def _preview_setup(request: SetupRequest, captured: _CapturedScope | None = None) -> SetupPreview:
     capabilities = _capabilities(request)
     blockers: list[str] = []
     if request.scheduler != "none":
@@ -482,7 +542,7 @@ def preview_setup(request: SetupRequest) -> SetupPreview:
     mutations: tuple[SetupMutation, ...] = ()
     fingerprints: tuple[SetupFingerprint, ...] = ()
     try:
-        storage, mutations = _inspect(request)
+        storage, mutations = _inspect(request, captured)
         fingerprints = _fingerprints(request)
     except C.ContinuityError as error:
         blockers.append(error.code)
@@ -516,10 +576,10 @@ def _setup_lock(project: Path) -> Iterator[None]:
             os.fsync(parent)
             yield
         finally:
-            info = os.stat(_LOCK, dir_fd=parent, follow_symlinks=False)
-            if _owned(project / _LOCK, info) != owned:
-                _fail("cleanup_unresolved")
             try:
+                info = os.stat(_LOCK, dir_fd=parent, follow_symlinks=False)
+                if _owned(project / _LOCK, info) != owned:
+                    _fail("cleanup_unresolved")
                 os.rmdir(_LOCK, dir_fd=parent)
                 os.fsync(parent)
             except OSError:
@@ -611,10 +671,85 @@ def _remove_owned(files: tuple[OwnedPath, ...], directories: tuple[OwnedPath, ..
     return tuple(removed), tuple(retained)
 
 
-def _fresh(preview: SetupPreview) -> None:
-    current = preview_setup(preview.request)
+def _reserve_scope(request: SetupRequest) -> OwnedPath:
+    # Claim first use exclusively; S's reusable namespace mkdir is not a claim.
+    scope = _scope_path(request)
+    with _directory(scope.parent.parent) as root:
+        _check_directory(scope.parent.parent, os.fstat(root))
+        try:
+            os.mkdir("projects", 0o700, dir_fd=root)
+        except FileExistsError:
+            pass
+        os.fsync(root)
+    with _directory(scope.parent) as group:
+        _check_directory(scope.parent, os.fstat(group))
+        try:
+            os.mkdir(scope.name, 0o700, dir_fd=group)
+        except FileExistsError:
+            _fail("scope_exists")
+        owned = _check_directory(scope, os.stat(scope.name, dir_fd=group, follow_symlinks=False))
+        os.fsync(group)
+    return owned
+
+
+def _scope_fingerprints(request: SetupRequest, snapshot: Path,
+                        manifest_sha256: str) -> tuple[SetupFingerprint, ...]:
+    """Accept only the single first capture and its exact complete locator."""
+    scope = _scope_path(request)
+    if snapshot.parent != scope / "snapshots":
+        _fail("scope_changed")
+    result: list[SetupFingerprint] = []
+    for path, names in ((scope, {"snapshots", ".staging", "latest.json"}),
+                        (scope / "snapshots", {snapshot.name}), (scope / ".staging", set())):
+        with _directory(path) as fd:
+            before = os.fstat(fd)
+            with os.scandir(fd) as entries:
+                remaining = set(names)
+                for entry in entries:
+                    if entry.name not in remaining:
+                        _fail("scope_changed")
+                    remaining.remove(entry.name)
+            if remaining or _signature(os.fstat(fd)) != _signature(before):
+                _fail("scope_changed")
+            result.append(SetupFingerprint(path, hashlib.sha256(repr(_signature(before)).encode()).hexdigest()))
+    manifest_path = snapshot / "manifest.json"
+    for path, bound in ((manifest_path, C.MANIFEST_MAX_BYTES), (scope / "latest.json", C.CONFIG_MAX_BYTES)):
+        with _directory(path.parent) as fd:
+            data, info = _read_file(fd, path.name, bound)
+        if path == manifest_path:
+            if hashlib.sha256(data).hexdigest() != manifest_sha256:
+                _fail("integrity_mismatch")
+        else:
+            locator = C.decode_locator(C.decode_json(data), pointer=True)
+            if locator.identity != request.settings.identity or locator.path != str(manifest_path):
+                _fail("scope_changed")
+        result.append(SetupFingerprint(path, hashlib.sha256(repr(_signature(info)).encode() + data).hexdigest()))
+    manifest = S.verify_snapshot(manifest_path, request.settings.identity, request.settings.limits)
+    if manifest.completion != "complete" or manifest.snapshot_id != snapshot.name:
+        _fail("first_snapshot_incomplete")
+    return tuple(result)
+
+
+def _fresh(preview: SetupPreview, captured: _CapturedScope | None = None) -> None:
+    current = _preview_setup(preview.request, captured)
     if current.blockers or current != preview or not current.fingerprints:
         _fail("stale_preview")
+
+
+def _retained(paths: tuple[Path, ...]) -> tuple[Path, ...]:
+    # Existence, not matching ownership: changed/replaced data must be disclosed
+    # too. Never follow a replacement parent or remove anything during reporting.
+    retained: list[Path] = []
+    for path in dict.fromkeys(paths):
+        try:
+            with _directory(path.parent) as parent:
+                os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        except (OSError, C.ContinuityError):
+            pass  # Uninspectable is unresolved, not evidence of removal.
+        retained.append(path)
+    return tuple(retained)
 
 
 def apply_setup(preview: SetupPreview, *, approval: bool = False) -> SetupResult:
@@ -625,12 +760,24 @@ def apply_setup(preview: SetupPreview, *, approval: bool = False) -> SetupResult
     files: list[OwnedPath] = []
     directories: list[OwnedPath] = []
     parents: list[OwnedPath] = []
+    receipt: InstalledState | None = None
+    known_backup_paths: tuple[Path, ...] = ()
+    lock_path: tuple[Path, ...] = ()
+
+    def blocked(code: str) -> SetupResult:
+        state = None if receipt is None else replace(
+            receipt, files=tuple(files), directories=tuple(directories), parents=tuple(parents))
+        changed = tuple(item.path for item in (*directories, *files))
+        return SetupResult("blocked", changed, state, (code,), capabilities,
+                           _retained((*changed, *known_backup_paths, *lock_path)))
+
     try:
         _fresh(preview)
         project = preview.request.settings.project_root
         storage = preview.storage
         assert project is not None and storage is not None
         with _setup_lock(project):
+            lock_path = (project / _LOCK,)
             try:
                 _fresh(preview)
                 qualified = S.qualify_storage(storage, approval=True)
@@ -640,26 +787,49 @@ def apply_setup(preview: SetupPreview, *, approval: bool = False) -> SetupResult
                 capture_settings = replace(preview.request.settings,
                                            backup=replace(preview.request.settings.backup, prune=False))
                 request = C.SnapshotRequest(capture_settings, qualified.identity,
-                                            preview.request.approved_sources)
+                                            preview.request.approved_sources, preview.request.context_entrypoints,
+                                            preview.request.include_history, preview.request.history_ref)
+                _fresh(preview)
+                known_backup_paths = (_scope_path(preview.request).parent, _scope_path(preview.request))
+                scope_owned = _reserve_scope(preview.request)
                 snapshot = S.create_snapshot(request)
-                if snapshot.status not in ("complete", "unchanged") or snapshot.snapshot_path is None:
+                known_backup_paths += tuple(path for path in (snapshot.snapshot_path, snapshot.last_locator)
+                                            if path is not None)
+                if (snapshot.status != "complete" or snapshot.snapshot_path is None
+                        or snapshot.last_verified_snapshot is not None or not _matches(scope_owned)):
                     _fail("first_snapshot_incomplete")
                 manifest_path = snapshot.snapshot_path / "manifest.json"
                 manifest = S.verify_snapshot(manifest_path, request.settings.identity, request.settings.limits)
                 if manifest.completion != "complete":
                     _fail("first_snapshot_incomplete")
+                # Root timestamps cannot detect transient membership across our
+                # own lock. Every captured file must match previewed bytes/mode.
+                expected = {item.payload.relpath: item.payload for item in preview.fingerprints
+                            if item.payload is not None}
+                if (any(expected.get(item.relpath) != item for item in manifest.files)
+                        or manifest.context_entrypoints != request.context_entrypoints):
+                    _fail("stale_preview")
                 with _directory(manifest_path.parent) as fd:
                     manifest_bytes, _ = _read_file(fd, manifest_path.name, C.MANIFEST_MAX_BYTES)
                 manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
                 if manifest_hash != snapshot.manifest_sha256:
                     _fail("integrity_mismatch")
-                _fresh(preview)
+                captured = _CapturedScope(snapshot.snapshot_path, manifest_hash,
+                                          _scope_fingerprints(preview.request, snapshot.snapshot_path, manifest_hash))
+                _fresh(preview, captured)
                 documents = _documents(preview.request, manifest_path)
+                # Establish recovery metadata before the first private write.
+                # Failure paths replace its ownership lists with actual progress.
+                receipt = InstalledState(request.settings.identity, project, preview.request.integration_root,
+                                         qualified.identity, manifest_path, manifest_hash, (), (), (), capabilities)
                 for mutation, document in zip(preview.mutations, documents, strict=True):
                     _prepare_parent(mutation.path.parent, project, directories, parents)
                     _write_new(mutation.path, _encoded(document), files)
                 if (not all(_matches(item) for item in (*parents, *files))
-                        or S.inspect_storage(storage.root) != storage):
+                        or S.inspect_storage(storage.root) != storage
+                        or not _matches(scope_owned)
+                        or _scope_fingerprints(preview.request, captured.snapshot, captured.manifest_sha256)
+                        != captured.fingerprints):
                     _fail("scope_changed")
                 receipt = InstalledState(request.settings.identity, project, preview.request.integration_root,
                                        qualified.identity, manifest_path, manifest_hash, tuple(files),
@@ -677,9 +847,9 @@ def apply_setup(preview: SetupPreview, *, approval: bool = False) -> SetupResult
         return SetupResult("configured", tuple(item.path for item in files), receipt,
                            capabilities=capabilities)
     except C.ContinuityError as error:
-        return SetupResult("blocked", blockers=(error.code,), capabilities=capabilities)
+        return blocked(error.code)
     except (OSError, KeyboardInterrupt):
-        return SetupResult("blocked", blockers=("setup_interrupted",), capabilities=capabilities)
+        return blocked("setup_interrupted")
 
 
 def _validate_receipt(receipt: InstalledState) -> None:
