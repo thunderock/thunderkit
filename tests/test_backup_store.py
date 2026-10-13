@@ -335,7 +335,9 @@ class BackupStoreTests(Fixture):
         shutil.rmtree(self.project)  # Only this test-owned disposable checkout.
         recovered = self.base / "recovered"
         recovered.mkdir()
-        self.git("init", "--initial-branch=work", f"--template={self.template}", cwd=recovered)
+        # Import into a bare repository: Git refuses fetching into the branch
+        # currently checked out in a non-bare repository, regardless of S.
+        self.git("init", "--bare", "--initial-branch=work", f"--template={self.template}", cwd=recovered)
         self.git("bundle", "verify", str(bundle), cwd=recovered)
         self.git("fetch", "--no-tags", str(bundle), "refs/heads/work:refs/heads/work", cwd=recovered)
         self.assertEqual(self.git("rev-list", "--parents", "refs/heads/work", cwd=recovered), expected)
