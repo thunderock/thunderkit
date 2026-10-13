@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import hashlib
 import importlib
 import json
 import os
@@ -264,6 +265,70 @@ class CheckpointInstallTests(unittest.TestCase):
         self.assertNotIn(scope, result.retained_paths)
         self.assertNotIn(scope.parent, result.retained_paths)
         self.assertEqual((scope / "foreign-note.md").read_text(), "Concurrent owner\n")
+
+    def test_default_policy_file_count_does_not_strand_setup_claim(self) -> None:
+        source = self.project / "saved-documents"
+        source.mkdir()
+        count = 8000
+        for number in range(count):
+            (source / f"context-document-{number:05d}.md").write_text("safe\n")
+        request = replace(self.request, approved_sources=(source,))
+        self.assertLess(count, self.settings.limits.max_files)
+        preview = self.api.preview_setup(request)
+        self.assertEqual(preview.status, "approval_required", preview.blockers)
+        result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "configured",
+                         "H6-B1: a legal file count must not strand a pending ownership record")
+        self.assertIsNotNone(result.receipt)
+        local = json.loads(self.private.read_text())
+        manifest = self.s.verify_snapshot(Path(local["latest_context"]["path"]),
+                                          self.identity, self.settings.limits)
+        self.assertEqual(manifest.completion, "complete")
+        self.assertEqual({entry.relpath for entry in manifest.files},
+                         {f"saved-documents/context-document-{number:05d}.md" for number in range(count)})
+        self.assertTrue(all(entry.size == 5 for entry in manifest.files))
+        self.assertFalse((self.backup / "projects/install-fixture/.setup-claim-pending").exists())
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
+
+    def test_individually_valid_retained_snapshots_do_not_exhaust_resume_budget(self) -> None:
+        source = self.project / "saved-documents"
+        source.mkdir()
+        data = b"x" * self.settings.limits.max_file_bytes
+        for number in range(6):
+            (source / f"payload-{number}.txt").write_bytes(data)
+        notes = source / "notes.md"
+        notes.write_bytes(b"API_TOKEN=" + b"ghp_" + b"Q" * 36 + b"\n")
+        request = replace(self.request, approved_sources=(source,),
+                          context_entrypoints=("saved-documents/notes.md",))
+        preview = self.api.preview_setup(request)
+        self.assertEqual(preview.status, "approval_required", preview.blockers)
+        first = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(first.status, "blocked")
+        self.assertIn("first_snapshot_incomplete", first.blockers)
+        scope = self.backup / "projects/install-fixture"
+        prior = {str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                 for path in (scope / "snapshots").rglob("*") if path.is_file()}
+        self.assertTrue(prior)
+        notes.write_text("# Repaired saved context\n")
+        result = self.api.resume_setup(request, approval=True)
+        manifests = [self.s.verify_snapshot(path, self.identity, self.settings.limits)
+                     for path in (scope / "snapshots").iterdir()]
+        self.assertEqual(len(manifests), 2)
+        self.assertEqual({manifest.completion for manifest in manifests}, {"partial", "complete"})
+        sizes = [sum(entry.size for entry in manifest.files) + manifest.history.size
+                 for manifest in manifests]
+        self.assertTrue(all(size <= self.settings.limits.max_snapshot_bytes for size in sizes))
+        self.assertGreater(sum(sizes), self.settings.limits.max_snapshot_bytes)
+        for relative, digest in prior.items():
+            self.assertEqual(hashlib.sha256((scope / relative).read_bytes()).hexdigest(), digest,
+                             "Resume must preserve every previous snapshot byte")
+        self.assertEqual(result.status, "configured",
+                         "H6-B2: retained snapshots must not consume the next snapshot budget")
+        local = json.loads(self.private.read_text())
+        latest = self.s.verify_snapshot(Path(local["latest_context"]["path"]),
+                                        self.identity, self.settings.limits)
+        self.assertEqual(latest.completion, "complete")
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
 
     def test_whole_committed_project_setup_saves_selected_context_and_history(self) -> None:
         self.git("config", "user.name", "Fixture")
