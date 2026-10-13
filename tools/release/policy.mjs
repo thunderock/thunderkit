@@ -254,9 +254,14 @@ export function reconcile(prepared, live) {
       if (!reservation.ok) return reservation;
       if (reservation.value !== null) {
         const completion = live.baseTarget === null ? failure("E_BASE_INCOMPLETE") : targetState(reservation.value, live.baseTarget);
-        if (!completion.ok || completion.value !== "complete" || !sameTag(base, live.baseTarget?.gitTag ?? null)
-            || !sameNpm(registry.versions[base.version] ?? null, live.baseTarget?.npm ?? null)
-            || !channelState(reservation.value.release, registry, true).ok) return failure("E_BASE_INCOMPLETE");
+        if (!completion.ok || !sameTag(base, live.baseTarget?.gitTag ?? null)
+            || !sameNpm(registry.versions[base.version] ?? null, live.baseTarget?.npm ?? null)) return failure("E_BASE_INCOMPLETE");
+        // A new source may advance past a tag-only failure, never a partial publication.
+        // Keep the reservation immutable; older retries cannot publish below the new tag.
+        const unpublishedAncestor = completion.value === "reserved" && live.git.baseRelation === "ancestor"
+          && base.sha !== request.sourceSha && order(release.version, base.version) === 1;
+        if ((completion.value !== "complete" && !unpublishedAncestor)
+            || !channelState(reservation.value.release, registry, completion.value === "complete").ok) return failure("E_BASE_INCOMPLETE");
       }
     }
   }

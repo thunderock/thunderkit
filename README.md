@@ -312,9 +312,14 @@ or republishing a version. npm presence alone is insufficient: SHA-512 must matc
 A matching historical npm version may finish its GitHub Release after a newer channel has
 superseded it, without moving the channel back. Missing, invalid or rewound channels stop recovery;
 there is no automatic channel repair or token fallback. Foreign packages, conflicting tags and
-inconsistent GitHub releases also stop. An unfinished managed base blocks the next automatic
-bump. A fresh stale automatic source skips; a fresh stale manual source fails. Reserved retries
-must still belong to master history and cannot publish a missing old version over newer `latest`.
+inconsistent GitHub releases also stop. A new automatic release may advance past a valid
+ancestor reservation only when current npm metadata and an exact GitHub Release lookup both
+confirm that version was never published. The old tag stays immutable and is not reused;
+version selection still advances above it. A partial publication (npm present but GitHub
+missing), inconsistent identity, or unavailable evidence still blocks with `E_BASE_INCOMPLETE`.
+A fresh stale automatic source skips; a fresh stale manual source fails. Reserved retries
+must still belong to master history and cannot publish a missing old version below a newer
+stable tag or over newer `latest`. The shared release concurrency group serializes these writers.
 Expired artifacts require a full same-run rerun with identical bytes. Unreproducible bytes or an
 expired GitHub rerun window require separately authorized operator recovery, not today's source.
 

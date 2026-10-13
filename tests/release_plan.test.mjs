@@ -119,7 +119,7 @@ test("prerelease tags at HEAD do not suppress the automatic stable bump", async 
   assert.ok(result.ok && result.value.release?.version === "0.1.2");
 });
 
-test("registry state vetoes candidates: latest ahead of Git, an unfinished managed base and a failed read", async () => {
+test("registry state vetoes candidates: latest ahead of Git, a partially published managed base and a failed read", async () => {
   const ahead = fixture();
   tag(ahead, "v0.1.1", null);
   commit(ahead, "fix: patch");
@@ -132,7 +132,9 @@ test("registry state vetoes candidates: latest ahead of Git, an unfinished manag
   const reservation = { schema: "thunderkit.release/v1", repository: "thunderock/thunderkit", sourceSha: managed.sha, release: { ...release, version: "0.1.1", tag: "v0.1.1", base: null, bump: null, commitCount: 0, origin: { mode: "auto", runId: "40" } } };
   tag(managed, "v0.1.1", JSON.stringify(reservation));
   commit(managed, "fix: after reserved base");
-  const incomplete = await plan(managed);
+  const partialSystem = systemDrivers();
+  partialSystem.hooks.get = packument({ latest: "0.1.1" }, { "0.1.1": release.tarball.integrity });
+  const incomplete = await plan(managed, partialSystem);
   assert.equal(incomplete.result.ok ? null : incomplete.result.error.code, "E_BASE_INCOMPLETE");
   assert.deepEqual(remoteReads(incomplete.calls).filter((read) => read.startsWith("gh")).sort(), ["gh:repos/thunderock/thunderkit/releases/tags/v0.1.1", "gh:repos/thunderock/thunderkit/releases/tags/v0.1.2"]);
   assert.ok(reserved.name === "v0.1.2");
