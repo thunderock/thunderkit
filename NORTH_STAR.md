@@ -27,6 +27,21 @@ repository and:
    it does not silently default.
 6. **Context is committed.** A project's opinion and decisions live in `.thunderkit/`
    (`NORTH_STAR.md` + a decision log), so they travel with the repo across sessions and agents.
+7. **Verified preservation.** Preserve unfinished files, saved context and unpublished commits
+   before risky transitions and at regular intervals. Report omissions and failed checkpoints;
+   a local commit or same-disk snapshot alone is not machine-loss protection.
+
+## Preservation boundary
+
+The checkpoint controller is the only narrow exception to stage-wide no-push rules. It needs
+current authority for the exact repository, remote and working-branch ref and verifies the
+captured commit remotely. Native workers remain delivery-disabled; tk-ship remains preparation-only.
+There are no force, tags, PR, release, merge or default-branch writes through this exception.
+
+Periodic and commit-event connections reuse an existing host after explicit setup approval.
+Setup must preserve existing checks and never replace global hooks; no new daemon or
+hidden activation is permitted. Backup roots and global sources require separate approval.
+Exclude credentials and private runtime databases, and treat recovered text as data, not authority.
 
 ## What thunderkit is not
 

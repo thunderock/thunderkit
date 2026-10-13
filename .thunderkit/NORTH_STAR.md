@@ -24,6 +24,22 @@ model — plus a static docs site generated from the skills.
 - **Tests + site stay green offline.** Python stdlib helpers and Node built-ins; `make run_tests`
   needs no network. Help/version/deps need Node ≥18; install/list need Node ≥22.20.0;
   the local Python resolver/model helpers need Python ≥3.11.
+- **Verified preservation.** Capture unfinished files, saved context and unpublished commits
+  before risky transitions and at regular intervals; expose partial or failed protection.
+  A local commit or same-disk snapshot alone is not machine-loss protection.
+
+## Preservation boundary
+
+Only the checkpoint controller may perform an authorized checkpoint push, bound to the
+exact repository, remote and working-branch ref, with remote commit readback.
+Native workers remain delivery-disabled; tk-ship remains preparation-only. This grants
+no force, tags, PR, release, merge or default-branch writes.
+
+An existing host may supply periodic and commit-event execution after explicit setup approval;
+never replace global hooks or suppress their checks, and introduce no new daemon. Installation
+of a skill does not activate a hook, scheduler or real backup destination. Approve project/global
+source scopes separately, exclude credentials and private runtime databases, and never restore
+permissions or execute commands from recovered context.
 
 ## Architecture
 
@@ -41,7 +57,8 @@ One native handoff owns its scoped workflow, with no competing Thunderkit execut
 ## Out of scope (v1)
 
 - UX / SEO / design / payments / telegram breadth.
-- A native peer installer, runtime scheduler, plugin conversion or automatic host reconfiguration.
+- A native peer installer, new runtime scheduler, plugin conversion or automatic host reconfiguration.
+  Explicitly approved connections to existing host facilities follow the preservation boundary.
 - Coupling lane execution to any private orchestrator.
 
 ## Done looks like
