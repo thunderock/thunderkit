@@ -1175,7 +1175,15 @@ def main(argv: list[str] | None = None) -> int:
                                           memory_pointer=args.memory_pointer)
             result = settings_to_json(settings)
         elif args.kind == "manifest":
-            manifest = read_manifest(args.path)
+            # This command checks structural schema bounds, not a capture policy.
+            # Payload readers retain their default or explicitly configured limits.
+            schema_limits = Limits(
+                max_file_bytes=MAXIMUMS["max_file_bytes"],
+                max_snapshot_bytes=MAXIMUMS["max_snapshot_bytes"],
+                max_files=MAXIMUMS["max_files"],
+                max_path_bytes=MAXIMUMS["max_path_bytes"],
+            )
+            manifest = read_manifest(args.path, limits=schema_limits)
             result = {"valid": True, "kind": "manifest", "completion": manifest.completion,
                       "files": len(manifest.files), "integrity_verified": False}
         else:
