@@ -298,6 +298,13 @@ output, and checks request/source bindings, tarball size and SHA-512 integrity. 
 an immutable annotated tag binding source, version, channel and tarball integrity, publishes
 that same tarball through [npm OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers)
 with provenance, and creates the GitHub Release only after registry identity checks succeed.
+After an accepted upload, it checks availability every 30 seconds for up to 30 minutes:
+[npm scans new versions before making them available](https://github.blog/changelog/2026-07-28-npm-publish-time-malware-scanning-and-dual-use-metadata/).
+It never repeats the upload while waiting. Missing visibility at the deadline fails with
+`E_REGISTRY_PENDING`, not a false integrity mismatch; conflicting bytes, tags, channels or
+failed reads still stop immediately. The publish job has a 50-minute total timeout, including
+setup, the bounded upload and this wait. A pending timeout is not proof the version was never
+uploaded; inspect its availability before retrying or advancing to another version.
 Tag creation uses command-scoped bot identity; no persistent Git credentials or npm token is used.
 
 **Retries and recovery.** Rerun the original workflow run after an interruption, rather than

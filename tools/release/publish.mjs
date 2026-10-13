@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
+import { performance } from "node:perf_hooks";
 import { decodeRequest, parseRequest, failure, success, rejectVariant } from "./request.mjs";
 import { decodePlan } from "./record.mjs";
 import { reconcile } from "./policy.mjs";
@@ -77,8 +79,13 @@ async function perform(prepared, step, bundle, transport, decision, live) {
   }
 }
 
-/** Run the finite tag → npm → GitHub lifecycle once, refreshing facts after each accepted mutation and stopping at the first error. @param {Request} request @param {Bundle} bundle @param {Transport} transport @returns {Promise<Result<PublishOutcome>>} */
-export async function publishRelease(request, bundle, transport) {
+/** @typedef {Readonly<{now:()=>number, sleep:(milliseconds:number)=>Promise<void>}>} Clock */
+/** @type {Clock} */
+const clock = Object.freeze({ now: () => performance.now(), sleep: async (milliseconds) => { await sleep(milliseconds); } });
+const registryWaitMs = 30 * 60_000;
+
+/** Run tag → npm → GitHub once, allowing accepted npm uploads to finish scanning before GitHub. @param {Request} request @param {Bundle} bundle @param {Transport} transport @param {Clock} [timing] @returns {Promise<Result<PublishOutcome>>} */
+export async function publishRelease(request, bundle, transport, timing = clock) {
   const input = decodeRequest(request);
   if (!input.ok) return input;
   const record = readBundle(bundle, input.value);
@@ -109,7 +116,16 @@ export async function publishRelease(request, bundle, transport) {
     }
     if (!result.ok) return result;
     performedSteps.push(step);
+    const deadline = timing.now() + registryWaitMs;
     observed = await observe(prepared, transport);
+    // Upload acceptance is not public availability: npm scans before serving the version.
+    // Retry reads only, never the upload; every observation retains all integrity checks.
+    while (step === "npm" && observed.ok && observed.value.decision.steps[0] === "npm") {
+      const remaining = deadline - timing.now();
+      if (remaining <= 0) return failure("E_REGISTRY_PENDING");
+      await timing.sleep(Math.min(30_000, remaining));
+      observed = await observe(prepared, transport);
+    }
     if (!observed.ok) return observed;
     if (observed.value.decision.steps.some((remaining) => remaining === step)) return failure(step === "tag" ? "E_GIT" : step === "npm" ? "E_REGISTRY_INTEGRITY" : "E_GH");
   }

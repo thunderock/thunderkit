@@ -121,7 +121,7 @@ function tools(w) {
   for (const job of ['gate', 'publish']) {
     assert.equal(step(w, job, 'environment').run, environmentCommand);
     assert.equal(w.jobs[job]['runs-on'], 'ubuntu-24.04');
-    assert.ok(Number(w.jobs[job]['timeout-minutes']) <= 30);
+    assert.equal(Number(w.jobs[job]['timeout-minutes']), job === 'gate' ? 30 : 50);
     for (const id of ['checkout', 'node', 'python']) assert.equal(step(w, job, id).uses, pins[id]);
     assert.deepEqual(step(w, job, 'checkout').with, {
       ref: '${{ github.sha }}', 'fetch-depth': '0', 'fetch-tags': 'true', 'persist-credentials': 'false', 'set-safe-directory': 'false',
@@ -176,6 +176,11 @@ function handoff(w) {
   assert.equal(step(w, 'publish', 'download').uses, pins.download);
   assert.deepEqual(step(w, 'publish', 'download').with, { 'artifact-ids': '${{ needs.gate.outputs.artifact_id }}', path: '${{ runner.temp }}/release-bundle', 'merge-multiple': 'true', 'digest-mismatch': 'error' });
 }
+
+test('publish job leaves room for a thirty-minute availability gate plus upload and setup', () => {
+  const w = extract(original);
+  assert.equal(Number(w.jobs.publish['timeout-minutes']), 50);
+});
 
 for (const check of [guards, permissions, tools, handoff]) {
   test(`Given the release workflow, when checking ${check.name}, then its scoped contract holds`, () => check(extract(original)));

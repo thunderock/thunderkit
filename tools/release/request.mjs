@@ -1,7 +1,7 @@
 // @ts-check
 import { parseSemver, validateNpmTag } from "./versions.mjs";
 
-/** @typedef {"E_UNTRUSTED_CONTEXT"|"E_INVALID_VERSION"|"E_INVALID_NPM_TAG"|"E_NPM_TAG_WITHOUT_VERSION"|"E_VERSION_OVERFLOW"|"E_RECORD"|"E_STALE_SOURCE"|"E_VERSION_TAKEN"|"E_AMBIGUOUS_RESUME"|"E_TAG_NOT_ANCESTOR"|"E_RESUME_CHANNEL"|"E_NO_BASE"|"E_BASE_INCOMPLETE"|"E_ARTIFACT"|"E_CHANNEL_STATE"|"E_STALE_TARGET"|"E_CHANNEL_DRIFT"|"E_GH_CONFLICT"|"E_REGISTRY_INTEGRITY"|"E_STALE_PLAN"|"E_TOOLCHAIN"|"E_GIT"|"E_PACK"|"E_REGISTRY"|"E_GH"} ErrorCode */
+/** @typedef {"E_UNTRUSTED_CONTEXT"|"E_INVALID_VERSION"|"E_INVALID_NPM_TAG"|"E_NPM_TAG_WITHOUT_VERSION"|"E_VERSION_OVERFLOW"|"E_RECORD"|"E_STALE_SOURCE"|"E_VERSION_TAKEN"|"E_AMBIGUOUS_RESUME"|"E_TAG_NOT_ANCESTOR"|"E_RESUME_CHANNEL"|"E_NO_BASE"|"E_BASE_INCOMPLETE"|"E_ARTIFACT"|"E_CHANNEL_STATE"|"E_STALE_TARGET"|"E_CHANNEL_DRIFT"|"E_GH_CONFLICT"|"E_REGISTRY_INTEGRITY"|"E_REGISTRY_PENDING"|"E_STALE_PLAN"|"E_TOOLCHAIN"|"E_GIT"|"E_PACK"|"E_REGISTRY"|"E_GH"} ErrorCode */
 /** @typedef {Readonly<{ok:false, error:Readonly<{code:ErrorCode, message:string}>}>} Failure */
 /** @template T @typedef {Readonly<{ok:true, value:T}>|Failure} Result */
 /** @typedef {Readonly<{repository:string, ref:string, event:"push"|"workflow_dispatch", sourceSha:string, runId:string, attempt:string, inputVersion:string, inputNpmTag:string}>} Request */
