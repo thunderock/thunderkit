@@ -192,6 +192,79 @@ class CheckpointInstallTests(unittest.TestCase):
         self.assertFalse(self.private.exists())
         self.assertFalse((self.integration / "config.json").exists())
 
+    def test_committed_repository_without_history_approval_is_blocked_before_reservation(self) -> None:
+        self.git("config", "user.name", "Fixture")
+        self.git("config", "user.email", "fixture@example.invalid")
+        self.git("add", "--all")
+        self.git("commit", "-m", "committed fixture")
+        preview = self.api.preview_setup(self.request)
+        self.assertEqual(preview.status, "blocked")
+        self.assertIn("history_approval_required", preview.blockers)
+        result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertFalse((self.backup / "projects/install-fixture").exists())
+        self.assertFalse(self.private.exists())
+
+    def test_failed_first_snapshot_can_resume_with_fresh_approval_without_deleting_backup(self) -> None:
+        notes = self.project / "notes.md"
+        notes.write_bytes(b"API_TOKEN=" + b"ghp_" + b"Q" * 36 + b"\n")
+        first = self.api.apply_setup(self.api.preview_setup(self.request), approval=True)
+        self.assertEqual(first.status, "blocked")
+        self.assertIn("first_snapshot_incomplete", first.blockers)
+        scope = self.backup / "projects/install-fixture"
+        snapshots = scope / "snapshots"
+        preserved = {str(path.relative_to(scope)): path.read_bytes()
+                     for path in snapshots.rglob("*") if path.is_file()}
+        self.assertTrue(preserved, "Keep the partial snapshot, not a fabricated recovery path")
+        notes.write_text("# Repaired saved context\n")
+        resume = getattr(self.api, "resume_setup", None)
+        self.assertTrue(callable(resume), "Missing explicitly approved setup resumption")
+        assert callable(resume)
+        denied = resume(self.request)
+        self.assertEqual(denied.status, "approval_required")
+        self.assertFalse(self.private.exists())
+        result = resume(self.request, approval=True)
+        self.assertEqual(result.status, "configured", result.blockers)
+        self.assertIsNotNone(result.receipt)
+        for relative, data in preserved.items():
+            self.assertEqual((scope / relative).read_bytes(), data, "Resumption must preserve prior backup data")
+        local = json.loads(self.private.read_text())
+        manifest = self.s.verify_snapshot(Path(local["latest_context"]["path"]), self.identity, self.settings.limits)
+        self.assertEqual(manifest.completion, "complete")
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
+
+    def test_resume_refuses_a_foreign_namespace_without_installation_claim(self) -> None:
+        scope = self.backup / "projects/install-fixture"
+        scope.mkdir(parents=True)
+        marker = scope / "foreign-note.md"
+        marker.write_text("Owned by another operation\n")
+        resume = getattr(self.api, "resume_setup", None)
+        self.assertTrue(callable(resume), "Missing explicitly approved setup resumption")
+        assert callable(resume)
+        result = resume(self.request, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("resume_unavailable", result.blockers)
+        self.assertEqual(marker.read_text(), "Owned by another operation\n")
+        self.assertFalse(self.private.exists())
+        self.assertEqual(set(scope.iterdir()), {marker})
+
+    def test_failed_namespace_reservation_does_not_report_foreign_or_shared_paths_as_retained(self) -> None:
+        preview = self.api.preview_setup(self.request)
+        original = self.api._reserve_scope
+        scope = self.backup / "projects/install-fixture"
+
+        def compete(request: object) -> object:
+            scope.mkdir(parents=True)
+            (scope / "foreign-note.md").write_text("Concurrent owner\n")
+            return original(request)
+
+        with patch.object(self.api, "_reserve_scope", side_effect=compete):
+            result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertNotIn(scope, result.retained_paths)
+        self.assertNotIn(scope.parent, result.retained_paths)
+        self.assertEqual((scope / "foreign-note.md").read_text(), "Concurrent owner\n")
+
     def test_whole_committed_project_setup_saves_selected_context_and_history(self) -> None:
         self.git("config", "user.name", "Fixture")
         self.git("config", "user.email", "fixture@example.invalid")
