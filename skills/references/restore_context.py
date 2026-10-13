@@ -32,7 +32,8 @@ def _fail(code: str) -> NoReturn:
         "unsafe_path": "The selected context path cannot be read safely.",
         "read_budget_exceeded": "The selected context exceeds the context byte budget.",
         "invalid_context": "The selected context is not a stable UTF-8 context document.",
-        "approval_required": "Export requires current explicit approval before writing.",
+        "approval_required": "Export requires current explicit approval before reading or writing.",
+        "preview_required": "Export requires the exact manifest SHA-256 from the approved preview.",
         "destination_not_empty": "Export requires a new or empty destination directory.",
         "destination_changed": "The export destination changed; recovery was not completed.",
         "integrity_mismatch": "The selected snapshot changed or failed integrity verification.",
@@ -320,7 +321,8 @@ def export_preview(source: Path, destination: Path, identity: C.ScopeIdentity,
     """Verify and inspect without creating destination directories or grants.
 
     A preview is not a persisted capability: callers must obtain current
-    approval for the exact source, scope and destination before export.
+    approval for the exact source, scope and destination before export, and
+    supply this preview's manifest_sha256 to bind the approved content.
     """
     try:
         manifest, digest = _verified_export(source, identity, limits)
@@ -604,20 +606,30 @@ def _history_export(bundle: bytes, history: C.HistoryRecord,
 
 
 def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
-                    limits: C.Limits = C.Limits(), *, approval: bool = False) -> C.ExportResult:
+                    limits: C.Limits = C.Limits(), *, approval: bool = False,
+                    expected_manifest_sha256: str | None = None) -> C.ExportResult:
     """Export manifest-owned files and bundled history without executing text.
 
     Approval must come from the live caller, not metadata or preview contents.
+    The caller supplies the exact prior preview digest as a content binding,
+    never as approval or origin trust; do not normalize or infer that digest.
     Stage the entire bounded payload in memory and reverify the exact manifest
     before destination creation. Keep directory/file descriptors until readback
     and cleanup finish; a replaced ancestor cannot redirect subsequent writes.
     """
     if approval is not True:
         _fail("approval_required")
+    if expected_manifest_sha256 is None:
+        _fail("preview_required")
+    if (not isinstance(expected_manifest_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_manifest_sha256) is None):
+        _fail("invalid_config")
     try:
         preview = export_preview(source, destination, identity, limits)
+        if preview.manifest_sha256 != expected_manifest_sha256:
+            _fail("integrity_mismatch")
         manifest, digest = _verified_export(source, identity, limits)
-        if digest != preview.manifest_sha256:
+        if digest != expected_manifest_sha256:
             _fail("integrity_mismatch")
         payload: dict[str, bytes] = {}
         remaining = limits.max_snapshot_bytes
@@ -635,7 +647,8 @@ def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
         if manifest.history.status == "bundled":
             bundle = S.read_history(source, identity, limits)
             git_files, git_payload = _history_export(bundle, manifest.history, limits)
-        if _verified_export(source, identity, limits) != (manifest, digest):
+        final_manifest, final_digest = _verified_export(source, identity, limits)
+        if final_manifest != manifest or final_digest != expected_manifest_sha256:
             _fail("integrity_mismatch")
         # No remote protection is inferred. Complete requires recovery of both
         # the full payload and, whenever recorded, its bundled branch history.
@@ -706,7 +719,7 @@ def main(argv: list[str] | None = None) -> int:
         description="Read-only export preview, not approval. All paths must be literal absolute paths.",
     )
     export = commands.add_parser(
-        "export", allow_abbrev=False, help="Export only with fresh --approve; never execute recovered files",
+        "export", allow_abbrev=False, help="Export only with fresh --approve and the exact preview digest; never execute recovered files",
         description="Export verified files without activation or execution. All paths must be literal absolute paths.",
     )
     for command in (load, preview, export):
@@ -723,6 +736,8 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--destination", type=_cli_path, required=True)
     export.add_argument("--approve", action="store_true", default=False,
                         help="Fresh approval for this exact source, scope and new/empty destination only")
+    export.add_argument("--expect-manifest-sha256",
+                        help="Exact lowercase 64-hex manifest_sha256 from the approved preview; content binding, not approval or origin trust")
     arguments = list(sys.argv[1:] if argv is None else argv)
     if not arguments or (arguments[0].startswith("-") and arguments[0] not in ("-h", "--help")):
         arguments.insert(0, "load")
@@ -745,7 +760,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.command == "preview":
                 result = export_preview(args.context, args.destination, identity)
             else:
-                result = export_snapshot(args.context, args.destination, identity, approval=args.approve)
+                result = export_snapshot(args.context, args.destination, identity, approval=args.approve,
+                                         expected_manifest_sha256=args.expect_manifest_sha256)
         encoded = json.dumps(asdict(result), default=_json_path, ensure_ascii=True, allow_nan=False)
     except C.ContinuityError as error:
         print(json.dumps({"error": {"code": error.code, "detail": error.detail}}, ensure_ascii=True), file=sys.stderr)
