@@ -1,12 +1,15 @@
-"""Read-only, model-free first-use setup preview; no installation authority.
+"""Model-free private setup, explicitly approved in-process for one preview.
 
-Only an unconnected project preview is currently available. Proposed private
-writes are not performed, storage is not qualified, and no receipt or setting
-can grant setup or publication permission. Activation needs a later API slice.
+A receipt records ownership, never authority. Setup captures once and leaves
+periodic/ref-event activation and publication disconnected. Saved settings cannot
+supply approval to either installer or uninstall.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
+import errno
 import hashlib
 import json
 import os
@@ -22,11 +25,13 @@ from typing import Literal, NoReturn, TypeAlias
 import backup_store as S
 import continuity_config as C
 
-SetupStatus: TypeAlias = Literal["approval_required", "blocked"]
+SetupStatus: TypeAlias = Literal["approval_required", "blocked", "configured", "removed"]
 CapabilityName: TypeAlias = Literal["periodic", "ref_events", "auto_push", "full_target"]
 CapabilityStatus: TypeAlias = Literal["supported", "disabled", "blocked"]
 _GIT_TIMEOUT = 5.0
 _GIT_BYTES = 1024 * 1024
+_DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+_LOCK = ".thunderkit-setup.lock"
 
 
 @dataclass(frozen=True)
@@ -54,6 +59,36 @@ class Capability:
 
 
 @dataclass(frozen=True)
+class SetupFingerprint:
+    path: Path
+    digest: str
+
+
+@dataclass(frozen=True)
+class OwnedPath:
+    path: Path
+    device: int
+    inode: int
+    uid: int
+    mode: int
+    content_sha256: str | None = None
+
+
+@dataclass(frozen=True)
+class InstalledState:
+    identity: C.ScopeIdentity
+    project_root: Path
+    integration_root: Path
+    storage: C.StorageIdentity
+    manifest_path: Path
+    manifest_sha256: str
+    files: tuple[OwnedPath, ...]
+    directories: tuple[OwnedPath, ...]
+    parents: tuple[OwnedPath, ...]
+    capabilities: tuple[Capability, ...]
+
+
+@dataclass(frozen=True)
 class SetupPreview:
     request: SetupRequest
     storage: C.StorageIdentity | None
@@ -62,16 +97,17 @@ class SetupPreview:
     missing_approvals: tuple[str, ...]
     blockers: tuple[str, ...]
     status: SetupStatus
+    fingerprints: tuple[SetupFingerprint, ...] = ()
 
 
 @dataclass(frozen=True)
 class SetupResult:
     status: SetupStatus
     changed_paths: tuple[Path, ...] = ()
-    # This slice cannot issue an installation receipt, even with approval=True.
-    receipt: None = None
+    receipt: InstalledState | None = None
     blockers: tuple[str, ...] = ()
     capabilities: tuple[Capability, ...] = ()
+    retained_paths: tuple[Path, ...] = ()
 
 
 def _fail(code: str) -> NoReturn:
@@ -221,12 +257,39 @@ def _new_private_path(path: Path, project: Path) -> None:
                 _fail("private_storage_readonly")
 
 
-def _mutation(path: Path, document: C.JsonObject) -> SetupMutation:
+def _encoded(document: C.JsonObject) -> bytes:
     content = json.dumps(document, sort_keys=True, separators=(",", ":"),
                          ensure_ascii=True, allow_nan=False).encode("utf-8") + b"\n"
-    if len(content) > C.CONFIG_MAX_BYTES:
-        _fail("invalid_config")
-    return SetupMutation(path, "create", 0o600, hashlib.sha256(content).hexdigest())
+    C.decode_json(content, max_bytes=C.CONFIG_MAX_BYTES)
+    return content
+
+
+def _mutation(path: Path, document: C.JsonObject) -> SetupMutation:
+    return SetupMutation(path, "create", 0o600, hashlib.sha256(_encoded(document)).hexdigest())
+
+
+def _documents(request: SetupRequest, manifest: Path | None = None) -> tuple[C.JsonObject, C.JsonObject]:
+    settings = request.settings
+    document: C.JsonObject = {
+        "schema": 1, "kind": "project-settings",
+        "identity": {"kind": settings.identity.kind, "id": settings.identity.id},
+        "project_root": str(settings.project_root), "backup_root": str(settings.backup_root),
+    }
+    if manifest is not None:
+        document["latest_context"] = {
+            "identity": {"kind": settings.identity.kind, "id": settings.identity.id},
+            "path": str(manifest),
+        }
+        settings = replace(settings, context_path=manifest, context_source="project")
+    C.validate_continuity_document(document, kind="project-settings")
+    # C owns settings validation. The inert integration envelope has no C schema
+    # kind of its own; its nested settings are constructed from C's typed API.
+    integration_document: C.JsonObject = {
+        "schema": 1, "kind": "checkpoint-settings", "settings": C.settings_to_json(settings),
+        "approved_sources": [str(path) for path in request.approved_sources],
+        "scheduler": request.scheduler, "per_commit": request.per_commit,
+    }
+    return document, integration_document
 
 
 def _inspect(request: SetupRequest) -> tuple[C.StorageIdentity, tuple[SetupMutation, ...]]:
@@ -283,19 +346,128 @@ def _inspect(request: SetupRequest) -> tuple[C.StorageIdentity, tuple[SetupMutat
     _private_git_check(project, private, integration)
     if S.inspect_storage(backup) != storage:
         _fail("storage_changed")
-    document: C.JsonObject = {
-        "schema": 1, "kind": "project-settings",
-        "identity": {"kind": settings.identity.kind, "id": settings.identity.id},
-        "project_root": str(project), "backup_root": str(backup),
-    }
-    C.validate_continuity_document(document, kind="project-settings")
-    integration_document: C.JsonObject = {
-        "schema": 1, "kind": "checkpoint-settings", "settings": C.settings_to_json(settings),
-        "approved_sources": [str(path) for path in request.approved_sources],
-        "scheduler": request.scheduler, "per_commit": request.per_commit,
-    }
+    document, integration_document = _documents(request)
     return storage, (_mutation(private, document),
                      _mutation(integration / "config.json", integration_document))
+
+
+@contextmanager
+def _directory(path: Path) -> Iterator[int]:
+    C.validate_path_text(str(path), absolute=True)
+    fd = os.open(path.anchor, _DIR)
+    try:
+        for part in path.parts[1:]:
+            child = os.open(part, _DIR, dir_fd=fd)
+            os.close(fd)
+            fd = child
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def _signature(info: os.stat_result) -> tuple[int, ...]:
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_uid, info.st_nlink,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def _read_file(parent: int, name: str, budget: int) -> tuple[bytes, os.stat_result]:
+    before = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or before.st_size > budget:
+        _fail("unsafe_path")
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    try:
+        if _signature(os.fstat(fd)) != _signature(before):
+            _fail("scope_changed")
+        chunks: list[bytes] = []
+        remaining = budget + 1
+        while remaining:
+            chunk = os.read(fd, min(65536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        data = b"".join(chunks)
+        if (len(data) != before.st_size or _signature(os.fstat(fd)) != _signature(before)
+                or _signature(os.stat(name, dir_fd=parent, follow_symlinks=False)) != _signature(before)):
+            _fail("scope_changed")
+        return data, before
+    finally:
+        os.close(fd)
+
+
+def _owned(path: Path, info: os.stat_result, digest: str | None = None) -> OwnedPath:
+    return OwnedPath(path, info.st_dev, info.st_ino, info.st_uid, info.st_mode, digest)
+
+
+def _fingerprints(request: SetupRequest) -> tuple[SetupFingerprint, ...]:
+    """Bound source bytes and config/ignore/hooks state, not only path strings."""
+    project = request.settings.project_root
+    assert project is not None
+    limits = request.settings.limits
+    remaining = limits.max_snapshot_bytes + 4 * _GIT_BYTES
+    count = 0
+    result: list[SetupFingerprint] = []
+
+    def visit(path: Path, recursive: bool = False) -> None:
+        nonlocal remaining, count
+        count += 1
+        if count > limits.max_files + limits.max_sources + 100:
+            _fail("inspection_budget_exceeded")
+        C.validate_path_text(str(path), absolute=True, max_bytes=limits.max_path_bytes)
+        C.safe_path(path)
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            result.append(SetupFingerprint(path, "missing"))
+            return
+        if stat.S_ISDIR(info.st_mode):
+            # Directory membership is separately traversed where relevant. Do
+            # not bind atime or our own lock's effects on parent timestamps.
+            data = repr((info.st_dev, info.st_ino, info.st_uid, info.st_mode)).encode()
+            result.append(SetupFingerprint(path, hashlib.sha256(data).hexdigest()))
+            if recursive:
+                with _directory(path) as fd:
+                    with os.scandir(fd) as entries:
+                        names: list[str] = []
+                        for entry in entries:
+                            names.append(entry.name)
+                            if len(names) + count > limits.max_files + limits.max_sources + 100:
+                                _fail("inspection_budget_exceeded")
+                    for name in sorted(names):
+                        visit(path / name, True)
+            return
+        with _directory(path.parent) as fd:
+            content, info = _read_file(fd, path.name, min(remaining, max(limits.max_file_bytes, _GIT_BYTES)))
+        remaining -= len(content)
+        result.append(SetupFingerprint(path, hashlib.sha256(repr(_signature(info)).encode() + content).hexdigest()))
+
+    paths = {project, project / ".git"}
+    for target in (project / ".thunderkit/continuity.local.json", request.integration_root / "config.json"):
+        paths.add(target)
+        paths.update(parent for parent in target.parents if parent.is_relative_to(project))
+    for path in sorted(paths):
+        visit(path)
+    for relative in (".gitignore", ".thunderkit/config.json", ".thunderkit/continuity.json",
+                     ".git/config", ".git/info/exclude", ".git/index", ".git/HEAD", ".git/packed-refs"):
+        visit(project / relative)
+    visit(project / ".git/refs", True)
+    hooks = project / ".git/hooks"
+    code, raw = _git_read(project, ("config", "--null", "--show-origin", "--no-includes", "--list"))
+    if code:
+        _fail("git_inspection_failed")
+    for record in raw.split(b"\0")[1::2]:
+        key, _, value = record.partition(b"\n")
+        if key.lower() == b"core.hookspath":
+            try:
+                hooks = C.literal_path(value.decode("utf-8"), base=project)
+            except UnicodeError:
+                _fail("unsupported_repository")
+            if not hooks.is_relative_to(project):
+                _fail("unsupported_repository")
+    visit(hooks, True)
+    for source in request.approved_sources:
+        visit(source, True)
+    return tuple(result)
 
 
 def preview_setup(request: SetupRequest) -> SetupPreview:
@@ -308,8 +480,10 @@ def preview_setup(request: SetupRequest) -> SetupPreview:
         blockers.append("ref_events_unavailable")
     storage: C.StorageIdentity | None = None
     mutations: tuple[SetupMutation, ...] = ()
+    fingerprints: tuple[SetupFingerprint, ...] = ()
     try:
         storage, mutations = _inspect(request)
+        fingerprints = _fingerprints(request)
     except C.ContinuityError as error:
         blockers.append(error.code)
     except OSError:
@@ -319,12 +493,241 @@ def preview_setup(request: SetupRequest) -> SetupPreview:
         return SetupPreview(request, storage, (), capabilities, (),
                             tuple(dict.fromkeys(blockers)), "blocked")
     return SetupPreview(request, storage, mutations, capabilities,
-                        ("setup_write",), (), "approval_required")
+                        ("setup_write",), (), "approval_required", fingerprints)
+
+
+def _check_directory(path: Path, info: os.stat_result) -> OwnedPath:
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+            or info.st_mode & 0o022):
+        _fail("unsafe_path")
+    return _owned(path, info)
+
+
+@contextmanager
+def _setup_lock(project: Path) -> Iterator[None]:
+    with _directory(project) as parent:
+        _check_directory(project, os.fstat(parent))
+        try:
+            os.mkdir(_LOCK, 0o700, dir_fd=parent)
+        except FileExistsError:
+            _fail("setup_locked")
+        owned = _owned(project / _LOCK, os.stat(_LOCK, dir_fd=parent, follow_symlinks=False))
+        try:
+            os.fsync(parent)
+            yield
+        finally:
+            info = os.stat(_LOCK, dir_fd=parent, follow_symlinks=False)
+            if _owned(project / _LOCK, info) != owned:
+                _fail("cleanup_unresolved")
+            try:
+                os.rmdir(_LOCK, dir_fd=parent)
+                os.fsync(parent)
+            except OSError:
+                _fail("cleanup_unresolved")
+
+
+def _prepare_parent(path: Path, project: Path, directories: list[OwnedPath],
+                    parents: list[OwnedPath]) -> None:
+    for current in reversed((path, *tuple(p for p in path.parents if p.is_relative_to(project)))):
+        if current != project:
+            with _directory(current.parent) as fd:
+                try:
+                    os.mkdir(current.name, 0o700, dir_fd=fd)
+                except FileExistsError:
+                    pass
+                else:
+                    directories.append(_owned(current, os.stat(current.name, dir_fd=fd, follow_symlinks=False)))
+                    os.fsync(fd)
+        with _directory(current) as fd:
+            record = _check_directory(current, os.fstat(fd))
+        if record not in parents:
+            parents.append(record)
+
+
+def _matches(record: OwnedPath) -> bool:
+    try:
+        with _directory(record.path.parent) as parent:
+            if record.content_sha256 is None:
+                info = os.stat(record.path.name, dir_fd=parent, follow_symlinks=False)
+                return stat.S_ISDIR(info.st_mode) and _owned(record.path, info) == record
+            data, info = _read_file(parent, record.path.name, C.CONFIG_MAX_BYTES)
+            return _owned(record.path, info, hashlib.sha256(data).hexdigest()) == record
+    except (C.ContinuityError, OSError):
+        return False
+
+
+def _write_new(path: Path, data: bytes, files: list[OwnedPath]) -> None:
+    with _directory(path.parent) as parent:
+        _check_directory(path.parent, os.fstat(parent))
+        fd = os.open(path.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=parent)
+        position = len(files)
+        digest = hashlib.sha256()
+        files.append(_owned(path, os.fstat(fd), digest.hexdigest()))
+        try:
+            os.fchmod(fd, 0o600)
+            offset = 0
+            while offset < len(data):
+                count = os.write(fd, data[offset:])
+                if count <= 0:
+                    _fail("private_write_failed")
+                digest.update(data[offset:offset + count])
+                offset += count
+                files[position] = _owned(path, os.fstat(fd), digest.hexdigest())
+            os.fsync(fd)
+            files[position] = _owned(path, os.fstat(fd), digest.hexdigest())
+        finally:
+            os.close(fd)
+        os.fsync(parent)
+    if not _matches(files[position]):
+        _fail("private_write_failed")
+
+
+def _remove_owned(files: tuple[OwnedPath, ...], directories: tuple[OwnedPath, ...],
+                  parents: tuple[OwnedPath, ...]) -> tuple[tuple[Path, ...], tuple[Path, ...]]:
+    # Compare the entire removable set before deleting even its first member.
+    if not all(_matches(item) for item in (*parents, *directories, *files)):
+        _fail("owned_file_changed")
+    removed: list[Path] = []
+    retained: list[Path] = []
+    for item in files:
+        with _directory(item.path.parent) as parent:
+            if not _matches(item):
+                _fail("cleanup_unresolved")
+            os.unlink(item.path.name, dir_fd=parent)
+            removed.append(item.path)
+            os.fsync(parent)
+    for item in reversed(directories):
+        with _directory(item.path.parent) as parent:
+            if not _matches(item):
+                _fail("cleanup_unresolved")
+            try:
+                os.rmdir(item.path.name, dir_fd=parent)
+            except OSError as error:
+                if error.errno not in (errno.ENOTEMPTY, errno.EEXIST):
+                    raise
+                retained.append(item.path)
+            os.fsync(parent)
+    return tuple(removed), tuple(retained)
+
+
+def _fresh(preview: SetupPreview) -> None:
+    current = preview_setup(preview.request)
+    if current.blockers or current != preview or not current.fingerprints:
+        _fail("stale_preview")
 
 
 def apply_setup(preview: SetupPreview, *, approval: bool = False) -> SetupResult:
-    """Default deny before all I/O; a boolean cannot activate this first slice."""
+    """Fresh caller approval for exactly this re-inspected, unconnected scope."""
     if approval is not True:
         return SetupResult("approval_required", capabilities=preview.capabilities)
-    return SetupResult("blocked", blockers=("setup_apply_unavailable",),
-                       capabilities=preview.capabilities)
+    capabilities = _capabilities(preview.request)
+    files: list[OwnedPath] = []
+    directories: list[OwnedPath] = []
+    parents: list[OwnedPath] = []
+    try:
+        _fresh(preview)
+        project = preview.request.settings.project_root
+        storage = preview.storage
+        assert project is not None and storage is not None
+        with _setup_lock(project):
+            try:
+                _fresh(preview)
+                qualified = S.qualify_storage(storage, approval=True)
+                if not qualified.readback_verified:
+                    _fail("storage_unqualified")
+                # First-use configuration never authorizes pruning prior backups.
+                capture_settings = replace(preview.request.settings,
+                                           backup=replace(preview.request.settings.backup, prune=False))
+                request = C.SnapshotRequest(capture_settings, qualified.identity,
+                                            preview.request.approved_sources)
+                snapshot = S.create_snapshot(request)
+                if snapshot.status not in ("complete", "unchanged") or snapshot.snapshot_path is None:
+                    _fail("first_snapshot_incomplete")
+                manifest_path = snapshot.snapshot_path / "manifest.json"
+                manifest = S.verify_snapshot(manifest_path, request.settings.identity, request.settings.limits)
+                if manifest.completion != "complete":
+                    _fail("first_snapshot_incomplete")
+                with _directory(manifest_path.parent) as fd:
+                    manifest_bytes, _ = _read_file(fd, manifest_path.name, C.MANIFEST_MAX_BYTES)
+                manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
+                if manifest_hash != snapshot.manifest_sha256:
+                    _fail("integrity_mismatch")
+                _fresh(preview)
+                documents = _documents(preview.request, manifest_path)
+                for mutation, document in zip(preview.mutations, documents, strict=True):
+                    _prepare_parent(mutation.path.parent, project, directories, parents)
+                    _write_new(mutation.path, _encoded(document), files)
+                if (not all(_matches(item) for item in (*parents, *files))
+                        or S.inspect_storage(storage.root) != storage):
+                    _fail("scope_changed")
+                receipt = InstalledState(request.settings.identity, project, preview.request.integration_root,
+                                       qualified.identity, manifest_path, manifest_hash, tuple(files),
+                                       tuple(directories), tuple(parents), capabilities)
+            except BaseException:
+                # Never remove backups, foreign paths or changed owned content.
+                # Interrupted cleanup is a blocker rather than configured state.
+                try:
+                    _, retained = _remove_owned(tuple(files), tuple(directories), tuple(parents))
+                    if retained:
+                        _fail("cleanup_unresolved")
+                except (C.ContinuityError, OSError):
+                    _fail("cleanup_unresolved")
+                raise
+        return SetupResult("configured", tuple(item.path for item in files), receipt,
+                           capabilities=capabilities)
+    except C.ContinuityError as error:
+        return SetupResult("blocked", blockers=(error.code,), capabilities=capabilities)
+    except (OSError, KeyboardInterrupt):
+        return SetupResult("blocked", blockers=("setup_interrupted",), capabilities=capabilities)
+
+
+def _validate_receipt(receipt: InstalledState) -> None:
+    """Validate removal scope, not stored permission; backup need not be online."""
+    replace(receipt.identity)
+    project = C.safe_path(receipt.project_root, must_exist=True)
+    integration = C.safe_path(receipt.integration_root, root=project / ".thunderkit", must_exist=True)
+    private = project / ".thunderkit/continuity.local.json"
+    reserved = (private, project / ".thunderkit/config.json", project / ".thunderkit/continuity.json")
+    if (receipt.identity.kind != "project" or any(_overlap(integration, path) for path in reserved)
+            or _overlap(receipt.storage.root, project)):
+        _fail("owned_file_changed")
+    expected = {private, integration / "config.json"}
+    if len(receipt.files) != 2 or {item.path for item in receipt.files} != expected:
+        _fail("owned_file_changed")
+    necessary = {parent for path in expected for parent in path.parents if parent.is_relative_to(project)}
+    if ({item.path for item in receipt.parents} != necessary
+            or len(receipt.parents) != len(necessary)
+            or len({item.path for item in receipt.directories}) != len(receipt.directories)):
+        _fail("owned_file_changed")
+    for item in (*receipt.files, *receipt.directories, *receipt.parents):
+        if item.uid != os.geteuid():
+            _fail("owned_file_changed")
+    for item in receipt.files:
+        if item.content_sha256 is None or item.mode != stat.S_IFREG | 0o600:
+            _fail("owned_file_changed")
+        C.validate_sha256(item.content_sha256)
+    for item in receipt.directories:
+        if item.path == project or item.path not in necessary or item not in receipt.parents:
+            _fail("owned_file_changed")
+    if not all(_matches(item) for item in (*receipt.parents, *receipt.directories, *receipt.files)):
+        _fail("owned_file_changed")
+
+
+def uninstall_setup(receipt: InstalledState, *, approval: bool = False) -> SetupResult:
+    """Remove exact owned private artifacts only, with a fresh explicit approval."""
+    if approval is not True:
+        return SetupResult("approval_required")
+    try:
+        _validate_receipt(receipt)
+    except (C.ContinuityError, OSError):
+        return SetupResult("blocked", blockers=("owned_file_changed",))
+    try:
+        with _setup_lock(receipt.project_root):
+            _validate_receipt(receipt)
+            removed, retained = _remove_owned(receipt.files, receipt.directories, receipt.parents)
+        return SetupResult("removed", removed, capabilities=receipt.capabilities, retained_paths=retained)
+    except C.ContinuityError as error:
+        return SetupResult("blocked", blockers=(error.code,), capabilities=receipt.capabilities)
+    except (OSError, KeyboardInterrupt):
+        return SetupResult("blocked", blockers=("cleanup_unresolved",), capabilities=receipt.capabilities)
