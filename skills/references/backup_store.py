@@ -462,9 +462,11 @@ def _prior(scope: Path, identity: C.ScopeIdentity) -> tuple[Path | None, C.Backu
         _fail("invalid_locator")
 
 
-_EXCLUDED = frozenset({".git", ".hermes", ".claude", ".codex", ".ssh", ".aws", ".azure",
-                       "node_modules", "build", "dist", "target", "datasets", "dataset", "backups",
-                       ".cache", "__pycache__", ".venv", "venv", ".npm", ".mypy_cache"})
+_PRIVATE_DIRS = frozenset({".git", ".hermes", ".claude", ".codex", ".ssh", ".aws", ".azure"})
+_EXCLUDED = _PRIVATE_DIRS | frozenset({
+    "node_modules", "build", "dist", "target", "datasets", "dataset", "backups",
+    ".cache", "__pycache__", ".venv", "venv", ".npm", ".mypy_cache",
+})
 _PRIVATE = frozenset({"auth.json", "credentials.json", "credentials", "id_rsa", "id_ed25519",
                       "id_ecdsa", "sessions.db", "transcript.jsonl", "transcripts.jsonl",
                       "continuity.local.json", "grants.json"})
@@ -475,10 +477,14 @@ _SECRET = re.compile(rb"(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{30
                      rb"\s*[:=]\s*[\"']?[A-Za-z0-9_+/=-]{16,}))")
 
 
+def _private(path: str) -> bool:
+    return any(p in _PRIVATE_DIRS or p in _PRIVATE or p == ".env" or p.startswith(".env.")
+               or p.endswith((".pem", ".key", ".p12", ".pfx"))
+               for p in path.lower().split("/"))
+
+
 def _forbidden(path: str) -> bool:
-    parts = path.lower().split("/")
-    return any(p in _EXCLUDED or p in _PRIVATE or p == ".env" or p.startswith(".env.")
-               or p.endswith((".pem", ".key", ".p12", ".pfx")) for p in parts)
+    return _private(path) or any(p in _EXCLUDED for p in path.lower().split("/"))
 
 
 def _omit(omissions: list[str], reason: str, limits: C.Limits) -> None:
@@ -623,6 +629,20 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git,
             _omit(omissions, "Git file inventory exceeds safe bounds.", limits)
     candidates: dict[str, Path] = {}
 
+    def policy_path(path: Path) -> str:
+        # Project ancestors are not part of its approved content namespace.
+        # Global explicit sources still refuse private/runtime ancestor paths.
+        return str(path.relative_to(root)) if root is not None else str(path)
+
+    def note_exclusion(path: Path, relative: str, explicit: bool) -> None:
+        name = policy_path(path)
+        if explicit:
+            _omit(omissions, "Explicit source is excluded by policy.", limits)
+        elif not _private(name) and (allowed is None or any(
+            p == relative or p.startswith(relative + "/") for p in allowed
+        )):
+            _omit(omissions, "Approved work was omitted by exclusion policy.", limits)
+
     def add(path: Path, relative: str, explicit: bool) -> None:
         nonlocal visited
         visited += 1
@@ -634,9 +654,8 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git,
         except C.ContinuityError:
             _omit(omissions, "A path exceeds safe bounds.", limits)
             return
-        if _forbidden(str(path)):
-            if explicit:
-                _omit(omissions, "Explicit source is excluded by policy.", limits)
+        if _forbidden(policy_path(path)):
+            note_exclusion(path, relative, explicit)
             return
         if allowed is not None and not explicit and relative not in allowed and relative not in request.context_entrypoints:
             return
@@ -645,7 +664,7 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git,
     for index, source in enumerate(request.approved_sources):
         prefix = str(source.relative_to(root)) if root is not None else f"sources/{index}/{source.name}"
         explicit = source != root
-        if _forbidden(str(source)):
+        if _forbidden(policy_path(source)):
             _omit(omissions, "Explicit source is excluded by policy.", limits)
             continue
         with _directory(source.parent, "unsafe_path") as source_parent:
@@ -663,9 +682,8 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git,
                         child_path = path / item.name
                         child_relative = str(child_path.relative_to(root)) if root is not None else relative + "/" + item.name
                         item_info = item.stat(follow_symlinks=False)
-                        if _forbidden(str(child_path)):
-                            if explicit:
-                                _omit(omissions, "Source contains policy exclusions.", limits)
+                        if _forbidden(policy_path(child_path)):
+                            note_exclusion(child_path, child_relative, explicit)
                             continue
                         if stat.S_ISDIR(item_info.st_mode):
                             visited += 1
