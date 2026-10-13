@@ -729,6 +729,36 @@ class BackupStoreTests(Fixture):
         self.error("storage_missing", lambda: self.api.inspect_storage(missing))
         self.assertFalse(missing.exists())
 
+    def test_excluded_build_and_data_work_makes_capture_partial(self) -> None:
+        self.assert_complete(self.capture())
+        previous = self.locator.read_bytes()
+        source = self.write("src/datasets/loader.py", b"def load():\n    return 1\n")
+        result = self.capture()
+        manifest = self.assert_partial(result, previous)
+        self.assertTrue(manifest.omissions)
+        self.assertNotIn("src/datasets/loader.py", {f.relpath for f in manifest.files})
+        source.unlink()
+        source.parent.rmdir()
+        source.parent.parent.rmdir()
+        self.init_git()
+        self.assert_complete(self.capture(self.request(history=True)))
+        previous = self.locator.read_bytes()
+        self.write("pkg/build/gen.py", b"unfinished not-ignored work\n")
+        result = self.capture(self.request(history=True))
+        manifest = self.assert_partial(result, previous)
+        self.assertTrue(manifest.omissions)
+        self.assertEqual(manifest.history.status, "bundled")
+
+    def test_parent_build_directory_does_not_exclude_the_project(self) -> None:
+        parent = self.base / "build"
+        parent.mkdir()
+        relocated = parent / "source"
+        self.project.rename(relocated)
+        settings = replace(self.settings, project_root=relocated)
+        result = self.capture(self.request(sources=(relocated,), settings=settings))
+        manifest = self.assert_complete(result)
+        self.assertEqual({f.relpath for f in manifest.files}, {"notes.md"})
+
     def test_corrupt_locator_and_disabled_policy_do_not_publish_or_rewrite_settings(self) -> None:
         first = self.capture()
         self.assert_complete(first)
