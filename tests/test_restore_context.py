@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 from typing import cast
@@ -262,6 +263,73 @@ class RestoreContextTests(unittest.TestCase):
             export_fn(selected, destination, self.identity, self.limits, approval=True)
         self.assertEqual(caught.exception.code, "integrity_mismatch")
         self.assertFalse(destination.exists(), "Invalid snapshot cannot create recovery output")
+    def test_export_recovers_exact_branch_and_dirty_files_after_checkout_loss(self) -> None:
+        template = self.scratch / "empty-template"
+        hooks = self.scratch / "empty-hooks"
+        template.mkdir()
+        hooks.mkdir()
+        environment = dict(os.environ)
+        environment.update(GIT_AUTHOR_NAME="Fixture", GIT_COMMITTER_NAME="Fixture",
+                           GIT_AUTHOR_EMAIL="fixture@example.invalid", GIT_COMMITTER_EMAIL="fixture@example.invalid")
+
+        def git(*args: str, cwd: Path | None = None) -> str:
+            process = subprocess.run(["/usr/bin/git", *args], cwd=cwd or self.project,
+                                     env=environment, capture_output=True, text=True, timeout=15)
+            self.assertEqual(process.returncode, 0, "Isolated recovery Git operation failed")
+            return process.stdout.strip()
+
+        git("init", "--initial-branch=work", f"--template={template}")
+        git("config", "core.hooksPath", str(hooks))
+        (self.project / "notes.md").write_text("Committed context\n")
+        (self.project / "deleted.txt").write_text("Deleted unfinished file\n")
+        (self.project / "run.sh").write_text("#!/bin/sh\nprintf fixture\n")
+        git("add", "--all")
+        git("commit", "-m", "initial fixture")
+        (self.project / "tracked.txt").write_text("Second commit\n")
+        git("add", "--all")
+        git("commit", "-m", "second fixture")
+        head = git("rev-parse", "HEAD")
+        graph = git("rev-list", "--parents", "HEAD")
+        (self.project / "notes.md").write_text(CONTEXT, encoding="utf-8")
+        (self.project / "deleted.txt").unlink()
+        (self.project / "run.sh").chmod(0o755)
+        (self.project / "untracked.md").write_text("Uncommitted work\n")
+        settings = C.ResolvedSettings(self.identity, self.project, self.backups, None, "unconfigured",
+                                      backup=C.BackupPolicy(enabled=True))
+        storage = S.qualify_storage(S.inspect_storage(self.backups), approval=True).identity
+        captured = S.create_snapshot(C.SnapshotRequest(settings, storage, (self.project,),
+                                      context_entrypoints=("notes.md",), include_history=True,
+                                      history_ref="refs/heads/work"))
+        self.assertEqual((captured.status, captured.history_status), ("complete", "bundled"))
+        assert captured.snapshot_path is not None
+        source = captured.snapshot_path
+        manifest = S.verify_snapshot(source, self.identity, self.limits)
+        self.assertEqual(manifest.deleted_paths, ("deleted.txt",))
+        shutil.rmtree(self.project)
+        self.load_api()
+        api = importlib.import_module("restore_context")
+        destination = self.work / "recovered-history"
+        try:
+            preview = api.export_preview(source, destination, self.identity, self.limits)
+            self.assertEqual(preview.history_status, "bundled")
+            result = api.export_snapshot(source, destination, self.identity, self.limits, approval=True)
+        except C.ContinuityError as error:
+            self.fail("Verified branch history must be recoverable: " + error.code)
+        self.assertEqual((result.status, result.history_status), ("complete", "bundled"))
+        self.assertEqual(git("rev-parse", "HEAD", cwd=destination), head)
+        self.assertEqual(git("symbolic-ref", "HEAD", cwd=destination), "refs/heads/work")
+        self.assertEqual(git("rev-list", "--parents", "HEAD", cwd=destination), graph)
+        self.assertEqual((destination / "notes.md").read_text(encoding="utf-8"), CONTEXT)
+        self.assertFalse((destination / "deleted.txt").exists())
+        self.assertEqual((destination / "run.sh").stat().st_mode & 0o777, 0o755)
+        self.assertEqual((destination / "untracked.md").read_text(), "Uncommitted work\n")
+        status = git("status", "--porcelain=v1", cwd=destination)
+        self.assertIn("M notes.md", status)
+        self.assertIn("D deleted.txt", status)
+        self.assertIn("?? untracked.md", status)
+        self.assertEqual(git("remote", cwd=destination), "")
+        self.assertFalse(self.project.exists())
+        self.assertEqual(S.verify_snapshot(source, self.identity, self.limits), manifest)
 
 
 if __name__ == "__main__":
