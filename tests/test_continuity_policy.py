@@ -38,6 +38,8 @@ class ContinuityPolicyTests(unittest.TestCase):
                 self.assertIn("Native workers remain delivery-disabled", text)
                 self.assertIn("tk-ship remains preparation-only", text)
                 self.assertIn("no force, tags, PR, release, merge or default-branch writes", text)
+                self.assertIn("Protected-branch writes are forbidden", text)
+                self.assertIn("current authority", text)
 
 
 if __name__ == "__main__":
