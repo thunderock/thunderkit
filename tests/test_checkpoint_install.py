@@ -120,6 +120,112 @@ class CheckpointInstallTests(unittest.TestCase):
         self.assertTrue((self.integration / "config.json").is_file())
         self.assertEqual(extra.read_text(), "Unrelated user addition\n")
 
+    def test_lock_release_failure_reports_installed_files_and_recovery_state(self) -> None:
+        preview = self.api.preview_setup(self.request)
+        original = os.rmdir
+
+        def fail_lock(path: object, *args: object, **kwargs: object) -> None:
+            if path == ".thunderkit-setup.lock":
+                raise PermissionError("injected owned lock release failure")
+            original(path, *args, **kwargs)
+
+        with patch.object(self.api.os, "rmdir", side_effect=fail_lock):
+            result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "blocked")
+        existing = {path for path in (self.private, self.integration / "config.json") if path.exists()}
+        self.assertTrue(existing <= set(result.changed_paths) | set(result.retained_paths),
+                        "A failed return must disclose installed files")
+        if existing:
+            self.assertIsNotNone(result.receipt, "Completed installation needs recoverable ownership data")
+
+    def test_user_global_ignore_cannot_approve_unignored_project_private_files(self) -> None:
+        (self.project / ".gitignore").write_text("# No private exclusions in this project\n")
+        ignore = self.home / "git/ignore"
+        ignore.parent.mkdir()
+        ignore.write_text(".thunderkit/\n")
+        preview = self.api.preview_setup(self.request)
+        self.assertEqual(preview.status, "blocked")
+        self.assertIn("private_storage_unignored", preview.blockers)
+        self.assertEqual(preview.mutations, ())
+        self.assertFalse(self.private.exists())
+
+    def test_existing_backup_identity_namespace_is_not_adopted_at_first_setup(self) -> None:
+        other = self.base / "other-project"
+        other.mkdir()
+        note = other / "notes.md"
+        note.write_text("Other project owns this backup namespace\n")
+        storage = self.s.qualify_storage(self.s.inspect_storage(self.backup), approval=True).identity
+        settings = replace(self.settings, project_root=other)
+        captured = self.s.create_snapshot(self.c.SnapshotRequest(settings, storage, (note,)))
+        self.assertEqual(captured.status, "complete")
+        latest = self.backup / "projects/install-fixture/latest.json"
+        previous = latest.read_bytes()
+        preview = self.api.preview_setup(self.request)
+        self.assertEqual(preview.status, "blocked")
+        self.assertIn("scope_exists", preview.blockers)
+        self.assertEqual(self.api.apply_setup(preview, approval=True).status, "blocked")
+        self.assertEqual(latest.read_bytes(), previous)
+        self.assertFalse(self.private.exists())
+
+    def test_transient_source_membership_change_cannot_install_unpreviewed_snapshot(self) -> None:
+        source = self.project / "notes"
+        source.mkdir()
+        (self.project / "notes.md").rename(source / "notes.md")
+        request = replace(self.request, approved_sources=(source,))
+        preview = self.api.preview_setup(request)
+        self.assertEqual(preview.status, "approval_required")
+        original = self.s.create_snapshot
+        source_info = source.stat()
+
+        def changed_capture(snapshot_request: object) -> object:
+            extra = source / "unpreviewed.md"
+            extra.write_text("Created only while capture was running\n")
+            captured = original(snapshot_request)
+            extra.unlink()
+            os.utime(source, ns=(source_info.st_atime_ns, source_info.st_mtime_ns + 10_000_000_000))
+            return captured
+
+        with patch.object(self.s, "create_snapshot", side_effect=changed_capture):
+            result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("stale_preview", result.blockers)
+        self.assertFalse(self.private.exists())
+        self.assertFalse((self.integration / "config.json").exists())
+
+    def test_whole_committed_project_setup_saves_selected_context_and_history(self) -> None:
+        self.git("config", "user.name", "Fixture")
+        self.git("config", "user.email", "fixture@example.invalid")
+        self.git("add", "--all")
+        self.git("commit", "-m", "committed fixture")
+        head = self.git("rev-parse", "HEAD")
+        (self.project / "notes.md").write_text("# Dirty saved context\n")
+        try:
+            request = self.api.SetupRequest(
+                settings=self.settings, approved_sources=(self.project,),
+                integration_root=self.integration, context_entrypoints=("notes.md",),
+                include_history=True, history_ref="refs/heads/work",
+            )
+        except TypeError:
+            self.fail("Setup lacks explicit context-entrypoint and branch-history options")
+        preview = self.api.preview_setup(request)
+        self.assertEqual(preview.status, "approval_required", preview.blockers)
+        result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "configured", result.blockers)
+        local = json.loads(self.private.read_text())
+        selected = Path(local["latest_context"]["path"])
+        manifest = self.s.verify_snapshot(selected, self.identity, self.settings.limits)
+        self.assertEqual(manifest.history.status, "bundled")
+        self.assertEqual(manifest.head, head)
+        self.assertEqual(manifest.context_entrypoints, ("notes.md",))
+        self.assertEqual(self.s.read_payload(selected, "notes.md", self.identity, self.settings.limits),
+                         b"# Dirty saved context\n")
+        self.assertFalse(any(item.relpath.startswith(".git/") or
+                             item.relpath.startswith(".thunderkit/checkpoint/") or
+                             item.relpath == ".thunderkit/continuity.local.json"
+                             for item in manifest.files))
+        self.assertEqual((self.project / "notes.md").read_text(), "# Dirty saved context\n")
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+
 
 if __name__ == "__main__":
     unittest.main()

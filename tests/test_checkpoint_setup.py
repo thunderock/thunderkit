@@ -121,7 +121,9 @@ class CheckpointSetupTests(unittest.TestCase):
             ("check-ignore", "--quiet", "--", ".thunderkit/checkpoint/config.json"),
             ("ls-files", "-z", "--", ".thunderkit/continuity.local.json", ".thunderkit/checkpoint"),
         }
-        self.assertIn(tuple(argv[1:]), allowed, "Preview attempted a non-read Git command")
+        self.assertEqual(tuple(argv[1:3]), ("-c", "core.excludesFile=/dev/null"),
+                         "Ignore proof must disable implicit user-level Git excludes")
+        self.assertIn(tuple(argv[3:]), allowed, "Preview attempted a non-read Git command")
         self.assertEqual(dict(kwargs.get("env", os.environ)), self.env)
         return POPEN([self.git, *argv[1:]], **kwargs)
 
