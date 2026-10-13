@@ -458,7 +458,9 @@ def _prior(scope: Path, identity: C.ScopeIdentity) -> tuple[Path | None, C.Backu
             with _directory(path.parent) as snapshot_fd:
                 encoded, _ = _read(snapshot_fd, "manifest.json", C.MANIFEST_MAX_BYTES)
             return path.parent, manifest, _hash(encoded)
-    except C.ContinuityError:
+    except C.ContinuityError as error:
+        if error.code == "scratch_unavailable":
+            raise
         _fail("invalid_locator")
 
 
@@ -561,24 +563,37 @@ class _Git:
 
 @contextmanager
 def _git_session() -> Iterator[_Git]:
-    scratch = os.environ.get("TMPDIR")
-    if not scratch:
-        _fail("history_invalid")
-    with tempfile.TemporaryDirectory(prefix="thunderkit-S-git-", dir=scratch) as name:
+    # Scheduler environments often omit TMPDIR. Its absence is not corruption.
+    # An explicitly configured unavailable directory must not silently fall back.
+    try:
+        scratch = os.environ.get("TMPDIR") or tempfile.gettempdir()
+        C.safe_path(Path(scratch), must_exist=True)
+        temporary = tempfile.TemporaryDirectory(prefix="thunderkit-S-git-", dir=scratch)
+    except (OSError, C.ContinuityError):
+        _fail("scratch_unavailable")
+    with temporary as name:
         yield _Git(Path(name))
 
 
-def _git_state(request: C.SnapshotRequest, git: _Git) -> tuple[str | None, str | None]:
-    root = request.settings.project_root
+def _has_repository(root: Path | None) -> bool:
     if root is None:
-        return None, None
+        return False
     # No implicit parent repository discovery, no HOME/session search.
     try:
         info = (root / ".git").lstat()
     except FileNotFoundError:
-        return None, None
+        return False
     if not stat.S_ISDIR(info.st_mode):
         _fail("unsafe_path")
+    return True
+
+
+def _git_state(request: C.SnapshotRequest, git: _Git | None) -> tuple[str | None, str | None]:
+    root = request.settings.project_root
+    if not _has_repository(root):
+        return None, None
+    if git is None or root is None:
+        _fail("source_changed")
     head = git.run(root, ["rev-parse", "--verify", "HEAD"], 128, allow_failure=True).strip().decode("ascii")
     if not head:
         return None, None
@@ -607,7 +622,7 @@ def _git_paths(git: _Git, root: Path, args: list[str], limits: C.Limits) -> set[
     return paths
 
 
-def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git,
+def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | None,
                    head: str | None) -> tuple[dict[str, bytes], tuple[C.ManifestFile, ...], tuple[str, ...], tuple[str, ...]]:
     root = request.settings.project_root
     limits = request.settings.limits
@@ -619,6 +634,8 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git,
     allowed: set[str] | None = None
     deleted: set[str] = set()
     if root is not None and head is not None:
+        if git is None:
+            _fail("source_changed")
         try:
             allowed = _git_paths(git, root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], limits)
             deleted = _git_paths(git, root, ["ls-files", "-z", "--deleted"], limits)
@@ -959,16 +976,20 @@ def _verify_history(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -
                 _fail("history_invalid")
             git.run(repository, ["fsck", "--strict", "--no-reflogs", history.head], 65536)
             _scan_graph(git, repository, history.head, limits)
-    except C.ContinuityError:
+    except C.ContinuityError as error:
+        if error.code == "scratch_unavailable":
+            raise
         _fail("history_invalid")
 
 
-def _capture_history(request: C.SnapshotRequest, git: _Git, ref: str | None,
+def _capture_history(request: C.SnapshotRequest, git: _Git | None, ref: str | None,
                      head: str | None, file_bytes: int) -> tuple[C.HistoryRecord, bytes | None]:
     unprotected = C.HistoryRecord("unprotected" if head else "not-applicable", ref=ref, head=head if ref else None)
     root = request.settings.project_root
     if not request.include_history or root is None or head is None or ref is None:
         return unprotected, None
+    if git is None:
+        _fail("source_changed")
     limits = request.settings.limits
     try:
         _scan_graph(git, root, head, limits)
@@ -1038,7 +1059,7 @@ def create_snapshot(request: C.SnapshotRequest, *, fault: Fault | None = None) -
     scope = request.storage.root / ("projects" if identity.kind == "project" else "global") / identity.id
     writer = _Writer(request.storage)
     with ExitStack() as stack:
-        git = stack.enter_context(_git_session())
+        git = stack.enter_context(_git_session()) if _has_repository(request.settings.project_root) else None
         ref, head = _git_state(request, git)
         root_fd = stack.enter_context(_directory(request.storage.root, "storage_missing"))
         group = "projects" if identity.kind == "project" else "global"
