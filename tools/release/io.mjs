@@ -102,6 +102,32 @@ export async function get(url) {
   return visit(url, 0);
 }
 
+const npmCodes = new Set(["E400", "E401", "E403", "E404", "E409", "E422", "E429", "E500", "E502", "E503", "E504", "ENEEDAUTH", "EOTP", "EUSAGE", "EPUBLISHCONFLICT", "EPRIVATE", "ECONNRESET", "ECONNREFUSED", "ENOTFOUND", "ETIMEDOUT", "EAI_AGAIN"]);
+const npmSignals = new Set(["SIGKILL", "SIGTERM", "SIGINT", "SIGHUP", "SIGABRT"]);
+
+/** Report only fixed diagnostic tokens, never npm's raw output or environment. @param {ExecResult} result @returns {import("./request.mjs").Failure} */
+function npmFailure(result) {
+  const codes = new Set([...result.stderr.slice(-16_384).matchAll(/^npm (?:error|ERR!) code ([A-Z0-9_]+)\r?$/gm)].map((match) => match[1]));
+  const code = codes.size === 1 ? [...codes][0] : undefined;
+  const npmCode = code !== undefined && npmCodes.has(code) ? code : "unknown";
+  const status = Number.isInteger(result.status) && result.status !== null && result.status >= 0 && result.status <= 255 ? String(result.status) : "unknown";
+  const signal = result.signal === null ? "none" : npmSignals.has(result.signal) ? result.signal : "unknown";
+  return Object.freeze({ ok: false, error: Object.freeze({ code: "E_REGISTRY", message: `npm publish failed (exit=${status}, signal=${signal}, npm_code=${npmCode})` }) });
+}
+
+/** Admit only a complete diagnostic made from the same fixed tokens as npmFailure. @param {unknown} message @returns {string} */
+export function publishDiagnostic(message) {
+  if (typeof message !== "string" || message.length > 160) return "";
+  const match = /^npm publish failed \(exit=(unknown|0|[1-9][0-9]{0,2}), signal=([A-Z]+|none|unknown), npm_code=([A-Z0-9_]+|unknown)\)$/.exec(message);
+  if (match === null || match[0] !== message) return "";
+  const [, status, signal, code] = match;
+  if (status === undefined || signal === undefined || code === undefined
+      || (status !== "unknown" && Number(status) > 255)
+      || (signal !== "none" && signal !== "unknown" && !npmSignals.has(signal))
+      || (code !== "unknown" && !npmCodes.has(code))) return "";
+  return message;
+}
+
 /** Construct the source-bound transport; every remote or child-process effect goes through the supplied drivers. @param {string} checkoutDir @param {Drivers} drivers */
 export function createSystemTransport(checkoutDir, drivers) {
   const cwd = resolve(checkoutDir);
@@ -260,13 +286,13 @@ export function createSystemTransport(checkoutDir, drivers) {
       try {
         const plan = publishable(prepared);
         /** @type {Record<string, string>} */ const env = {};
-        for (const key of ["ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "GITHUB_ACTIONS", "GITHUB_REPOSITORY", "GITHUB_WORKFLOW_REF", "GITHUB_SHA", "GITHUB_REF", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_SERVER_URL", "GITHUB_API_URL"]) {
+        for (const key of ["ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "GITHUB_ACTIONS", "GITHUB_REPOSITORY", "GITHUB_WORKFLOW_REF", "GITHUB_SHA", "GITHUB_REF", "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "GITHUB_SERVER_URL", "GITHUB_API_URL", "GITHUB_EVENT_NAME", "GITHUB_REPOSITORY_ID", "GITHUB_REPOSITORY_OWNER_ID", "RUNNER_ENVIRONMENT"]) {
           const value = process.env[key];
           if (value !== undefined) env[key] = value;
         }
         const directory = resolve(bundleDir);
         const result = drivers.exec("npm", ["publish", join(directory, "package.tgz"), "--ignore-scripts", "--provenance", "--access", "public", "--registry", "https://registry.npmjs.org", "--tag", plan.release.npmTag], { cwd: directory, env, timeout: 600_000 });
-        if (result.status !== 0 || result.signal !== null) return failure("E_REGISTRY");
+        if (result.status !== 0 || result.signal !== null) return npmFailure(result);
         return success(null);
       } catch (error) {
         return caught(error, "E_REGISTRY");

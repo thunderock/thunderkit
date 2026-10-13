@@ -10,7 +10,7 @@ import { reconcile } from "./policy.mjs";
 import { parseSemver, compareSemver } from "./versions.mjs";
 import { verifyArtifact, hashTarball } from "./artifact.mjs";
 import { readLive, cliDirectory } from "./plan.mjs";
-import { createSystemTransport, exec, get } from "./io.mjs";
+import { createSystemTransport, exec, get, publishDiagnostic } from "./io.mjs";
 
 /** @template T @typedef {import("./request.mjs").Result<T>} Result */
 /** @typedef {import("./request.mjs").Request} Request */
@@ -134,12 +134,20 @@ async function main() {
   return publishRelease(request.value, bundle, createSystemTransport(process.cwd(), { exec, get }));
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const result = await main();
+/** Emit the internal result, whose failure details contain only code-generated nonsecret tokens. @param {Result<PublishOutcome>} result @param {{stdout:(text:string)=>void, stderr:(text:string)=>void}} output @returns {number} */
+export function reportOutcome(result, output) {
   if (result.ok) {
-    process.stdout.write(`${JSON.stringify(result.value)}\n`);
-  } else {
-    process.stderr.write(`${result.error.code}: release publication failed\n`);
-    process.exitCode = 1;
+    output.stdout(`${JSON.stringify(result.value)}\n`);
+    return 0;
   }
+  const detail = publishDiagnostic(result.error.message);
+  output.stderr(`${result.error.code}: release publication failed${detail === "" ? "" : `: ${detail}`}\n`);
+  return 1;
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  process.exitCode = reportOutcome(await main(), {
+    stdout: (text) => { process.stdout.write(text); },
+    stderr: (text) => { process.stderr.write(text); },
+  });
 }
