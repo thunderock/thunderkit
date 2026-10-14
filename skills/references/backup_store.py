@@ -734,18 +734,20 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | 
     visited = 0
     allowed: set[str] | None = None
     deleted: set[str] = set()
-    if root is not None and head is not None:
+    if root is not None and (head is not None or _has_repository(root)):
         if git is None:
             _fail("source_changed")
         try:
+            # An unborn repository still has an index and applicable ignore rules.
             allowed = _git_paths(git, root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], limits)
             deleted = _git_paths(git, root, ["ls-files", "-z", "--deleted"], limits)
-            # Index-only enumeration misses paths removed by git rm/mv. Compare
-            # the literal working tree to recorded HEAD without filters/hooks.
-            deleted |= _git_paths(git, root, [
-                "diff-index", "-z", "--name-only", "--no-renames", "--no-ext-diff",
-                "--no-textconv", "--diff-filter=D", head, "--",
-            ], limits)
+            if head is not None:
+                # Index-only enumeration misses paths removed by git rm/mv. Compare
+                # the literal working tree to recorded HEAD without filters/hooks.
+                deleted |= _git_paths(git, root, [
+                    "diff-index", "-z", "--name-only", "--no-renames", "--no-ext-diff",
+                    "--no-textconv", "--diff-filter=D", head, "--",
+                ], limits)
         except C.ContinuityError:
             # A bounded scoped walk remains possible, but incomplete enumeration
             # cannot silently claim protection or include ignored files.
