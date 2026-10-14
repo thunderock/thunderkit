@@ -40,6 +40,7 @@ def _fail(code: str) -> NoReturn:
         "export_forbidden": "Snapshot content is excluded from recovery by safety policy.",
         "history_invalid": "Bundled history could not be recovered safely.",
         "export_failed": "Export could not complete safely; no recovery success is claimed.",
+        "resource_limit": "Export requires more directory descriptors than are safely available.",
         "invalid_config": "Recovery arguments do not satisfy the command schema.",
     }
     raise C.ContinuityError(code, details[code]) from None
@@ -130,19 +131,19 @@ def load_context(source: Path, identity: C.ScopeIdentity,
     records = {entry.relpath: entry for entry in manifest.files}
     chunks: list[bytes] = []
     remaining = limits.max_context_bytes
-    for relpath in manifest.context_entrypoints:
-        separator = b"\n\n" if chunks else b""
-        remaining -= len(separator)
-        if remaining < 0 or records[relpath].size > remaining:
-            _fail("read_budget_exceeded")
-        data = S.read_payload(source, relpath, identity, limits, max_bytes=remaining)
-        # Each S call revalidates independently; bind returned bytes to the
-        # manifest that supplied these entrypoints and the returned metadata.
-        if (len(data) != records[relpath].size
-                or hashlib.sha256(data).hexdigest() != records[relpath].sha256):
-            _fail("invalid_context")
-        chunks.append(separator + data)
-        remaining -= len(data)
+    with _snapshot_reader(source, manifest, identity, limits) as root:
+        for relpath in manifest.context_entrypoints:
+            separator = b"\n\n" if chunks else b""
+            remaining -= len(separator)
+            if remaining < 0 or records[relpath].size > remaining:
+                _fail("read_budget_exceeded")
+            data = _read_snapshot_entry(root, records[relpath])
+            chunks.append(separator + data)
+            remaining -= len(data)
+        # The selected reads are not a trusted-data shortcut: recheck the
+        # entire payload, exact membership, modes and bundled graph once.
+        if S.verify_snapshot(source, identity, limits) != manifest:
+            _fail("integrity_mismatch")
     try:
         text = b"".join(chunks).decode("utf-8")
     except UnicodeError:
@@ -230,10 +231,13 @@ def _directory(path: Path) -> Iterator[int]:
         os.close(fd)
 
 
-def _read_export_file(parent: int, name: str, budget: int) -> bytes:
+def _read_export_file(parent: int, name: str, budget: int, *,
+                      expected_mode: int | None = None) -> bytes:
     before = os.stat(name, dir_fd=parent, follow_symlinks=False)
     if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
         _fail("unsafe_path")
+    if expected_mode is not None and stat.S_IMODE(before.st_mode) != expected_mode:
+        _fail("integrity_mismatch")
     if before.st_size > budget:
         _fail("read_budget_exceeded")
     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
@@ -259,17 +263,66 @@ def _read_export_file(parent: int, name: str, budget: int) -> bytes:
         os.close(fd)
 
 
+@contextmanager
+def _snapshot_reader(source: Path, manifest: C.BackupManifest,
+                     identity: C.ScopeIdentity, limits: C.Limits,
+                     digest: str | None = None) -> Iterator[int]:
+    """Pin a batch to one snapshot inode and exact manifest, not prior trust."""
+    path = source.parent if source.name == "manifest.json" else source
+    try:
+        with _directory(path) as root:
+            held = _inode(os.fstat(root))
+            encoded = _read_export_file(root, "manifest.json", C.MANIFEST_MAX_BYTES)
+            if (C.validate_manifest(C.decode_json(encoded, max_bytes=C.MANIFEST_MAX_BYTES),
+                                    expected_identity=identity, limits=limits) != manifest
+                    or digest is not None and hashlib.sha256(encoded).hexdigest() != digest):
+                _fail("integrity_mismatch")
+            with _directory(path) as current:
+                if _inode(os.fstat(current)) != held:
+                    _fail("integrity_mismatch")
+            yield root
+            if _read_export_file(root, "manifest.json", C.MANIFEST_MAX_BYTES) != encoded:
+                _fail("integrity_mismatch")
+            with _directory(path) as current:
+                if _inode(os.fstat(current)) != held:
+                    _fail("integrity_mismatch")
+    except OSError:
+        _fail("integrity_mismatch")
+
+
+def _read_snapshot_entry(root: int, entry: C.ManifestFile) -> bytes:
+    # Only a root, a walking parent and one child/leaf FD are live, regardless
+    # of payload count or depth. Final full verification detects source drift.
+    parent = os.dup(root)
+    try:
+        for part in ("payload", *entry.relpath.split("/")[:-1]):
+            child = os.open(part, _DIR, dir_fd=parent)
+            os.close(parent)
+            parent = child
+        data = _read_export_file(parent, entry.relpath.split("/")[-1], entry.size,
+                                 expected_mode=entry.mode)
+        if len(data) != entry.size or hashlib.sha256(data).hexdigest() != entry.sha256:
+            _fail("integrity_mismatch")
+        return data
+    finally:
+        os.close(parent)
+
+
 def _verified_export(source: Path, identity: C.ScopeIdentity,
                      limits: C.Limits) -> tuple[C.BackupManifest, str]:
     C.validate_path_text(str(source), absolute=True, max_bytes=limits.max_path_bytes)
     root = source.parent if source.name == "manifest.json" else source
     with _directory(root) as fd:
+        held = _inode(os.fstat(fd))
         encoded = _read_export_file(fd, "manifest.json", C.MANIFEST_MAX_BYTES)
         manifest = S.verify_snapshot(source, identity, limits)
         if (_read_export_file(fd, "manifest.json", C.MANIFEST_MAX_BYTES) != encoded
                 or C.validate_manifest(C.decode_json(encoded, max_bytes=C.MANIFEST_MAX_BYTES),
                                        expected_identity=identity, limits=limits) != manifest):
             _fail("integrity_mismatch")
+        with _directory(root) as current:
+            if _inode(os.fstat(current)) != held:
+                _fail("integrity_mismatch")
     for relative in (*tuple(entry.relpath for entry in manifest.files), *manifest.deleted_paths):
         _check_export_path(relative)
     return manifest, hashlib.sha256(encoded).hexdigest()
@@ -346,18 +399,21 @@ def _inode(info: os.stat_result) -> tuple[int, int]:
     return info.st_dev, info.st_ino
 
 
-@dataclass(frozen=True)
+@dataclass
 class _Edge:
     parent: int
     name: str
     fd: int
     directory: bool
+    recorded: os.stat_result
 
     def check(self) -> None:
         info = os.stat(self.name, dir_fd=self.parent, follow_symlinks=False)
-        held = os.fstat(self.fd)
-        if (_inode(info) != _inode(held) or stat.S_IFMT(info.st_mode) != stat.S_IFMT(held.st_mode)
-                or (not self.directory and held.st_nlink != 1)):
+        held = os.fstat(self.fd) if self.fd >= 0 else self.recorded
+        if (_inode(info) != _inode(self.recorded) or _inode(held) != _inode(self.recorded)
+                or stat.S_IFMT(info.st_mode) != stat.S_IFMT(self.recorded.st_mode)
+                or (not self.directory and (info.st_nlink != 1 or held.st_nlink != 1
+                    or self.fd < 0 and _signature(info) != _signature(self.recorded)))):
             _fail("destination_changed")
 
 
@@ -383,33 +439,71 @@ class _ExportWriter:
         self.owned: list[_Edge] = []
         self.directories: dict[tuple[str, ...], int] = {}
         self.members: dict[int, set[str]] = {}
+        self.ancestors: dict[int, _Edge] = {}
+        self.reserved: list[int] = []
+        self.stack.callback(self.release_reserved)
+
+    def release_reserved(self) -> None:
+        while self.reserved:
+            os.close(self.reserved.pop())
+
+    def capacity(self, destination: Path, files: tuple[C.ManifestFile, ...]) -> None:
+        """Reserve every directory slot plus transient headroom before writes.
+
+        Keep ancestor descriptors pinned, but never discover EMFILE midway
+        through creating a deep/wide output tree. No process limits change.
+        """
+        prefixes = {tuple(entry.relpath.split("/")[:i])
+                    for entry in files for i in range(1, len(entry.relpath.split("/")))}
+        needed = len(destination.parts) + len(prefixes)
+        try:
+            for _ in range(needed + 8):
+                self.reserved.append(os.open(destination.anchor, _DIR))
+        except OSError:
+            self.release_reserved()
+            _fail("resource_limit")
+        for _ in range(8):
+            os.close(self.reserved.pop())
+
+    def directory_fd(self, name: str, parent: int | None = None) -> int:
+        os.close(self.reserved.pop())
+        return self.hold(os.open(name, _DIR, dir_fd=parent))
 
     def hold(self, fd: int) -> int:
         self.stack.callback(os.close, fd)
         return fd
 
-    def check(self) -> None:
-        for edge in self.edges:
-            edge.check()
+    def check(self, parent: int | None = None) -> None:
+        if parent is None:
+            for edge in self.edges:
+                edge.check()
+        else:
+            while parent in self.ancestors:
+                edge = self.ancestors[parent]
+                edge.check()
+                parent = edge.parent
 
     def child(self, parent: int, name: str, *, create: bool) -> int:
-        self.check()
+        self.check(parent)
         if create:
             os.mkdir(name, 0o700, dir_fd=parent)
         before = os.stat(name, dir_fd=parent, follow_symlinks=False)
-        fd = self.hold(os.open(name, _DIR, dir_fd=parent))
-        if not stat.S_ISDIR(before.st_mode) or _inode(before) != _inode(os.fstat(fd)):
-            _fail("destination_changed")
-        edge = _Edge(parent, name, fd, True)
-        self.edges.append(edge)
+        edge = _Edge(parent, name, -1, True, before)
         if create:
             self.owned.append(edge)
+        fd = self.directory_fd(name, parent)
+        edge.fd = fd
+        if not stat.S_ISDIR(before.st_mode) or _inode(before) != _inode(os.fstat(fd)):
+            _fail("destination_changed")
+        self.edges.append(edge)
+        self.ancestors[fd] = edge
+        if create:
             os.fsync(parent)
-        self.check()
+        self.check(fd)
         return fd
 
     def destination(self, destination: Path) -> None:
-        parent = self.hold(os.open(destination.anchor, _DIR))
+        parent = self.directory_fd(destination.anchor)
         for part in destination.parts[1:-1]:
             parent = self.child(parent, part, create=False)
         try:
@@ -433,27 +527,39 @@ class _ExportWriter:
                 self.directories[prefix] = child
                 self.members[child] = set()
             parent = self.directories[prefix]
-        self.check()
-        fd = self.hold(os.open(parts[-1], os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                               0o600, dir_fd=parent))
-        edge = _Edge(parent, parts[-1], fd, False)
-        self.owned.append(edge)
-        self.edges.append(edge)
-        self.members[parent].add(parts[-1])
-        view = memoryview(data)
-        while view:
-            self.check()
-            written = os.write(fd, view[:65536])
-            if not written:
-                _fail("export_failed")
-            view = view[written:]
-        self.check()
-        os.fchmod(fd, entry.mode)
-        os.fsync(fd)
-        os.fsync(parent)
+        self.check(parent)
+        fd = os.open(parts[-1], os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=parent)
+        edge: _Edge | None = None
+        try:
+            edge = _Edge(parent, parts[-1], fd, False, os.fstat(fd))
+            self.owned.append(edge)
+            self.edges.append(edge)
+            self.members[parent].add(parts[-1])
+            view = memoryview(data)
+            while view:
+                self.check(parent)
+                edge.check()
+                written = os.write(fd, view[:65536])
+                if not written:
+                    _fail("export_failed")
+                view = view[written:]
+            self.check(parent)
+            edge.check()
+            os.fchmod(fd, entry.mode)
+            os.fsync(fd)
+            os.fsync(parent)
+            self.check(parent)
+            edge.check()
+        finally:
+            try:
+                if edge is not None:
+                    edge.recorded = os.fstat(fd)
+                    edge.fd = -1
+            finally:
+                os.close(fd)
 
-    def verify(self, files: tuple[C.ManifestFile, ...], payload: dict[str, bytes]) -> None:
-        self.check()
+    def membership(self) -> None:
         for fd, expected in self.members.items():
             seen: set[str] = set()
             with os.scandir(fd) as entries:
@@ -463,14 +569,19 @@ class _ExportWriter:
                     seen.add(item.name)
             if seen != expected:
                 _fail("destination_changed")
+
+    def verify(self, files: tuple[C.ManifestFile, ...], payload: dict[str, bytes]) -> None:
+        self.check()
+        self.membership()
         for entry in files:
             parts = tuple(entry.relpath.split("/"))
             parent = self.directories[parts[:-1]]
-            data = _read_export_file(parent, parts[-1], entry.size)
+            data = _read_export_file(parent, parts[-1], entry.size, expected_mode=entry.mode)
             info = os.stat(parts[-1], dir_fd=parent, follow_symlinks=False)
             if data != payload[entry.relpath] or stat.S_IMODE(info.st_mode) != entry.mode:
                 _fail("integrity_mismatch")
         self.check()
+        self.membership()
 
 
 class _HistoryGit(S._Git):
@@ -614,8 +725,9 @@ def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
     The caller supplies the exact prior preview digest as a content binding,
     never as approval or origin trust; do not normalize or infer that digest.
     Stage the entire bounded payload in memory and reverify the exact manifest
-    before destination creation. Keep directory/file descriptors until readback
-    and cleanup finish; a replaced ancestor cannot redirect subsequent writes.
+    before destination creation. Keep capacity-reserved directory descriptors
+    until readback and cleanup finish; regular-file descriptors close promptly.
+    A replaced ancestor cannot redirect subsequent writes.
     """
     if approval is not True:
         _fail("approval_required")
@@ -633,15 +745,15 @@ def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
             _fail("integrity_mismatch")
         payload: dict[str, bytes] = {}
         remaining = limits.max_snapshot_bytes
-        for entry in manifest.files:
-            data = S.read_payload(source, entry.relpath, identity, limits,
-                                  max_bytes=min(remaining, limits.max_file_bytes))
-            if len(data) != entry.size or hashlib.sha256(data).hexdigest() != entry.sha256:
-                _fail("integrity_mismatch")
-            if _SECRET.search(data):
-                _fail("export_forbidden")
-            payload[entry.relpath] = data
-            remaining -= len(data)
+        with _snapshot_reader(source, manifest, identity, limits, digest) as root:
+            for entry in manifest.files:
+                if entry.size > min(remaining, limits.max_file_bytes):
+                    _fail("read_budget_exceeded")
+                data = _read_snapshot_entry(root, entry)
+                if _SECRET.search(data):
+                    _fail("export_forbidden")
+                payload[entry.relpath] = data
+                remaining -= len(data)
         git_files: tuple[C.ManifestFile, ...] = ()
         git_payload: dict[str, bytes] = {}
         if manifest.history.status == "bundled":
@@ -662,6 +774,7 @@ def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
         with ExitStack() as stack:
             writer = _ExportWriter(stack)
             try:
+                writer.capacity(destination, (*manifest.files, *git_files))
                 writer.destination(destination)
                 for entry in git_files:
                     writer.write(entry, git_payload[entry.relpath])
