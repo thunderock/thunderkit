@@ -48,9 +48,13 @@ class Clock(Protocol):
 
 
 class AuthorityProvider(Protocol):
-    """Attest current exact-OID ownership/review/tests/branch safety in-process."""
+    """Attest current exact-OID safety within the supplied remaining seconds.
 
-    def __call__(self, request: C.PushRequest) -> C.PushGrant | None: ...
+    Providers must honor timeout; unbudgeted/noncooperative callbacks are not
+    supported, and a grant returned after expiration cannot authorize a write.
+    """
+
+    def __call__(self, request: C.PushRequest, *, timeout: float) -> C.PushGrant | None: ...
 
 
 @dataclass(frozen=True)
@@ -151,7 +155,7 @@ def _observe(clock: Clock) -> _Observation:
 
 
 class _Timer:
-    """Defer only our alarm across owned acquisition/cleanup, not later work."""
+    """Flag-only alarms; cancellation is raised only at explicit work boundaries."""
 
     def __init__(self, seconds: float) -> None:
         self.end = time.monotonic() + seconds
@@ -160,35 +164,49 @@ class _Timer:
 
     def alarm(self, signum: int, frame: FrameType | None) -> None:
         self.expired = True
-        if not self._protected:
+
+    def check(self) -> None:
+        if time.monotonic() >= self.end:
+            self.expired = True
+        if self.expired:
             raise _Deadline()
 
+    def remaining(self, maximum: float) -> float:
+        self.check()
+        remaining = self.end - time.monotonic()
+        if remaining <= 0:
+            self.expired = True
+            raise _Deadline()
+        return min(maximum, remaining)
+
     @contextmanager
-    def guard(self, *, unwinding: bool | None = None) -> Iterator[None]:
-        # Preserve the primary failure (including KeyboardInterrupt/SystemExit).
-        if unwinding is None:
-            unwinding = sys.exc_info()[0] is not None
+    def guard(self, *, unwinding: bool = False) -> Iterator[None]:
+        # Neither entry nor exit checks the deadline. This includes the first
+        # generator call, cleanup registration, and an already unwinding caller.
         self._protected += 1
         try:
             yield
-        except BaseException:
-            unwinding = True
-            raise
         finally:
             self._protected -= 1
-            self.expired = self.expired or time.monotonic() >= self.end
-            if self.expired and not self._protected and not unwinding:
-                raise _Deadline()
 
 
 @contextmanager
 def _resources(timer: _Timer) -> Iterator[ExitStack]:
     stack = ExitStack()
+    primary: BaseException | None = None
     try:
         yield stack
+    except BaseException as error:
+        primary = error
+        raise
     finally:
         with timer.guard():
-            stack.close()
+            try:
+                stack.close()
+            except BaseException as cleanup_error:
+                if primary is not None:
+                    raise primary from cleanup_error
+                raise
 
 
 @contextmanager
@@ -207,7 +225,7 @@ def _deadline(seconds: float) -> Iterator[_Timer]:
     failed = False
     try:
         signal.setitimer(signal.ITIMER_REAL, seconds)
-        with S.cleanup_scope(timer.guard):
+        with S.cleanup_scope(timer.guard), S.work_scope(timer), G.work_scope(timer):
             yield timer
     except BaseException:
         failed = True
@@ -226,13 +244,8 @@ def _deadline(seconds: float) -> Iterator[_Timer]:
                 signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
         # A caller may itself be inside an except block; that ambient exception
         # must not make a successful body conceal a deferred operation alarm.
-        if timer.expired and not failed:
-            raise _Deadline()
-
-
-def _budget(end: float) -> None:
-    if time.monotonic() >= end:
-        raise _Deadline()
+        if not failed:
+            timer.check()
 
 
 def _inode(info: os.stat_result) -> tuple[int, int, int, int, int]:
@@ -249,11 +262,13 @@ class _Directory:
     def __init__(self, path: Path, stack: ExitStack, timer: _Timer) -> None:
         C.validate_path_text(str(path), absolute=True)
         self.path = path
+        self.timer = timer
         self.links: list[tuple[int, str, int]] = []
         with timer.guard():
             parent = os.open(path.anchor, _DIR)
             stack.callback(os.close, parent)
         for part in path.parts[1:]:
+            timer.check()
             with timer.guard():
                 child = os.open(part, _DIR, dir_fd=parent)
                 stack.callback(os.close, child)
@@ -264,6 +279,7 @@ class _Directory:
 
     def check(self) -> None:
         for parent, part, child in self.links:
+            self.timer.check()
             _require(_inode(os.stat(part, dir_fd=parent, follow_symlinks=False)) == _inode(os.fstat(child)),
                      "path_changed")
         _require(_inode(os.fstat(self.fd)) == _inode(self.info), "path_changed")
@@ -371,9 +387,7 @@ class _Scope:
         self.state_info: os.stat_result | None = None
 
     def check(self) -> None:
-        if self.timer.expired:
-            raise _Deadline()
-        _budget(self.end)
+        self.timer.check()
         _require(_encoded(asdict(self.request.snapshot)) == self.request_bytes, "request_changed")
         for directory in (self.state, self.store, *([self.project] if self.project else [])):
             directory.check()
@@ -511,7 +525,7 @@ class _Scope:
             chunks: list[bytes] = []
             remaining = STATE_MAX_BYTES + 1
             while remaining:
-                _budget(self.end)
+                self.timer.check()
                 data = os.read(fd, remaining)
                 if not data:
                     break
@@ -604,6 +618,7 @@ class _Scope:
                     raw["observation_history_truncated"] = True
                     low, high = 1, len(reachable)
                     while low < high:
+                        self.timer.check()
                         count = (low + high + 1) // 2
                         raw["observed_oids"] = list(reachable[-count:])
                         if len(_encoded(raw)) <= STATE_MAX_BYTES:
@@ -723,12 +738,14 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
         seconds = _number(request.deadline_seconds)
         _require(0 < seconds <= MAX_DEADLINE_SECONDS, "invalid_deadline")
         with _deadline(seconds) as timer:
+            timer.check()
             request = _validated(request)
             _require(authority is None or callable(authority), "invalid_authority_provider")
             if request.snapshot.settings.git.push_after_commit:
                 gaps = ("periodic_unconfigured", "ref_events_unconfigured", "fresh_authority_required")
             active_clock = clock if clock is not None else _SystemClock(timer)
             observation = _observe(active_clock)
+            timer.check()
             if observation.boot is None:
                 warnings.append("boot_identity_unknown")
             with _resources(timer) as stack:
@@ -814,6 +831,7 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                         _require((manifest.ref, manifest.head) == tip and manifest.completion == "complete"
                                  and manifest.history.status == "bundled", "snapshot_tip_mismatch")
                     completed = _observe(active_clock)
+                    timer.check()
                     planned_state = scope.plan_state(snapshot, completed, tip=tip, reachable=reachable)
                     gaps = tuple(gap for gap in gaps if gap != "observation_history_truncated")
                     if planned_state.get("observation_history_truncated") is True:
@@ -837,7 +855,8 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                             _require(scope.git_tip() == tip, "repository_changed")
                             binding = _encoded(asdict(publish))
                             try:
-                                grant = authority(publish)
+                                grant = authority(publish, timeout=timer.remaining(MAX_DEADLINE_SECONDS))
+                                timer.check()
                             except Exception:
                                 # Provider diagnostics can contain credentials;
                                 # interrupts/deadlines (BaseException) propagate.
@@ -845,9 +864,15 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                             _require(_encoded(asdict(publish)) == binding, "publication_request_changed")
                         scope.check()
                         _require(scope.git_tip() == tip, "repository_changed")
-                        push = C.PushResult("unknown", tip[1], tip[0], None,
-                                            "Publication may have started; reconcile the exact ref before retrying.")
-                        push = G.checkpoint_push(publish, grant, driver=driver)
+                        attempted = C.PushResult("unknown", publish.oid, publish.destination_ref, None,
+                                                 "Publication may have started; reconcile the exact ref before retrying.")
+
+                        def publication_attempt() -> None:
+                            nonlocal push
+                            timer.check()
+                            push = attempted
+
+                        push = G.checkpoint_push(publish, grant, driver=driver, on_attempt=publication_attempt)
                         scope.check()
                         scope.write_state(planned_state, push.status)
                         if push.status in ("pushed", "already-present", "disabled"):

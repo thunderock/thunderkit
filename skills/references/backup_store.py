@@ -16,6 +16,7 @@ import shutil
 import tempfile
 import subprocess
 import selectors
+import signal
 import time
 from typing import cast
 import errno
@@ -31,6 +32,37 @@ import continuity_config as C
 
 Fault: TypeAlias = Callable[[str, Path | None], None]
 _T = TypeVar("_T")
+
+
+class WorkBudget(Protocol):
+    """Trusted in-process deadline; check only work, never cleanup transitions."""
+
+    def check(self) -> None: ...
+    def remaining(self, maximum: float) -> float: ...
+
+
+_work_budgets: ContextVar[tuple[WorkBudget, ...]] = ContextVar("work_budgets", default=())
+
+
+@contextmanager
+def work_scope(budget: WorkBudget) -> Iterator[None]:
+    """Share the caller's absolute deadline; nested scopes cannot extend it."""
+    token = _work_budgets.set((*_work_budgets.get(), budget))
+    try:
+        yield
+    finally:
+        _work_budgets.reset(token)
+
+
+def _work() -> None:
+    for budget in _work_budgets.get():
+        budget.check()
+
+
+def _remaining(maximum: float) -> float:
+    for budget in _work_budgets.get():
+        maximum = min(maximum, budget.remaining(maximum))
+    return maximum
 
 
 class CleanupGuard(Protocol):
@@ -110,6 +142,7 @@ def _signature(info: os.stat_result) -> tuple[int, int, int, int, int, int, int]
 
 @contextmanager
 def _directory(path: Path, missing: str = "integrity_mismatch") -> Iterator[int]:
+    _work()
     C.validate_path_text(str(path), absolute=True)
     try:
         with _resources() as stack:
@@ -117,6 +150,7 @@ def _directory(path: Path, missing: str = "integrity_mismatch") -> Iterator[int]
                 fd = os.open(path.anchor, _DIR)
                 stack.callback(lambda: os.close(fd))
             for part in path.parts[1:]:
+                _work()
                 with _guard():
                     child = os.open(part, _DIR, dir_fd=fd)
                     try:
@@ -132,6 +166,7 @@ def _directory(path: Path, missing: str = "integrity_mismatch") -> Iterator[int]
 
 @contextmanager
 def _child_directory(parent: int, name: str) -> Iterator[int]:
+    _work()
     try:
         with _resources() as stack:
             with _guard():
@@ -162,6 +197,7 @@ def _read(parent: int, name: str, budget: int, *,
             chunks: list[bytes] = []
             remaining = budget + 1
             while remaining:
+                _work()
                 chunk = os.read(fd, min(65536, remaining))
                 if not chunk:
                     break
@@ -169,6 +205,7 @@ def _read(parent: int, name: str, budget: int, *,
                 remaining -= len(chunk)
             if fault is not None:
                 fault("after_source_read", path)
+            _work()
             after = os.fstat(fd)
             current = os.stat(name, dir_fd=parent, follow_symlinks=False)
             if _signature(before) != _signature(after) or _signature(before) != _signature(current):
@@ -182,6 +219,7 @@ def _read(parent: int, name: str, budget: int, *,
                 os.lseek(fd, 0, os.SEEK_SET)
                 offset = 0
                 while offset < len(data):
+                    _work()
                     chunk = os.read(fd, min(65536, len(data) - offset))
                     if not chunk or chunk != data[offset:offset + len(chunk)]:
                         _fail(changed)
@@ -196,7 +234,10 @@ def _read(parent: int, name: str, budget: int, *,
 
 
 def _hash(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+    _work()
+    result = hashlib.sha256(data).hexdigest()
+    _work()
+    return result
 
 
 def _mount_identity(root: Path, device: int) -> tuple[str, str]:
@@ -210,6 +251,7 @@ def _mount_identity(root: Path, device: int) -> tuple[str, str]:
             _fail("storage_unqualified")
         matches: list[tuple[int, str, str]] = []
         for line in raw.decode("utf-8", "strict").splitlines():
+            _work()
             left, right = line.split(" - ", 1)
             fields, backing = left.split(), right.split()
             point = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), fields[4])
@@ -234,6 +276,7 @@ def inspect_storage(root: Path) -> C.StorageIdentity:
 
 
 def _check_storage(storage: C.StorageIdentity, *, qualified: bool = True) -> None:
+    _work()
     if qualified and storage.durability not in ("software-readback", "operator-qualified"):
         _fail("storage_unqualified")
     current = inspect_storage(storage.root)
@@ -306,14 +349,17 @@ def _layout(manifest: C.BackupManifest) -> dict[str, C.ManifestFile | None]:
         _fail("invalid_manifest")
     paths = {entry.relpath for entry in manifest.files}
     for deleted in manifest.deleted_paths:
+        _work()
         if any(p == deleted or p.startswith(deleted + "/") or deleted.startswith(p + "/") for p in paths):
             _fail("invalid_manifest")
     expected: dict[str, C.ManifestFile | None] = {"payload": None}
     for entry in manifest.files:
+        _work()
         name = "payload/" + entry.relpath
         expected[name] = entry
         parts = name.split("/")
         for i in range(1, len(parts)):
+            _work()
             expected.setdefault("/".join(parts[:i]), None)
     return expected
 
@@ -353,6 +399,7 @@ def _verified(snapshot: Path, identity: C.ScopeIdentity, limits: C.Limits,
                 with _guard():
                     entries = entries_stack.enter_context(os.scandir(fd))
                 for item in entries:
+                    _work()
                     name = prefix + "/" + item.name
                     info = item.stat(follow_symlinks=False)
                     if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
@@ -444,6 +491,7 @@ class _Writer:
                     cleanup.callback(_owned_unlink, parent, name, (info.st_dev, info.st_ino))
             view = memoryview(data)
             while view:
+                _work()
                 self.check()
                 written = os.write(fd, view[:65536])
                 if not written:
@@ -515,6 +563,7 @@ def _preflight(request: C.SnapshotRequest) -> None:
     if request.settings.identity.kind == "project" and root is None:
         _fail("unsafe_path")
     for source in request.approved_sources:
+        _work()
         C.safe_path(source, must_exist=True)
         if root is not None and not source.is_relative_to(root):
             _fail("unsafe_path")
@@ -617,13 +666,15 @@ class _Git:
             _fail("read_budget_exceeded")
         output = bytearray()
         errors = 0
-        deadline = time.monotonic() + 30
+        _work()
+        deadline = time.monotonic() + _remaining(30.0)
         try:
             with _resources() as stack:
                 with _guard():
                     process = stack.enter_context(subprocess.Popen(
                         [self.binary, *self.options, *args], cwd=cwd, env=self.env,
-                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                        start_new_session=True))
                     stack.callback(_stop_git, process)
                 assert process.stdout is not None and process.stderr is not None
                 with _guard():
@@ -631,10 +682,12 @@ class _Git:
                 poller.register(process.stdout, selectors.EVENT_READ, True)
                 poller.register(process.stderr, selectors.EVENT_READ, False)
                 while poller.get_map():
-                    remaining = deadline - time.monotonic()
+                    _work()
+                    remaining = _remaining(deadline - time.monotonic())
                     if remaining <= 0:
                         _fail("history_invalid")
                     for key, _ in poller.select(min(remaining, 0.2)):
+                        _work()
                         chunk = os.read(key.fd, 65536)
                         if not chunk:
                             poller.unregister(key.fileobj)
@@ -646,18 +699,25 @@ class _Git:
                             errors += len(chunk)
                             if errors > 65536:
                                 _fail("history_invalid")
-                code = process.wait(timeout=max(0.01, deadline - time.monotonic()))
+                code = process.wait(timeout=_remaining(max(0.0, deadline - time.monotonic())))
+                _work()
                 if code and not allow_failure:
                     _fail("history_invalid")
                 return bytes(output) if code == 0 else b""
-        except (OSError, subprocess.TimeoutExpired):
+        except subprocess.TimeoutExpired:
+            _work()
+            _fail("history_invalid")
+        except OSError:
             _fail("history_invalid")
 
 
 def _stop_git(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is None:
-        process.kill()
-        process.wait()
+    # A pipe-owning descendant can outlive the leader; stop the owned group too.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
 
 
 @contextmanager
@@ -711,6 +771,7 @@ def _git_paths(git: _Git, root: Path, args: list[str], limits: C.Limits) -> set[
     raw = git.run(root, args, limits.max_files * (limits.max_path_bytes + 1))
     paths: set[str] = set()
     for item in raw.split(b"\0"):
+        _work()
         if item:
             try:
                 path = item.decode("utf-8")
@@ -788,6 +849,7 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | 
         candidates[relative] = path
 
     for index, source in enumerate(request.approved_sources):
+        _work()
         prefix = str(source.relative_to(root)) if root is not None else f"sources/{index}/{source.name}"
         explicit = source != root
         if _forbidden(policy_path(source)):
@@ -804,6 +866,7 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | 
                     with _guard():
                         entries = entries_stack.enter_context(os.scandir(fd))
                     for item in entries:
+                        _work()
                         if visited > limits.max_files + limits.max_sources:
                             _omit(omissions, "File inventory exceeds count budget.", limits)
                             break
@@ -827,12 +890,14 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | 
             with _child_directory(source_parent, source.name) as source_fd:
                 walk(source_fd, source, prefix)
     for relative, path in sorted(candidates.items()):
+        _work()
         if len(records) >= limits.max_files:
             _omit(omissions, "File inventory exceeds count budget.", limits)
             break
         try:
             with _directory(path.parent, "unsafe_path") as parent:
                 for attempt in range(2):
+                    _work()
                     try:
                         data, info = _read(parent, path.name, min(limits.max_file_bytes, limits.max_snapshot_bytes - total),
                                            fault=fault, path=path, changed="source_changed")
@@ -858,6 +923,7 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | 
     if root is not None:
         with _directory(root, "source_changed") as root_fd:
             for relative in sorted(deleted):
+                _work()
                 if _forbidden(relative) or not any((root / relative).is_relative_to(s) for s in request.approved_sources):
                     continue
                 # An index removal is not necessarily a deleted working file.
@@ -876,6 +942,7 @@ def _absent_worktree_path(root: int, relative: str) -> bool:
     with _resources() as stack:
         parent = root
         for index, part in enumerate(parts):
+            _work()
             try:
                 info = os.stat(part, dir_fd=parent, follow_symlinks=False)
             except FileNotFoundError:
@@ -896,6 +963,7 @@ def _scan_graph(git: _Git, repository: Path, head: str, limits: C.Limits) -> Non
 
     def obj(oid: str, expected: str) -> bytes:
         nonlocal total
+        _work()
         C.validate_oid(oid)
         if oid not in objects:
             if len(objects) >= limits.max_files:
@@ -927,6 +995,7 @@ def _scan_graph(git: _Git, repository: Path, head: str, limits: C.Limits) -> Non
         data = obj(oid, "tree")
         offset = 0
         while offset < len(data):
+            _work()
             end = data.find(b"\0", offset)
             if end < 0 or end + 1 + oid_bytes > len(data):
                 _fail("history_invalid")
@@ -957,6 +1026,7 @@ def _scan_graph(git: _Git, repository: Path, head: str, limits: C.Limits) -> Non
 
     pending = [head]
     while pending:
+        _work()
         oid = pending.pop()
         if oid in commits:
             continue
@@ -965,6 +1035,7 @@ def _scan_graph(git: _Git, repository: Path, head: str, limits: C.Limits) -> Non
         headers = data.split(b"\n\n", 1)[0].splitlines()
         trees: list[str] = []
         for line in headers:
+            _work()
             if line.startswith((b"tree ", b"parent ")):
                 try:
                     target = line.split(b" ", 1)[1].decode("ascii")
@@ -983,6 +1054,7 @@ def _scan_graph(git: _Git, repository: Path, head: str, limits: C.Limits) -> Non
 def _pack_bounds(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -> None:
     """Bound advertised refs, object count and inflation BEFORE Git imports data."""
     import zlib
+    _work()
     end = bundle.find(b"\n\n", 0, min(len(bundle), 65536))
     if end < 0:
         _fail("history_invalid")
@@ -991,6 +1063,7 @@ def _pack_bounds(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -> N
         _fail("history_invalid")
     advertised: dict[str, str] = {}
     for line in header[1:]:
+        _work()
         if line.startswith(b"@"):
             if line not in (b"@object-format=sha1", b"@object-format=sha256"):
                 _fail("history_invalid")
@@ -1016,6 +1089,7 @@ def _pack_bounds(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -> N
     offset = 12
     inflated = 0
     for _ in range(count):
+        _work()
         if offset >= len(pack) - hash_size:
             _fail("history_invalid")
         byte = pack[offset]
@@ -1024,6 +1098,7 @@ def _pack_bounds(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -> N
         size = byte & 15
         shift = 4
         while byte & 128:
+            _work()
             if offset >= len(pack) - hash_size or shift > 63:
                 _fail("history_invalid")
             byte = pack[offset]
@@ -1037,6 +1112,7 @@ def _pack_bounds(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -> N
         if kind == 6:
             # Offset delta base reference; Git verifies graph/offset correctness.
             for i in range(10):
+                _work()
                 if offset >= len(pack) - hash_size:
                     _fail("history_invalid")
                 byte = pack[offset]
@@ -1052,6 +1128,7 @@ def _pack_bounds(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -> N
         delta_header = bytearray()
         try:
             while not inflater.eof:
+                _work()
                 if offset >= len(pack) - hash_size:
                     _fail("history_invalid")
                 chunk = pack[offset:min(offset + 65536, len(pack) - hash_size)]
@@ -1072,9 +1149,11 @@ def _pack_bounds(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -> N
             pos = 0
             result_size = 0
             for field in range(2):
+                _work()
                 shift = 0
                 value = 0
                 while True:
+                    _work()
                     if pos >= len(delta_header) or shift > 63:
                         _fail("history_invalid")
                     byte = delta_header[pos]
@@ -1107,7 +1186,9 @@ def _verify_history(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -
             with _resources() as streams:
                 with _guard():
                     output = streams.enter_context(path.open("xb"))
-                output.write(bundle)
+                for offset in range(0, len(bundle), 65536):
+                    _work()
+                    output.write(bundle[offset:offset + 65536])
             git.run(repository, ["init", "--bare", "--template=", "--object-format=" + ("sha256" if len(history.head) == 64 else "sha1")], 4096)
             git.run(repository, ["bundle", "verify", str(path)], 65536)
             git.run(repository, ["fetch", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", str(path), history.ref + ":" + history.ref], 65536)
@@ -1151,10 +1232,12 @@ def _payload_write(writer: _Writer, stage: int, payload: dict[str, bytes], files
     writer.mkdir(stage, "payload")
     with _child_directory(stage, "payload") as payload_fd:
         for entry in files:
+            _work()
             with _resources() as stack:
                 parent = payload_fd
                 parts = entry.relpath.split("/")
                 for part in parts[:-1]:
+                    _work()
                     writer.mkdir(parent, part)
                     parent = _enter(stack, _child_directory(parent, part))
                 writer.write(parent, parts[-1], payload[entry.relpath], entry.mode)
@@ -1170,6 +1253,7 @@ def _prune(writer: _Writer, snapshots: int, scope: Path, identity: C.ScopeIdenti
         with _guard():
             entries = entries_stack.enter_context(os.scandir(snapshots))
         for index, entry in enumerate(entries):
+            _work()
             if index >= C.MAXIMUMS["max_files"]:
                 break
             info = entry.stat(follow_symlinks=False)
@@ -1184,6 +1268,7 @@ def _prune(writer: _Writer, snapshots: int, scope: Path, identity: C.ScopeIdenti
                 owned.append((manifest.timestamp, entry.name, (info.st_dev, info.st_ino)))
     remaining = sorted((item for item in owned if item[1] != latest.name), reverse=True)
     for _, name, inode in remaining[max(0, retention - 1):]:
+        _work()
         writer.check()
         # Revalidate immediately before removing this previously identified tree.
         try:

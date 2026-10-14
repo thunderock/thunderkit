@@ -12,6 +12,9 @@ ref. Host activation, per-commit observation and hook qualification belong to H.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 import hashlib
 import os
@@ -49,6 +52,37 @@ def _require(condition: bool) -> None:
         raise _Denied("Checkpoint preflight could not establish safe publication.")
 
 
+class WorkBudget(Protocol):
+    """Trusted in-process deadline; check only work, never cleanup transitions."""
+
+    def check(self) -> None: ...
+    def remaining(self, maximum: float) -> float: ...
+
+
+_work_budgets: ContextVar[tuple[WorkBudget, ...]] = ContextVar("work_budgets", default=())
+
+
+@contextmanager
+def work_scope(budget: WorkBudget) -> Iterator[None]:
+    """Share the caller's absolute deadline; nested scopes cannot extend it."""
+    token = _work_budgets.set((*_work_budgets.get(), budget))
+    try:
+        yield
+    finally:
+        _work_budgets.reset(token)
+
+
+def _work() -> None:
+    for budget in _work_budgets.get():
+        budget.check()
+
+
+def _remaining(maximum: float) -> float:
+    for budget in _work_budgets.get():
+        maximum = min(maximum, budget.remaining(maximum))
+    return maximum
+
+
 class GitDriver(Protocol):
     def __call__(self, argv: tuple[str, ...], *, cwd: Path,
                  timeout: float) -> subprocess.CompletedProcess[str]: ...
@@ -76,7 +110,7 @@ def production_driver(argv: tuple[str, ...], *, cwd: Path,
 
 
 def _run_git(argv: tuple[str, ...], cwd: Path, timeout: float) -> tuple[int, bytes, bool]:
-    deadline = time.monotonic() + timeout
+    deadline = time.monotonic() + _remaining(timeout)
     with subprocess.Popen(("git", *argv), cwd=cwd, stdin=subprocess.DEVNULL,
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                           shell=False, start_new_session=True) as process:
@@ -89,10 +123,12 @@ def _run_git(argv: tuple[str, ...], cwd: Path, timeout: float) -> tuple[int, byt
                 selector.register(process.stdout, selectors.EVENT_READ)
                 selector.register(process.stderr, selectors.EVENT_READ)
                 while selector.get_map():
-                    remaining = deadline - time.monotonic()
+                    _work()
+                    remaining = _remaining(deadline - time.monotonic())
                     if remaining <= 0:
                         raise subprocess.TimeoutExpired("git", timeout)
                     for key, _events in selector.select(remaining):
+                        _work()
                         stream = cast(BinaryIO, key.fileobj)
                         chunk = os.read(stream.fileno(), min(65536, MAX_OUTPUT_BYTES + 1 - total))
                         if not chunk:
@@ -104,7 +140,8 @@ def _run_git(argv: tuple[str, ...], cwd: Path, timeout: float) -> tuple[int, byt
                             output.extend(chunk)
                         else:
                             had_stderr = True
-            code = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+            code = process.wait(timeout=_remaining(max(0.0, deadline - time.monotonic())))
+            _work()
         except BaseException:
             # Cleanup only; the original failure is re-raised, not swallowed.
             try:
@@ -137,8 +174,20 @@ def _authority(request: PushRequest, grant: PushGrant) -> tuple[PushRequest, Pus
     return captured, approved
 
 
-def _call(driver: GitDriver, repository: Path, argv: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
-    result = driver(argv, cwd=repository, timeout=TIMEOUT)
+def _call_timeout(on_attempt: Callable[[], None] | None) -> float:
+    timeout = _remaining(TIMEOUT)
+    # Notification is an allocation-free state transition, not work. Once it
+    # returns, enter the driver without another cancellation point that could
+    # falsely report an attempt which never reached the driver.
+    if on_attempt is not None:
+        on_attempt()
+    return timeout
+
+
+def _call(driver: GitDriver, repository: Path, argv: tuple[str, ...], *,
+          on_attempt: Callable[[], None] | None = None) -> subprocess.CompletedProcess[str]:
+    result = driver(argv, cwd=repository, timeout=_call_timeout(on_attempt))
+    _work()
     _require(isinstance(result.stdout, str) and isinstance(result.stderr, str))
     _require(len(result.stdout.encode("utf-8")) <= MAX_OUTPUT_BYTES
              and len(result.stderr.encode("utf-8")) <= MAX_OUTPUT_BYTES)
@@ -171,10 +220,12 @@ def _hooks(path: Path) -> str:
     entries: list[Path] = []
     with os.scandir(path) as scan:
         for entry in scan:
+            _work()
             count += 1
             _require(count <= MAX_HOOKS)
             entries.append(Path(entry.path))
     for child in sorted(entries):
+        _work()
         safe_path(child, must_exist=True)
         fd = os.open(child, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         try:
@@ -183,6 +234,7 @@ def _hooks(path: Path) -> str:
             _require(before.st_size <= MAX_HOOK_BYTES - total)
             data = bytearray()
             while len(data) <= before.st_size:
+                _work()
                 chunk = os.read(fd, min(65536, before.st_size + 1 - len(data)))
                 if not chunk:
                     break
@@ -241,6 +293,7 @@ def _config(raw: str, request: PushRequest, grant: PushGrant) -> None:
     _require(parts[-1] == "" and len(parts) % 2 == 1 and len(parts) <= 8193)
     values: dict[str, list[str]] = {}
     for index in range(0, len(parts) - 1, 2):
+        _work()
         origin, record = parts[index:index + 2]
         key, separator, value = record.partition("\n")
         _require(origin.startswith("file:") and bool(origin[5:]))
@@ -268,6 +321,7 @@ def _config(raw: str, request: PushRequest, grant: PushGrant) -> None:
         values.setdefault(key, []).append(value if separator else "true")
     # Repeated identical URLs are still multiple authority candidates.
     for key, candidates in values.items():
+        _work()
         if key.startswith("remote.") and key.endswith((".url", ".pushurl")):
             _require(len(candidates) == 1 and ENDPOINT.fullmatch(candidates[0]) is not None
                      and ".." not in candidates[0])
@@ -289,6 +343,7 @@ def _graph(git_dir: Path) -> None:
     # Linked/shared repositories and alternate/replacement graphs require a
     # separate qualification; never let a synthetic graph prove ancestry.
     for suffix in ("commondir", "info/grafts", "objects/info/alternates", "shallow"):
+        _work()
         _require(_absent(git_dir / suffix))
     replacements = git_dir / "refs/replace"
     if not _absent(replacements):
@@ -304,6 +359,7 @@ def _graph(git_dir: Path) -> None:
             _require(stat.S_ISREG(info.st_mode) and info.st_size <= MAX_OUTPUT_BYTES)
             data = bytearray()
             while len(data) <= MAX_OUTPUT_BYTES:
+                _work()
                 chunk = os.read(fd, min(65536, MAX_OUTPUT_BYTES + 1 - len(data)))
                 if not chunk:
                     break
@@ -365,8 +421,9 @@ def _remote(request: PushRequest, grant: PushGrant, driver: GitDriver) -> str | 
 
 
 def checkpoint_push(request: PushRequest, grant: PushGrant | None = None, *,
-                    driver: GitDriver = production_driver) -> PushResult:
-    """Publish at most once; no saved setting restores caller authority."""
+                    driver: GitDriver = production_driver,
+                    on_attempt: Callable[[], None] | None = None) -> PushResult:
+    """Publish at most once; the optional observer is in-process, never authority."""
     if request.policy.push_after_commit is False:
         return PushResult("disabled", request.oid, request.destination_ref, None,
                           "Checkpoint publication is disabled.")
@@ -391,19 +448,21 @@ def checkpoint_push(request: PushRequest, grant: PushGrant | None = None, *,
         _require(_preflight(captured, approved, driver) == state)
         _require(_environment() == environment)
         _require(_authority(request, grant) == (captured, approved))
-        return _publish(captured, approved, driver)
+        return _publish(captured, approved, driver, on_attempt)
     except (_Denied, ContinuityError, OSError, subprocess.SubprocessError, UnicodeError):
         return PushResult("denied", request.oid, request.destination_ref, None,
                           "Checkpoint refused; reconcile current authority and repository safety.")
 
 
-def _publish(request: PushRequest, grant: PushGrant, driver: GitDriver) -> PushResult:
+def _publish(request: PushRequest, grant: PushGrant, driver: GitDriver,
+             on_attempt: Callable[[], None] | None = None) -> PushResult:
     """After an attempt, only one exact readback is permitted, even on failure."""
     try:
         _call(driver, request.repository,
               ("-c", "push.followTags=false", "-c", "push.recurseSubmodules=no",
                "push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no",
-               "--", grant.remote_url, f"{request.oid}:{request.destination_ref}"))
+               "--", grant.remote_url, f"{request.oid}:{request.destination_ref}"),
+              on_attempt=on_attempt)
     except (_Denied, OSError, subprocess.SubprocessError, UnicodeError):
         # A failed command is not evidence of rejection: reconcile, never retry.
         return _reconcile(request, grant, driver)
