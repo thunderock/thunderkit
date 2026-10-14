@@ -243,6 +243,10 @@ def _encoded(value: object) -> bytes:
                       default=lambda obj: str(obj) if isinstance(obj, Path) else obj).encode("utf-8")
 
 
+def _graph_digest(oids: tuple[str, ...]) -> str:
+    return hashlib.sha256(_encoded(oids)).hexdigest()
+
+
 class _Scope:
     def __init__(self, request: CheckpointRequest, stack: ExitStack, end: float) -> None:
         self.request = request
@@ -449,6 +453,14 @@ class _Scope:
             observation_fields = {"boot_id", "last_success_monotonic", "last_event_id", "last_snapshot"}
             if self.git is not None:
                 observation_fields |= {"observed_oids", "ref", "head", "publication_status"}
+                # Legacy observations remain readable, but cannot prove the
+                # exact graph for a cadence skip until freshly recaptured.
+                if "graph_sha256" in raw or "observation_history_truncated" in raw:
+                    observation_fields |= {"graph_sha256", "observation_history_truncated"}
+                    digest = raw.get("graph_sha256")
+                    _require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None
+                             and type(raw.get("observation_history_truncated")) is bool
+                             and raw.get("head") is not None, "state_corrupt")
             _require(set(raw) == set(self.template) | observation_fields, "state_corrupt")
             _require(_encoded({key: raw[key] for key in self.template}) == _encoded(self.template), "state_foreign")
             _number(raw["last_success_monotonic"], nonnegative=True)
@@ -467,6 +479,10 @@ class _Scope:
                                   and all(len(oid) == len(head) for oid in oids))), "state_corrupt")
                 _require(raw["publication_status"] in ("disabled", "denied", "pushed", "already-present", "failed", "unknown"),
                          "state_corrupt")
+                if "graph_sha256" in raw:
+                    _require(bool(oids) and oids[-1] == head
+                             and (raw["observation_history_truncated"] is True
+                                  or raw["graph_sha256"] == _graph_digest(tuple(oids))), "state_corrupt")
             if raw["boot_id"] is not None:
                 _text(raw["boot_id"])
             if raw["last_event_id"] is not None:
@@ -491,14 +507,42 @@ class _Scope:
                  (current is not None and self.state_info is not None
                   and _signature(current) == _signature(self.state_info)), "state_changed")
 
-    def write_state(self, snapshot: C.SnapshotResult, observation: _Observation, *,
-                    tip: _Tip | None = None, observed: tuple[str, ...] = (),
-                    publication_status: str = "disabled") -> None:
+    def plan_state(self, snapshot: C.SnapshotResult, observation: _Observation, *,
+                   tip: _Tip | None, reachable: tuple[str, ...]) -> C.JsonObject:
+        """Admit the complete envelope before transport, including settled status.
+
+        The bounded suffix only forgets dedupe observations, never bundle data.
+        Its full-graph digest is inert and must match a fresh scan for cadence.
+        """
         raw = dict(self.template)
         raw.update(boot_id=observation.boot, last_success_monotonic=observation.monotonic,
                    last_event_id=self.request.event_id, last_snapshot=str(snapshot.snapshot_path))
         if tip is not None:
-            raw.update(ref=tip[0], head=tip[1], observed_oids=list(observed), publication_status=publication_status)
+            raw.update(ref=tip[0], head=tip[1], observed_oids=list(reachable),
+                       publication_status="disabled")
+            if tip[1] is not None:
+                _require(bool(reachable) and reachable[-1] == tip[1], "invalid_git_output")
+                # This is the longest permitted pre/post-publication status.
+                raw.update(publication_status="already-present", graph_sha256=_graph_digest(reachable),
+                           observation_history_truncated=False)
+                if len(_encoded(raw)) > STATE_MAX_BYTES:
+                    raw["observation_history_truncated"] = True
+                    low, high = 1, len(reachable)
+                    while low < high:
+                        count = (low + high + 1) // 2
+                        raw["observed_oids"] = list(reachable[-count:])
+                        if len(_encoded(raw)) <= STATE_MAX_BYTES:
+                            low = count
+                        else:
+                            high = count - 1
+                    raw["observed_oids"] = list(reachable[-low:])
+        _require(len(_encoded(raw)) <= STATE_MAX_BYTES, "state_budget_exceeded")
+        return raw
+
+    def write_state(self, planned: C.JsonObject, publication_status: str) -> None:
+        raw = dict(planned)
+        if "publication_status" in raw:
+            raw["publication_status"] = publication_status
         data = _encoded(raw)
         _require(len(data) <= STATE_MAX_BYTES, "state_budget_exceeded")
         name = ".checkpoint-state-" + uuid.uuid4().hex
@@ -637,16 +681,23 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                         warnings.append(warning)
                     age = _context_age(scope, observation.wall)
                     known: tuple[str, ...] = ()
+                    saved_oids: tuple[str, ...] = ()
                     if tip is not None and tip[1] is not None and state is not None and state["ref"] == tip[0]:
                         saved = state["observed_oids"]
                         assert isinstance(saved, list)
-                        known = tuple(C.validate_oid(oid) for oid in saved)
+                        saved_oids = tuple(C.validate_oid(oid) for oid in saved)
+                        current = set(reachable)
+                        known = tuple(oid for oid in saved_oids if oid in current)
                     seen = set(known)
                     observed = tuple(oid for oid in reachable if oid not in seen)
-                    all_observed = (*known, *observed)
-                    _require(len(all_observed) <= request.snapshot.settings.limits.max_files, "state_budget_exceeded")
                     graph_same = tip is None or (state is not None and state["ref"] == tip[0]
-                                                and state["head"] == tip[1] and not observed)
+                                                and state["head"] == tip[1]
+                                                and (tip[1] is None or (bool(reachable)
+                                                     and state.get("graph_sha256") == _graph_digest(reachable)
+                                                     and saved_oids == reachable[-len(known):])))
+                    if graph_same and state is not None and state.get("observation_history_truncated") is True:
+                        gaps += ("observation_history_truncated",)
+                        observed = ()
                     publication_settled = (tip is None or tip[1] is None or not request.snapshot.settings.git.push_after_commit
                                            or (state is not None and state["publication_status"] in ("pushed", "already-present")))
                     if (request.trigger == "due" and state is not None and observation.boot is not None
@@ -654,6 +705,9 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                         last = _number(state["last_success_monotonic"], nonnegative=True)
                         elapsed = observation.monotonic - last
                         if state["boot_id"] == observation.boot and 0 <= elapsed < request.snapshot.settings.backup.interval_minutes * 60:
+                            scope.check()
+                            if tip is not None:
+                                _require(scope.git_tip() == tip, "repository_changed")
                             return result("not-due", "Wait for the policy interval; no snapshot or publication was attempted.")
                     scope.check()
                     if tip is not None:
@@ -672,10 +726,13 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                         _require((manifest.ref, manifest.head) == tip and manifest.completion == "complete"
                                  and manifest.history.status == "bundled", "snapshot_tip_mismatch")
                     completed = _observe(active_clock)
+                    planned_state = scope.plan_state(snapshot, completed, tip=tip, reachable=reachable)
+                    gaps = tuple(gap for gap in gaps if gap != "observation_history_truncated")
+                    if planned_state.get("observation_history_truncated") is True:
+                        gaps += ("observation_history_truncated",)
                     # A crash or deadline during G leaves a complete snapshot and
                     # an explicitly unsettled observation, never remote success.
-                    scope.write_state(snapshot, completed, tip=tip, observed=all_observed,
-                                      publication_status="unknown" if tip is not None and tip[1] is not None
+                    scope.write_state(planned_state, "unknown" if tip is not None and tip[1] is not None
                                       and request.snapshot.settings.git.push_after_commit else "disabled")
                     duplicate = (snapshot.status == "unchanged" and request.trigger == "event"
                                  and request.event_id is not None and state is not None
@@ -704,8 +761,7 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                                             "Publication may have started; reconcile the exact ref before retrying.")
                         push = G.checkpoint_push(publish, grant, driver=driver)
                         scope.check()
-                        scope.write_state(snapshot, completed, tip=tip, observed=all_observed,
-                                          publication_status=push.status)
+                        scope.write_state(planned_state, push.status)
                         if push.status in ("pushed", "already-present", "disabled"):
                             gaps = tuple(gap for gap in gaps if gap != "fresh_authority_required")
                         elif push.status in ("failed", "unknown"):
