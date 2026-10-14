@@ -1,15 +1,17 @@
-"""Model-free project checkpoint commands; saved settings never supply consent.
+"""Model-free checkpoint commands; saved settings never supply consent.
 
 Setup writes inert private configuration, not host bindings. Capture qualifies
-only its explicit store and never supplies publication authority. Global capture,
-host activation and an uninstall command are outside this tracer.
+only its explicit store and never supplies publication authority. Global capture
+requires explicit settings; host activation and uninstall remain out of scope.
 """
 from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
 import json
+import os
 from pathlib import Path
+import stat
 import sys
 from typing import NoReturn, cast
 
@@ -27,7 +29,8 @@ class _SafeParser(argparse.ArgumentParser):
 
 class _Arguments(argparse.Namespace):
     command: str
-    project_root: Path
+    project_root: Path | None
+    global_config: Path | None
     scope: C.ScopeKind
     identity: str
     backup_root: Path
@@ -51,7 +54,7 @@ def _cli_path(value: str) -> Path:
 def _parser() -> _SafeParser:
     parser = _SafeParser(
         prog="checkpoint_cli.py", allow_abbrev=False,
-        description="Model-free project checkpoint preview, setup and one-shot capture.",
+        description="Model-free project preview/setup and project or global one-shot capture.",
         epilog="Use literal absolute paths and existing store/state directories. No host activation or push grant.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
@@ -62,8 +65,9 @@ def _parser() -> _SafeParser:
     }
     for name, description in descriptions.items():
         command = commands.add_parser(name, help=description, description=description, allow_abbrev=False)
-        command.add_argument("--project-root", type=_cli_path, required=True)
-        command.add_argument("--scope", choices=("project",), required=True)
+        command.add_argument("--project-root", type=_cli_path, required=name != "capture")
+        command.add_argument("--scope", choices=("project", "global") if name == "capture" else ("project",),
+                             required=True)
         command.add_argument("--identity", required=True)
         command.add_argument("--backup-root", type=_cli_path, required=True)
         command.add_argument("--source", type=_cli_path, action="append", required=True)
@@ -71,8 +75,10 @@ def _parser() -> _SafeParser:
         command.add_argument("--include-history", action="store_true", default=False)
         command.add_argument("--history-ref", type=C.validate_ref)
         if name == "capture":
+            command.add_argument("--global-config", type=_cli_path,
+                                 help="Explicit global settings required only for global capture")
             command.add_argument("--state-dir", type=_cli_path, required=True,
-                                 help="Existing private directory disjoint from the entire project and store")
+                                 help="Existing private directory disjoint from sources, project and store")
         else:
             command.add_argument("--integration-root", type=_cli_path, required=True)
         if name != "preview":
@@ -82,8 +88,18 @@ def _parser() -> _SafeParser:
 
 
 def _settings(args: _Arguments) -> C.ResolvedSettings:
+    if args.scope == "global":
+        assert args.global_config is not None
+        settings = C.resolve_continuity(
+            global_config=args.global_config, scope="global",
+            expected_identity=C.ScopeIdentity("global", args.identity),
+        )
+        if settings.backup_root != args.backup_root:
+            raise C.ContinuityError("identity_mismatch", "Backup root does not match the configured scope.")
+        return settings
     # Read only the project's inert policy, never model config or remembered
     # roots, locators, sources or grants. Explicit false policy stays false.
+    assert args.project_root is not None
     policy_path = C.safe_path(args.project_root / ".thunderkit/continuity.json")
     try:
         policy_path.lstat()
@@ -110,6 +126,27 @@ def _settings(args: _Arguments) -> C.ResolvedSettings:
     )
 
 
+def _global_preflight(snapshot: C.SnapshotRequest, state_dir: Path) -> None:
+    """Reject unsafe global inputs before the storage qualification writes.
+
+    These read-only checks do not replace S/H's descriptor-bound revalidation.
+    """
+    C.validate_path_text(str(state_dir), absolute=True, max_bytes=snapshot.settings.limits.max_path_bytes)
+    state = C.safe_path(state_dir, must_exist=True).lstat()
+    if not stat.S_ISDIR(state.st_mode) or stat.S_IMODE(state.st_mode) != 0o700 or state.st_uid != os.geteuid():
+        raise C.ContinuityError("unsafe_path", "State requires an existing private owned directory.")
+    root = snapshot.storage.root
+    for path in (root, *snapshot.approved_sources):
+        if state_dir.is_relative_to(path) or path.is_relative_to(state_dir):
+            raise C.ContinuityError("unsafe_path", "State must be disjoint from sources and storage.")
+    for source in snapshot.approved_sources:
+        if source.is_relative_to(root) or root.is_relative_to(source):
+            raise C.ContinuityError("unsafe_path", "Sources must be disjoint from storage.")
+        info = C.safe_path(source, must_exist=True).lstat()
+        if not stat.S_ISDIR(info.st_mode) and (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1):
+            raise C.ContinuityError("unsafe_path", "Sources require safe directories or single-link regular files.")
+
+
 def _json_path(value: object) -> str:
     if isinstance(value, Path):
         return str(value)
@@ -125,16 +162,23 @@ def main(argv: list[str] | None = None) -> int:
     """Return actual API dataclasses as JSON; refuse missing consent before I/O."""
     try:
         args = _parser().parse_args(argv, namespace=_Arguments())
+        if args.command == "capture":
+            if ((args.scope == "global" and (args.project_root is not None or args.global_config is None))
+                    or (args.scope == "project" and (args.project_root is None or args.global_config is not None))):
+                return _error("invalid_arguments", "Capture arguments must match the selected scope.")
         if args.command != "preview" and not args.approve:
             return _error("approval_required", "Fresh --approve is required for this invocation.")
         settings = _settings(args)
         result: Setup.SetupPreview | Setup.SetupResult | H.CheckpointResult
         if args.command == "capture":
             if not settings.backup.enabled:
-                return _error("backup_disabled", "Project policy disables checkpoint capture.")
+                scope = "Global" if args.scope == "global" else "Project"
+                return _error("backup_disabled", f"{scope} policy disables checkpoint capture.")
             storage = S.inspect_storage(args.backup_root)
             snapshot = C.SnapshotRequest(settings, storage, tuple(args.source),
                                          tuple(args.context_entrypoint), args.include_history, args.history_ref)
+            if args.scope == "global":
+                _global_preflight(snapshot, args.state_dir)
             qualified = S.qualify_storage(storage, approval=True)
             if not qualified.readback_verified:
                 return _error("storage_unqualified", "Storage readback qualification was not established.")
