@@ -22,7 +22,7 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
         # inheriting and duplicating its test suite in discovery.
         self.fixture = push_fixtures.CheckpointPushTests()
         self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
+        self.addCleanup(self.cleanup_fixture)
         self.enterContext(patch("subprocess.Popen", push_fixtures.POPEN))
         self.c = self.fixture.c
         # Bind these modules to this fixture's C module, not an older test import.
@@ -52,6 +52,10 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
             include_history=True, history_ref=self.fixture.ref,
         )
         self.clock = runtime_fixtures.FakeClock()
+
+    def cleanup_fixture(self) -> None:
+        self.assertTrue(self.fixture.doCleanups(), "Composed fixture cleanup must not hide an error")
+        self.assertFalse(self.fixture.base.exists(), "Every owned runtime fixture must be removed")
 
     def request(self):
         return self.api.CheckpointRequest(self.snapshot_request, self.state, trigger="event")
@@ -119,6 +123,98 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
         self.assertEqual(self.fixture.driver.writes, 1)
         self.assertEqual(self.fixture.remote_oid("refs/heads/main"), self.fixture.old)
         self.assertIn("reachable_history_only", second.coverage_gaps)
+
+    def test_large_object_listing_does_not_prevent_file_only_capture(self) -> None:
+        # Prevent fixture commits from launching background repository maintenance.
+        self.fixture.config("gc.auto", "0")
+        self.fixture.config("maintenance.auto", "false")
+        documents = self.fixture.repo / "tracked-documents"
+        documents.mkdir()
+        for number in range(1600):
+            (documents / f"entry-{number:04d}.txt").write_text(f"Safe record {number}\n")
+        self.fixture.raw("add", "--all")
+        self.fixture.raw("commit", "-m", "large ordinary object inventory")
+        self.fixture.oid = self.fixture.head()
+        objects = self.fixture.raw("rev-list", "--objects", "--no-object-names", "HEAD", "--").stdout
+        self.assertGreater(len(objects.encode("ascii")), self.api.STATE_MAX_BYTES)
+        self.assertLess(len(objects.splitlines()), self.settings.limits.max_files)
+        self.snapshot_request = replace(self.snapshot_request, include_history=False, history_ref=None)
+        control = self.s.create_snapshot(self.snapshot_request)
+        self.assertEqual((control.status, control.history_status), ("partial", "unprotected"))
+        self.assertEqual(self.s.read_payload(control.snapshot_path, "notes.md", self.fixture.identity,
+                                            self.settings.limits), self.notes.read_bytes())
+        calls = []
+
+        def authority(request):
+            calls.append(request)
+            return self.fixture.grant
+
+        result = self.with_authority(authority)
+        self.assertIsNotNone(result.snapshot,
+                             "H8-F1: graph listing limits must not discard a valid file-only snapshot")
+        self.assertEqual((result.status, result.snapshot.history_status), ("partial", "unprotected"))
+        self.assertEqual(self.s.read_payload(result.snapshot.snapshot_path, "notes.md", self.fixture.identity,
+                                            self.settings.limits), self.notes.read_bytes())
+        self.assertEqual(calls, [])
+        self.assertEqual(self.fixture.driver.calls, [])
+        self.assertIsNone(result.push)
+        self.assertFalse((self.state / ".checkpoint.lock").exists())
+
+    def test_history_count_limit_preserves_files_without_publication(self) -> None:
+        self.settings = replace(self.settings, limits=self.c.Limits(max_files=2))
+        self.snapshot_request = replace(self.snapshot_request, settings=self.settings)
+        control = self.s.create_snapshot(self.snapshot_request)
+        self.assertEqual((control.status, control.history_status), ("partial", "unprotected"))
+        self.assertEqual(self.s.read_payload(control.snapshot_path, "notes.md", self.fixture.identity,
+                                            self.settings.limits), self.notes.read_bytes())
+        calls = []
+
+        def authority(request):
+            calls.append(request)
+            return self.fixture.grant
+
+        result = self.with_authority(authority)
+        self.assertIsNotNone(result.snapshot,
+                             "H8-F1: history capacity failure must retain independently valid current files")
+        self.assertEqual((result.status, result.snapshot.history_status), ("partial", "unprotected"))
+        self.assertEqual(self.s.read_payload(result.snapshot.snapshot_path, "notes.md", self.fixture.identity,
+                                            self.settings.limits), self.notes.read_bytes())
+        self.assertTrue(result.snapshot.omissions)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.fixture.driver.calls, [])
+        self.assertIsNone(result.push)
+        self.assertFalse((self.state / "state.json").exists())
+        self.assertFalse((self.state / ".checkpoint.lock").exists())
+
+    def test_unborn_attached_repository_captures_context_without_publication(self) -> None:
+        project = self.fixture.base / "unborn-project"
+        self.fixture.raw("init", "--initial-branch=work", f"--template={self.fixture.template}",
+                         str(project), cwd=self.fixture.base)
+        notes = project / "notes.md"
+        notes.write_text("# Context before the first commit\n")
+        self.settings = replace(self.settings, project_root=project, approved_sources=(notes,))
+        self.snapshot_request = replace(self.snapshot_request, settings=self.settings,
+                                        approved_sources=(notes,), include_history=False, history_ref=None)
+        control = self.s.create_snapshot(self.snapshot_request)
+        self.assertEqual((control.status, control.history_status), ("complete", "not-applicable"))
+        calls = []
+
+        def authority(request):
+            calls.append(request)
+            return self.fixture.grant
+
+        result = self.with_authority(authority)
+        self.assertIsNotNone(result.snapshot,
+                             "H8-F3B: an unborn Git repository must preserve context before its first commit")
+        self.assertEqual(result.status, "captured", result.warnings)
+        self.assertEqual(result.snapshot.history_status, "not-applicable")
+        self.assertEqual(self.s.read_payload(result.snapshot.snapshot_path, "notes.md", self.fixture.identity,
+                                            self.settings.limits), notes.read_bytes())
+        self.assertEqual(result.observed_oids, ())
+        self.assertEqual(calls, [])
+        self.assertEqual(self.fixture.driver.calls, [])
+        self.assertIsNone(result.push)
+        self.assertFalse((self.state / ".checkpoint.lock").exists())
 
     def test_partial_snapshot_does_not_call_publication_authority(self) -> None:
         self.notes.write_bytes(b"API_TOKEN=" + b"ghp_" + b"Z" * 36 + b"\n")
