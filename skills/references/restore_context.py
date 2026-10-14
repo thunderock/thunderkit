@@ -856,12 +856,23 @@ def _cli_path(value: str) -> Path:
     return C.literal_path(value, absolute=True)
 
 
-def _context_budget(value: str) -> int:
-    # Reject floats, booleans, signs and oversized decimal strings before int().
-    if (len(value) > len(str(C.MAXIMUMS["max_context_bytes"]))
-            or re.fullmatch(r"[0-9]+", value) is None):
-        _fail("invalid_config")
-    return C.Limits(max_context_bytes=int(value)).max_context_bytes
+_LIMIT_NAMES = ("max_file_bytes", "max_snapshot_bytes", "max_context_bytes",
+                "max_files", "max_path_bytes", "max_sources")
+
+
+def _limit_overrides(args: argparse.Namespace) -> dict[str, int]:
+    overrides: dict[str, int] = {}
+    for name in _LIMIT_NAMES:
+        value: str | None = getattr(args, name)
+        if value is not None:
+            # Validate raw ASCII tokens before int(); do not normalize input.
+            if (len(value) > len(str(C.MAXIMUMS[name]))
+                    or re.fullmatch(r"[0-9]+", value) is None):
+                _fail("invalid_config")
+            overrides[name] = int(value)
+    # Limits validates ceilings and the file/snapshot relation together,
+    # after merging with either resolved policy or recovery defaults.
+    return overrides
 
 
 def _json_path(value: object) -> str:
@@ -895,11 +906,13 @@ def main(argv: list[str] | None = None) -> int:
         command.add_argument("--identity", required=command is not load,
                              help="Exact scope ID; load may instead use a bound private identity")
         command.add_argument("--scope", choices=("project", "global"), default="project")
+        for name in _LIMIT_NAMES:
+            command.add_argument("--" + name.replace("_", "-"),
+                                 help="Positive ASCII decimal limit within Limits bounds; unmentioned limits remain unchanged")
     load.add_argument("--project-root", type=_cli_path, help="Explicit project binding; never inferred from cwd")
     load.add_argument("--global-config", type=_cli_path)
     load.add_argument("--memory-pointer", type=_cli_path, help="Already available matching context-pointer JSON")
-    load.add_argument("--max-context-bytes", type=_context_budget,
-                      help="Positive decimal read limit within Limits bounds; other policy limits remain unchanged")
+
     for command in (preview, export):
         command.add_argument("--destination", type=_cli_path, required=True)
     export.add_argument("--approve", action="store_true", default=False,
@@ -911,6 +924,7 @@ def main(argv: list[str] | None = None) -> int:
         arguments.insert(0, "load")
     try:
         args = parser.parse_args(arguments)
+        overrides = _limit_overrides(args)
         identity = C.ScopeIdentity(args.scope, args.identity) if args.identity is not None else None
         result: C.ContextLoad | ExportPreview | C.ExportResult
         if args.command == "load":
@@ -919,16 +933,17 @@ def main(argv: list[str] | None = None) -> int:
                 explicit_backup_path=args.context, scope=args.scope,
                 expected_identity=identity, memory_pointer=args.memory_pointer,
             )
-            if args.max_context_bytes is not None:
-                settings = replace(settings, limits=replace(settings.limits, max_context_bytes=args.max_context_bytes))
+            if overrides:
+                settings = replace(settings, limits=replace(settings.limits, **overrides))
             result = load_resolved(settings)
         else:
             # Export never consults remembered paths, settings, grants or cwd.
             assert identity is not None  # Required by the preview/export parser.
+            limits = C.Limits(**overrides)
             if args.command == "preview":
-                result = export_preview(args.context, args.destination, identity)
+                result = export_preview(args.context, args.destination, identity, limits)
             else:
-                result = export_snapshot(args.context, args.destination, identity, approval=args.approve,
+                result = export_snapshot(args.context, args.destination, identity, limits, approval=args.approve,
                                          expected_manifest_sha256=args.expect_manifest_sha256)
         encoded = json.dumps(asdict(result), default=_json_path, ensure_ascii=True, allow_nan=False)
     except C.ContinuityError as error:
