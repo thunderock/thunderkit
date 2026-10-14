@@ -37,6 +37,7 @@ PRIOR = b"# Prior verified context\n"
 CURRENT = b"# Current saved context\nRetain these exact bytes despite slow history.\n"
 PHASES = ("runtime_reachable", "s_prior", "s_current", "s_bundle", "s_staged",
           "s_final", "runtime_final")
+FINITE_PHASES = ("s_final_finite", "runtime_final_finite")
 
 
 def digest(data):
@@ -75,6 +76,7 @@ class _HistoryProbe(unittest.TestCase):
     scenario: str
     receipt: Path
     tmp: Path
+    optional_cutoff: float
 
     def setUp(self):
         self.data = {"scenario": self.scenario, "deadline_seconds": DEADLINE}
@@ -122,6 +124,8 @@ class _HistoryProbe(unittest.TestCase):
             self.assertEqual(digest(self.exe.read_bytes()), self.exe_hash)
             ready = self.receipt.parent / f"ready-{len(self.events)}.json"
             argv = [str(self.exe), str(ready)]
+            if self.scenario in FINITE_PHASES:
+                argv.extend([str(self.optional_cutoff + 0.2), *original])
             event = {"phase": label, "original_argv": original, "cwd": str(cwd),
                      "ready_path": str(ready), "armed_seconds": signal.getitimer(signal.ITIMER_REAL)[0],
                      "s_budget_count": len(self.s._work_budgets.get()),
@@ -226,9 +230,14 @@ class _HistoryProbe(unittest.TestCase):
 
     def install_fault(self, stack):
         self.exe = self.f.base / "private-history-git"
-        self.exe.write_text("#!" + PYTHON + "\nimport json,os,signal,sys\nfrom pathlib import Path\n"
-            "Path(sys.argv[1]).write_text(json.dumps({'pid':os.getpid(),'group':os.getpgrp()}))\n"
-            "os.write(1,b'ready\\n')\nwhile True: signal.pause()\n")
+        body = ("#!" + PYTHON + "\nimport json,os,signal,sys,time\nfrom pathlib import Path\n"
+            "Path(sys.argv[1]).write_text(json.dumps({'pid':os.getpid(),'group':os.getpgrp()}))\n")
+        if self.scenario in FINITE_PHASES:
+            body += ("time.sleep(max(0.0,float(sys.argv[2])-time.monotonic()))\n"
+                     "os.execv(sys.argv[3],sys.argv[3:])\n")
+        else:
+            body += "os.write(1,b'ready\\n')\nwhile True: signal.pause()\n"
+        self.exe.write_text(body)
         self.exe.chmod(0o700)
         self.exe_hash = digest(self.exe.read_bytes())
         self.data["executable"] = {"path": str(self.exe), "sha256": self.exe_hash, "shebang": PYTHON}
@@ -242,6 +251,8 @@ class _HistoryProbe(unittest.TestCase):
                 selected = label(*args, **kwargs) if callable(label) else label
                 labels.append(selected)
                 try:
+                    if name == "create_snapshot" and self.scenario in FINITE_PHASES:
+                        self.optional_cutoff = min(b.end for b in self.s._history_budgets.get())
                     value = original(*args, **kwargs)
                     if name == "verify_snapshot":
                         self.verified.append({"phase": selected, "path": str(args[0]),
@@ -267,7 +278,7 @@ class _HistoryProbe(unittest.TestCase):
         run = self.s._Git.run
 
         def selected_run(git, cwd, args, budget, **kwargs):
-            phase = self.scenario
+            phase = self.scenario.removesuffix("_finite")
             bundle_verify = args == ["bundle", "verify", str(git.scratch / "history.bundle")]
             target = (
                 phase == "runtime_reachable" and "runtime_reachable" in labels
@@ -290,6 +301,9 @@ class _HistoryProbe(unittest.TestCase):
 
     def runTest(self):
         self.prevalidate()
+        if self.scenario in FINITE_PHASES:
+            self.finite_completion()
+            return
         if self.scenario == "file_only_control":
             self.data["control_passed"] = True
             self.resource_check()
@@ -348,6 +362,45 @@ class _HistoryProbe(unittest.TestCase):
         # S-final has a staged-verified tree already renamed into snapshots;
         # runtime-final has a fully S-verified snapshot and updated locator.
         self.resource_check(allow_new_locator=self.scenario == "runtime_final")
+
+    def finite_completion(self):
+        """Collect both real outcomes before the supervisor asserts progress."""
+        self.data["runs"] = []
+        for invocation in range(2):
+            self.case.clock.mono += 10
+            event_start = len(self.events)
+            with ExitStack() as stack:
+                self.install_fault(stack)
+                result, elapsed = self.checkpoint()
+            self.assertEqual(self.authority_calls, [])
+            self.assertEqual(self.f.driver.calls, [])
+            paths = sorted(p for p in (self.scope / "snapshots").iterdir()
+                           if p != self.prior.snapshot_path)
+            for path in paths:
+                manifest = self.s.verify_snapshot(path, self.f.identity, self.case.settings.limits)
+                self.assertEqual((manifest.completion, manifest.history.status), ("complete", "bundled"))
+                self.assertEqual(self.s.read_payload(path, "notes.md", self.f.identity,
+                                                     self.case.settings.limits), CURRENT)
+            locator = Path(json.loads(self.locator.read_text())["path"]).parent
+            state = json.loads((self.case.state / "state.json").read_text())
+            returned = result.snapshot.snapshot_path if result.snapshot is not None else None
+            self.data["runs"].append({"invocation": invocation + 1, "elapsed": elapsed,
+                "result": asdict(result), "current_paths": [str(p) for p in paths],
+                "returned_is_current": returned in paths, "locator_matches_returned": locator == returned,
+                "state_matches_returned": state["last_snapshot"] == str(returned),
+                "last_success_monotonic": state["last_success_monotonic"],
+                "expected_monotonic": self.case.clock.mono,
+                "fault_events": len(self.events) - event_start})
+            self.resource_check(allow_new_locator=True, allow_new_state=True)
+        self.assertTrue(self.events, "Finite-delay final verification was never reached")
+        for event in self.events:
+            ready = json.loads(Path(event["ready_path"]).read_text())
+            self.assertEqual(ready, {"pid": event["pid"], "group": event["pid"]})
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(ready["group"], 0)
+            event["process_group_absent"] = True
+        self.data["events"] = self.events
+        self.data["timing_injection"] = "One actual Git command delayed beyond optional cutoff, then exec original argv"
 
     def resource_check(self, *, allow_new_locator=False, allow_new_state=False):
         self.assertEqual(file_tree(self.prior.snapshot_path), self.prior_tree)
@@ -529,13 +582,37 @@ class HistoryDeadlineTests(unittest.TestCase):
         self.assertTrue(data["late_complete_locator_verified"])
         self.assertFalse(data["resources"]["locator_unchanged"])
 
+    def assert_finite_completion(self, phase):
+        data = self.scenario(phase)
+        self.assertEqual(len(data["runs"]), 2)
+        for row in data["runs"]:
+            with self.subTest(phase=phase, invocation=row["invocation"]):
+                self.assertEqual(row["result"]["status"], "captured",
+                                 "Finite final verification must complete under the outer deadline")
+                self.assertLess(row["elapsed"], DEADLINE)
+                if row["fault_events"]:
+                    self.assertGreater(row["elapsed"], DEADLINE / 2)
+                self.assertTrue(row["returned_is_current"])
+                self.assertTrue(row["locator_matches_returned"])
+                self.assertTrue(row["state_matches_returned"])
+                self.assertEqual(row["last_success_monotonic"], row["expected_monotonic"])
+                self.assertEqual(len(row["current_paths"]), 1, "Retry must not accumulate unreported snapshots")
+                self.assertEqual(row["result"]["push"]["status"], "denied")
+        self.assertEqual(data["runs"][0]["current_paths"], data["runs"][1]["current_paths"])
+
+    def test_s_final_finite_verification_reports_current_snapshot_on_repeated_calls(self):
+        self.assert_finite_completion("s_final_finite")
+
+    def test_runtime_final_finite_verification_advances_cadence_on_repeated_calls(self):
+        self.assert_finite_completion("runtime_final_finite")
+
 
 def load_tests(loader, tests, pattern):
     return loader.loadTestsFromTestCase(HistoryDeadlineTests)
 
 
 def child_main(name, receipt):
-    if name not in (*PHASES, "file_only_control", "small_history_control"):
+    if name not in (*PHASES, *FINITE_PHASES, "file_only_control", "small_history_control"):
         raise ValueError("Unknown history probe")
     case = _HistoryProbe()
     case.scenario = name
