@@ -61,6 +61,7 @@ def _parser() -> _SafeParser:
     descriptions = {
         "preview": "Inspect the explicit setup request without writes or approval",
         "setup": "Capture once and write private settings with fresh --approve; no service activation",
+        "resume-setup": "Resume an exact interrupted local setup claim with fresh --approve",
         "capture": "Capture explicit sources with fresh --approve; publication remains separately denied",
     }
     for name, description in descriptions.items():
@@ -190,13 +191,17 @@ def main(argv: list[str] | None = None) -> int:
             request = Setup.SetupRequest(settings, tuple(args.source), args.integration_root,
                                          context_entrypoints=tuple(args.context_entrypoint),
                                          include_history=args.include_history, history_ref=args.history_ref)
-            preview = Setup.preview_setup(request)
-            if args.command == "preview":
-                result = preview
-                success = preview.status == "approval_required"
-            else:
-                result = Setup.apply_setup(preview, approval=True)
+            if args.command == "resume-setup":
+                result = Setup.resume_setup(request, approval=True)
                 success = result.status == "configured"
+            else:
+                preview = Setup.preview_setup(request)
+                if args.command == "preview":
+                    result = preview
+                    success = preview.status == "approval_required"
+                else:
+                    result = Setup.apply_setup(preview, approval=True)
+                    success = result.status == "configured"
         encoded = json.dumps(asdict(result), default=_json_path, ensure_ascii=True, allow_nan=False)
     except C.ContinuityError as error:
         return _error(error.code, error.detail)
