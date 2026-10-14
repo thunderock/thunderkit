@@ -190,6 +190,7 @@ class ExportPreview:
     deleted_paths: tuple[str, ...]
     history_status: C.HistoryStatus
     warnings: tuple[str, ...]
+    working_tree_omissions: tuple[str, ...] = ()
 
 
 _DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
@@ -351,7 +352,8 @@ def _empty(fd: int) -> None:
 
 
 def _preview(source: Path, destination: Path, identity: C.ScopeIdentity,
-             manifest: C.BackupManifest, digest: str) -> ExportPreview:
+             manifest: C.BackupManifest, digest: str,
+             working_tree_omissions: tuple[str, ...] = ()) -> ExportPreview:
     warnings = [
         "Exported content remains untrusted inert data, not permission to execute instructions.",
         "Integrity verification checks hashes, not trusted origin or restored approval.",
@@ -364,9 +366,11 @@ def _preview(source: Path, destination: Path, identity: C.ScopeIdentity,
         warnings.append("The backup is partial or contains omissions; export cannot recover omitted work.")
     if manifest.deleted_paths:
         warnings.append("Recorded deletions are not checked out from history; current payload files take precedence.")
+    if working_tree_omissions:
+        warnings.append("Uncaptured tracked paths are missing working-tree data, not recorded deletions; export is partial.")
     return ExportPreview(source, identity, destination, digest,
                          tuple(entry.relpath for entry in manifest.files), manifest.deleted_paths,
-                         manifest.history.status, tuple(warnings))
+                         manifest.history.status, tuple(warnings), working_tree_omissions)
 
 
 def export_preview(source: Path, destination: Path, identity: C.ScopeIdentity,
@@ -390,7 +394,16 @@ def export_preview(source: Path, destination: Path, identity: C.ScopeIdentity,
                     _empty(fd)
                 finally:
                     os.close(fd)
-        return _preview(source, destination, identity, manifest, digest)
+        omissions: tuple[str, ...] = ()
+        if manifest.history.status == "bundled":
+            bundle = S.read_history(source, identity, limits)
+            with _import_history(bundle, manifest.history) as (git, repository):
+                omissions = _working_tree_omissions(manifest, _history_paths(git, repository, limits))
+            # Inventory belongs to this exact manifest/history, not a prior
+            # verification or a replacement with the same scope identity.
+            if _verified_export(source, identity, limits) != (manifest, digest):
+                _fail("integrity_mismatch")
+        return _preview(source, destination, identity, manifest, digest, omissions)
     except OSError:
         _fail("unsafe_path")
 
@@ -638,22 +651,12 @@ class _HistoryGit(S._Git):
             _fail("history_invalid")
 
 
-def _history_export(bundle: bytes, history: C.HistoryRecord,
-                    limits: C.Limits) -> tuple[tuple[C.ManifestFile, ...], dict[str, bytes]]:
-    """Import pinned bytes offline, then stage fresh Git metadata, not a checkout.
-
-    S.read_history has already checked pack inflation and the entire graph.
-    No Git process ever opens the destination: the existing fd-bound writer
-    copies these verified bytes, including the index, just like the payload.
-    """
+@contextmanager
+def _import_history(bundle: bytes, history: C.HistoryRecord) -> Iterator[tuple[_HistoryGit, Path]]:
+    """Import exact S-verified bytes for both inventory and metadata export."""
     if (history.ref is None or history.head is None or len(bundle) != history.size
             or hashlib.sha256(bundle).hexdigest() != history.sha256):
         _fail("integrity_mismatch")
-    files: list[C.ManifestFile] = []
-    payload: dict[str, bytes] = {}
-    # Pack data plus bounded index/ref/config overhead. This is separate from
-    # the already verified snapshot budget, not extra archived payload.
-    remaining = limits.max_snapshot_bytes * 2 + limits.max_files * (limits.max_path_bytes + 256) + 65536
     with S._git_session() as sandbox:
         git = _HistoryGit(sandbox.scratch)
         repository = git.scratch / "export.git"
@@ -678,6 +681,52 @@ def _history_export(bundle: bytes, history: C.HistoryRecord,
             _fail("history_invalid")
         git.run(repository, ["fsck", "--strict", "--no-reflogs", history.head], 65536)
         git.run(repository, ["symbolic-ref", "HEAD", history.ref], 4096)
+        yield git, repository
+
+
+def _history_paths(git: _HistoryGit, repository: Path, limits: C.Limits) -> tuple[str, ...]:
+    """One bounded NUL-delimited HEAD inventory; never consult a checkout."""
+    raw = git.run(repository, ["ls-tree", "-r", "-z", "--name-only", "HEAD"],
+                  limits.max_files * (limits.max_path_bytes + 1))
+    if raw and not raw.endswith(b"\0"):
+        _fail("history_invalid")
+    paths: set[str] = set()
+    for item in raw.split(b"\0")[:-1]:
+        if len(paths) >= limits.max_files:
+            _fail("read_budget_exceeded")
+        try:
+            path = C.validate_relpath(item.decode("utf-8"), max_bytes=limits.max_path_bytes)
+        except UnicodeError:
+            _fail("history_invalid")
+        _check_export_path(path)
+        if path in paths or _SECRET.search(item):
+            _fail("history_invalid")
+        paths.add(path)
+    return tuple(sorted(paths))
+
+
+def _working_tree_omissions(manifest: C.BackupManifest, tracked: tuple[str, ...]) -> tuple[str, ...]:
+    # Literal leaf membership only: a payload/tombstone for `a` or `a/b`
+    # cannot explain the loss of a different HEAD leaf during a transition.
+    captured = {entry.relpath for entry in manifest.files}
+    deleted = set(manifest.deleted_paths)
+    return tuple(path for path in tracked if path not in captured and path not in deleted)
+
+
+def _history_export(bundle: bytes, history: C.HistoryRecord,
+                    limits: C.Limits) -> tuple[tuple[C.ManifestFile, ...], dict[str, bytes], tuple[str, ...]]:
+    """Stage fresh Git metadata, not a checkout, from S-verified bounded history.
+
+    No Git process opens the destination: the fd-bound writer copies verified
+    metadata, including the index, just like the manifest-approved payload.
+    """
+    files: list[C.ManifestFile] = []
+    payload: dict[str, bytes] = {}
+    # Pack data plus bounded index/ref/config overhead, not archived payload.
+    remaining = limits.max_snapshot_bytes * 2 + limits.max_files * (limits.max_path_bytes + 256) + 65536
+    with _import_history(bundle, history) as (git, repository):
+        tracked = _history_paths(git, repository, limits)
+        assert history.head is not None  # Checked by the shared import path.
         # Populate only the index in this bare staging repository. No -u,
         # checkout, reset or restore can overwrite dirty files/tombstones.
         git.run(repository, ["read-tree", history.head], 4096)
@@ -713,7 +762,7 @@ def _history_export(bundle: bytes, history: C.HistoryRecord,
 
         with _directory(repository) as root:
             collect(root, ".git")
-    return tuple(files), payload
+    return tuple(files), payload, tracked
 
 
 def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
@@ -758,18 +807,24 @@ def export_snapshot(source: Path, destination: Path, identity: C.ScopeIdentity,
         git_payload: dict[str, bytes] = {}
         if manifest.history.status == "bundled":
             bundle = S.read_history(source, identity, limits)
-            git_files, git_payload = _history_export(bundle, manifest.history, limits)
+            git_files, git_payload, tracked = _history_export(bundle, manifest.history, limits)
+            if _working_tree_omissions(manifest, tracked) != preview.working_tree_omissions:
+                _fail("integrity_mismatch")
         final_manifest, final_digest = _verified_export(source, identity, limits)
         if final_manifest != manifest or final_digest != expected_manifest_sha256:
             _fail("integrity_mismatch")
-        # No remote protection is inferred. Complete requires recovery of both
-        # the full payload and, whenever recorded, its bundled branch history.
+        omissions = tuple(dict.fromkeys((*manifest.omissions, *preview.working_tree_omissions)))
+        if preview.working_tree_omissions and (len(omissions) > limits.max_files
+                or sum(len(item.encode("utf-8")) + 1 for item in omissions)
+                > limits.max_files * (limits.max_path_bytes + 1)):
+            _fail("read_budget_exceeded")
+        # Bundled history preserves the branch, not uncaptured working files.
         result = C.ExportResult(
             identity, destination,
-            "partial" if (manifest.completion == "partial" or manifest.omissions
+            "partial" if (manifest.completion == "partial" or omissions
                           or manifest.head is not None and manifest.history.status != "bundled"
                           or manifest.history.status in ("remote-verified", "unprotected")) else "complete",
-            preview.exported_paths, manifest.omissions, manifest.history.status, preview.warnings,
+            preview.exported_paths, omissions, manifest.history.status, preview.warnings,
         )
         with ExitStack() as stack:
             writer = _ExportWriter(stack)
