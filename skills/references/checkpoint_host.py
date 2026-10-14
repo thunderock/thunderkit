@@ -210,6 +210,10 @@ def _runtime_files(python: Path) -> tuple[dict[str, str], tuple[int, ...]]:
 def _hook_bytes(python: Path, binding: Path, digest: str, files: dict[str, str]) -> bytes:
     # Hash and execute the SAME bytes; never hash a module then reopen it to import.
     text = (f"#!{python} -I\n" + "import hashlib,importlib.util,sys\nfrom pathlib import Path\n"
+            + "if len(sys.argv)!=2: raise SystemExit(2)\n"
+            + "phase=sys.argv[1]\n"
+            + "if phase in ('preparing','prepared','aborted'): raise SystemExit(0)\n"
+            + "if phase not in ('committed','--tick'): raise SystemExit(2)\n"
             + f"expected={files!r}\n"
             + "sources={}\nfor path,digest in expected.items():\n"
             + " data=Path(path).read_bytes()\n"
@@ -220,8 +224,6 @@ def _hook_bytes(python: Path, binding: Path, digest: str, files: dict[str, str])
             + " name=Path(path).stem\n spec=importlib.util.spec_from_file_location(name,path)\n"
             + " module=importlib.util.module_from_spec(spec)\n sys.modules[name]=module\n"
             + " exec(compile(data,path,'exec'),module.__dict__)\n"
-            + "if len(sys.argv)!=2: raise SystemExit(2)\n"
-            + "phase=sys.argv[1]\n"
             + f"args=['run','--binding',{str(binding)!r},'--expect',{digest!r}]\n"
             + "args+=['--trigger','due'] if phase=='--tick' else ['--trigger','ref','--phase',phase]\n"
             + "raise SystemExit(sys.modules['checkpoint_host'].main(args))\n")
