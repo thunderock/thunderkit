@@ -21,7 +21,7 @@ class SkillPayloadTests(PayloadFixture):
     def test_real_tree_when_checked_from_an_unrelated_directory(self) -> None:
         # Given the installed payload inventory, not a generated test fixture.
         skills = registered_skills()
-        self.assertEqual((len(skills), len(EXPECTED)), (22, 20))
+        self.assertEqual((len(skills), len(EXPECTED)), (22, 21))
         self.assertEqual({path.parent.name for path in (ROOT / "skills").glob("tk-*/SKILL.md")}, set(skills))
         module = self.load_module(TOOL)
         self.assertEqual(tuple(module.MANAGED_FILES), EXPECTED)

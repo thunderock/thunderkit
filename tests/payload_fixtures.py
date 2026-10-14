@@ -39,6 +39,7 @@ EXPECTED: Final = (
     "scripts/checkpoint_setup.py",
     "scripts/checkpoint_cli.py",
     "scripts/checkpoint_host.py",
+    "scripts/checkpoint_global.py",
     "scripts/restore_context.py",
     "references/continuity.schema.json",
     "references/backup-manifest.schema.json",
