@@ -122,6 +122,53 @@ class CheckpointHostTests(unittest.TestCase):
         self.assertEqual(self.hook.read_bytes(), before)
         self.assertEqual(list(self.state.iterdir()), [])
 
+    def test_prepared_hook_does_not_validate_or_execute_changed_runtime(self) -> None:
+        api = self.host()
+        installed = api.apply_connections(api.preview_connections(self.request(api)), approval=True)
+        self.assertEqual(installed.status, "configured", installed.blockers)
+        source = self.hook.read_text()
+        marker = source.index("expected=")
+        line_end = source.index("\n", marker)
+        source = source[:marker] + "expected={'/unavailable/runtime.py':'invalid'}" + source[line_end:]
+        self.hook.write_text(source)
+        before = {str(p): p.read_bytes() for p in self.state.iterdir() if p.is_file()}
+        for phase in ("preparing", "prepared", "aborted"):
+            process = POPEN([str(self.hook), phase], cwd=self.fixture.project, env=self.fixture.env,
+                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, start_new_session=True)
+            try:
+                out, err = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.communicate()
+                self.fail("Inactive transaction phase blocked")
+            with self.subTest(phase=phase):
+                self.assertEqual(process.returncode, 0, err)
+                self.assertEqual(out, "")
+        self.assertEqual({str(p): p.read_bytes() for p in self.state.iterdir() if p.is_file()}, before)
+
+    def test_committed_events_and_periodic_tick_use_current_scope(self) -> None:
+        api = self.host()
+        f = self.fixture
+        installed = api.apply_connections(api.preview_connections(self.request(api)), approval=True)
+        self.assertEqual(installed.status, "configured", installed.blockers)
+        binding = self.state / "connection.json"
+        digest = next(item.sha256 for item in installed.receipt.files if item.path == binding)
+        oid = f.git("rev-parse", "HEAD")
+        irrelevant = ("0" * len(oid) + " " + oid + " refs/heads/other\n").encode()
+        self.assertEqual(api.run_connection(binding, digest, trigger="ref", events=irrelevant)["status"], "ignored")
+        self.assertFalse((self.state / "state.json").exists())
+        first = api.run_connection(binding, digest)
+        self.assertEqual(first["status"], "captured")
+        self.assertEqual(first["push"]["status"], "denied")
+        event = ("0" * len(oid) + " " + oid + " refs/heads/work\n").encode()
+        second = api.run_connection(binding, digest, trigger="ref", events=event)
+        third = api.run_connection(binding, digest, trigger="ref", events=event)
+        self.assertEqual(second["status"], "captured")
+        self.assertEqual(third["status"], "duplicate")
+        self.assertEqual(first["snapshot"]["snapshot_path"], third["snapshot"]["snapshot_path"])
+        self.assertFalse((self.state / ".connection-run.lock").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
