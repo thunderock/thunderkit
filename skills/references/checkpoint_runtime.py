@@ -107,6 +107,9 @@ def _text(value: object) -> str:
 
 
 class _SystemClock:
+    def __init__(self, timer: _Timer) -> None:
+        self.timer = timer
+
     def monotonic(self) -> float:
         return time.monotonic()
 
@@ -116,11 +119,15 @@ class _SystemClock:
     def boot_id(self) -> str:
         # This single explicit kernel observation is not an ambient config read.
         try:
-            fd = os.open("/proc/sys/kernel/random/boot_id", _FILE)
+            fd = -1
             try:
+                with self.timer.guard():
+                    fd = os.open("/proc/sys/kernel/random/boot_id", _FILE)
                 data = os.read(fd, 65)
             finally:
-                os.close(fd)
+                with self.timer.guard():
+                    if fd >= 0:
+                        os.close(fd)
             if re.fullmatch(rb"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\n", data):
                 return data.decode("ascii").rstrip("\n")
         except OSError:
@@ -143,26 +150,82 @@ def _observe(clock: Clock) -> _Observation:
     return _Observation(mono, wall, _text(boot) if boot else None)
 
 
+class _Timer:
+    """Defer only our alarm across owned acquisition/cleanup, not later work."""
+
+    def __init__(self, seconds: float) -> None:
+        self.end = time.monotonic() + seconds
+        self.expired = False
+        self._protected = 0
+
+    def alarm(self, signum: int, frame: FrameType | None) -> None:
+        self.expired = True
+        if not self._protected:
+            raise _Deadline()
+
+    @contextmanager
+    def guard(self) -> Iterator[None]:
+        # Preserve the primary failure (including KeyboardInterrupt/SystemExit).
+        unwinding = sys.exc_info()[0] is not None
+        self._protected += 1
+        try:
+            yield
+        except BaseException:
+            unwinding = True
+            raise
+        finally:
+            self._protected -= 1
+            self.expired = self.expired or time.monotonic() >= self.end
+            if self.expired and not self._protected and not unwinding:
+                raise _Deadline()
+
+
 @contextmanager
-def _deadline(seconds: float) -> Iterator[float]:
+def _resources(timer: _Timer) -> Iterator[ExitStack]:
+    stack = ExitStack()
+    try:
+        yield stack
+    finally:
+        with timer.guard():
+            stack.close()
+
+
+@contextmanager
+def _deadline(seconds: float) -> Iterator[_Timer]:
     _require(sys.platform.startswith("linux") and threading.current_thread() is threading.main_thread()
              and hasattr(signal, "setitimer"), "deadline_context_unsupported")
     previous_timer = signal.getitimer(signal.ITIMER_REAL)
     # Leave an existing owner's timer/handler entirely untouched, not postponed.
     _require(previous_timer == (0.0, 0.0), "deadline_timer_in_use")
+    previous_mask = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+    _require(signal.SIGALRM not in previous_mask, "deadline_signal_blocked")
+    _require(signal.SIGALRM not in signal.sigpending(), "deadline_signal_pending")
     previous_handler = signal.getsignal(signal.SIGALRM)
-    end = time.monotonic() + seconds
-
-    def expired(signum: int, frame: FrameType | None) -> None:
-        raise _Deadline()
-
-    signal.signal(signal.SIGALRM, expired)
+    timer = _Timer(seconds)
+    signal.signal(signal.SIGALRM, timer.alarm)
+    failed = False
     try:
         signal.setitimer(signal.ITIMER_REAL, seconds)
-        yield end
+        yield timer
+    except BaseException:
+        failed = True
+        raise
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0.0)
-        signal.signal(signal.SIGALRM, previous_handler)
+        with timer.guard():
+            signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+            try:
+                signal.setitimer(signal.ITIMER_REAL, 0.0)
+                # Do not hand a queued operation alarm to the caller's handler.
+                if signal.SIGALRM in signal.sigpending():
+                    signal.sigwait({signal.SIGALRM})
+                    timer.expired = True
+                signal.signal(signal.SIGALRM, previous_handler)
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous_mask)
+        # A caller may itself be inside an except block; that ambient exception
+        # must not make a successful body conceal a deferred operation alarm.
+        if timer.expired and not failed:
+            raise _Deadline()
 
 
 def _budget(end: float) -> None:
@@ -181,15 +244,17 @@ def _signature(info: os.stat_result) -> tuple[int, ...]:
 class _Directory:
     """Keep and recheck every no-follow parent; never reopen a replaced target."""
 
-    def __init__(self, path: Path, stack: ExitStack) -> None:
+    def __init__(self, path: Path, stack: ExitStack, timer: _Timer) -> None:
         C.validate_path_text(str(path), absolute=True)
         self.path = path
         self.links: list[tuple[int, str, int]] = []
-        parent = os.open(path.anchor, _DIR)
-        stack.callback(os.close, parent)
+        with timer.guard():
+            parent = os.open(path.anchor, _DIR)
+            stack.callback(os.close, parent)
         for part in path.parts[1:]:
-            child = os.open(part, _DIR, dir_fd=parent)
-            stack.callback(os.close, child)
+            with timer.guard():
+                child = os.open(part, _DIR, dir_fd=parent)
+                stack.callback(os.close, child)
             self.links.append((parent, part, child))
             parent = child
         self.fd = parent
@@ -248,16 +313,17 @@ def _graph_digest(oids: tuple[str, ...]) -> str:
 
 
 class _Scope:
-    def __init__(self, request: CheckpointRequest, stack: ExitStack, end: float) -> None:
+    def __init__(self, request: CheckpointRequest, stack: ExitStack, timer: _Timer) -> None:
         self.request = request
         self.request_bytes = _encoded(asdict(request.snapshot))
-        self.end = end
-        self.state = _Directory(request.state_dir, stack)
+        self.timer = timer
+        self.end = timer.end
+        self.state = _Directory(request.state_dir, stack, timer)
         info = self.state.info
         _require(stat.S_IMODE(info.st_mode) == 0o700 and info.st_uid == os.geteuid(), "unsafe_state_directory")
-        self.store = _Directory(request.snapshot.storage.root, stack)
+        self.store = _Directory(request.snapshot.storage.root, stack, timer)
         project = request.snapshot.settings.project_root
-        self.project = _Directory(project, stack) if project else None
+        self.project = _Directory(project, stack, timer) if project else None
         self.git_directory: _Directory | None = None
         self.git: S._Git | None = None
         self.capture_tip: _Tip | None = None
@@ -268,13 +334,14 @@ class _Scope:
                 pass
             else:
                 _require(stat.S_ISDIR(info.st_mode), "unsupported_repository")
-                self.git_directory = _Directory(self.project.path / ".git", stack)
-                self.git = stack.enter_context(S._git_session())
+                self.git_directory = _Directory(self.project.path / ".git", stack, timer)
+                with timer.guard():
+                    self.git = stack.enter_context(S._git_session())
         _require(self.git is not None or (not request.snapshot.include_history
                  and request.snapshot.history_ref is None), "history_repository_missing")
         self.sources: list[tuple[_Directory, Path, os.stat_result]] = []
         for source in request.snapshot.approved_sources:
-            parent = _Directory(source.parent, stack)
+            parent = _Directory(source.parent, stack, timer)
             info = os.stat(source.name, dir_fd=parent.fd, follow_symlinks=False)
             _require(stat.S_ISDIR(info.st_mode) or (stat.S_ISREG(info.st_mode) and info.st_nlink == 1),
                      "unsafe_source")
@@ -302,6 +369,8 @@ class _Scope:
         self.state_info: os.stat_result | None = None
 
     def check(self) -> None:
+        if self.timer.expired:
+            raise _Deadline()
         _budget(self.end)
         _require(_encoded(asdict(self.request.snapshot)) == self.request_bytes, "request_changed")
         for directory in (self.state, self.store, *([self.project] if self.project else [])):
@@ -432,8 +501,10 @@ class _Scope:
         self.state_info = self._current_state()
         if self.state_info is None:
             return None, "state_missing"
-        fd = os.open("state.json", _FILE, dir_fd=self.state.fd)
+        fd = -1
         try:
+            with self.timer.guard():
+                fd = os.open("state.json", _FILE, dir_fd=self.state.fd)
             _require(_signature(os.fstat(fd)) == _signature(self.state_info), "state_changed")
             chunks: list[bytes] = []
             remaining = STATE_MAX_BYTES + 1
@@ -446,7 +517,9 @@ class _Scope:
                 remaining -= len(data)
             _require(_signature(os.fstat(fd)) == _signature(self.state_info), "state_changed")
         finally:
-            os.close(fd)
+            with self.timer.guard():
+                if fd >= 0:
+                    os.close(fd)
         self.check_state_unchanged()
         try:
             raw = C.decode_json(b"".join(chunks), max_bytes=STATE_MAX_BYTES)
@@ -548,9 +621,12 @@ class _Scope:
         name = ".checkpoint-state-" + uuid.uuid4().hex
         self.check()
         self.check_state_unchanged()
-        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=self.state.fd)
-        owned = os.fstat(fd)
+        fd = -1
+        owned: os.stat_result | None = None
         try:
+            with self.timer.guard():
+                fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=self.state.fd)
+                owned = os.fstat(fd)
             view = memoryview(data)
             while view:
                 self.check()
@@ -568,8 +644,13 @@ class _Scope:
             self.state_info = os.fstat(fd)
             self.check_state_unchanged()
         finally:
-            os.close(fd)
-            self.remove_owned(name, owned, directory=False)
+            with self.timer.guard():
+                try:
+                    if fd >= 0:
+                        os.close(fd)
+                finally:
+                    if owned is not None:
+                        self.remove_owned(name, owned, directory=False)
 
     def remove_owned(self, name: str, owned: os.stat_result, *, directory: bool) -> None:
         # Cleanup only exact owned entries at held descriptors; never recurse.
@@ -597,8 +678,8 @@ def _context_age(scope: _Scope, wall: float) -> float | None:
         if len(matches) != 1:
             return None
         try:
-            with ExitStack() as stack:
-                parent = _Directory(path.parent, stack)
+            with _resources(scope.timer) as stack:
+                parent = _Directory(path.parent, stack, scope.timer)
                 info = os.stat(path.name, dir_fd=parent.fd, follow_symlinks=False)
                 if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                     return None
@@ -627,8 +708,11 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
     push: C.PushResult | None = None
     observed: tuple[str, ...] = ()
     age: float | None = None
+    timer: _Timer | None = None
 
     def result(status: Status, action: str) -> CheckpointResult:
+        if timer is not None and timer.expired and "deadline_exceeded" not in warnings:
+            warnings.append("deadline_exceeded")
         return CheckpointResult(status, snapshot, push, age, observed, gaps, action, tuple(warnings))
 
     try:
@@ -636,25 +720,27 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
         _require(type(request) is CheckpointRequest)
         seconds = _number(request.deadline_seconds)
         _require(0 < seconds <= MAX_DEADLINE_SECONDS, "invalid_deadline")
-        with _deadline(seconds) as end:
+        with _deadline(seconds) as timer:
             request = _validated(request)
             _require(authority is None or callable(authority), "invalid_authority_provider")
             if request.snapshot.settings.git.push_after_commit:
                 gaps = ("periodic_unconfigured", "ref_events_unconfigured", "fresh_authority_required")
-            active_clock = clock if clock is not None else _SystemClock()
+            active_clock = clock if clock is not None else _SystemClock(timer)
             observation = _observe(active_clock)
             if observation.boot is None:
                 warnings.append("boot_identity_unknown")
-            with ExitStack() as stack:
-                scope = _Scope(request, stack, end)
+            with _resources(timer) as stack:
+                scope = _Scope(request, stack, timer)
                 # Any existing entry is foreign/busy, irrespective of age/type.
                 scope.check()
+                owned: os.stat_result | None = None
                 try:
-                    os.mkdir(_LOCK, 0o700, dir_fd=scope.state.fd)
-                except FileExistsError:
-                    return result("busy", "An existing checkpoint lock must be resolved by its owner.")
-                owned = os.stat(_LOCK, dir_fd=scope.state.fd, follow_symlinks=False)
-                try:
+                    with timer.guard():
+                        try:
+                            os.mkdir(_LOCK, 0o700, dir_fd=scope.state.fd)
+                        except FileExistsError:
+                            return result("busy", "An existing checkpoint lock must be resolved by its owner.")
+                        owned = os.stat(_LOCK, dir_fd=scope.state.fd, follow_symlinks=False)
                     scope.check()
                     tip = scope.git_tip() if scope.git is not None else None
                     scope.capture_tip = tip
@@ -769,7 +855,9 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                     return result("duplicate" if duplicate else "captured",
                                   "Saved artifacts captured; inspect the separate publication outcome and configure periodic/ref coverage.")
                 finally:
-                    scope.remove_owned(_LOCK, owned, directory=True)
+                    with timer.guard():
+                        if owned is not None:
+                            scope.remove_owned(_LOCK, owned, directory=True)
     except _Deadline:
         warnings.append("deadline_exceeded")
         if push is not None and push.status == "unknown":
