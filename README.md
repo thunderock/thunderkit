@@ -443,10 +443,83 @@ Do not supply `--project-root`, `--include-history` or `--history-ref` for globa
 The result has no project Git history or push; it reports the snapshot and its scope-local
 locator. It does not rewrite `GLOBAL_CONFIG` to remember that result. Keep project and global
 permissions separate; secrets and live runtime homes remain excluded even if allowlisted.
-Global one-shot capture does **not** configure a global periodic service. The current host
-and scheduler commands below support project scope only; global periodic/event host
-activation is not implemented by these commands and remains a coverage gap, not an
-implicitly accepted reduction of the preservation target.
+Global one-shot capture does **not** configure a periodic service. Use the separately
+approved global setup and schedule commands below; project hook commands never cover globals.
+
+### Configure an independent global schedule
+
+Use the same explicit global identity, config, source order, root and context entrypoint.
+Keep `GLOBAL_CONFIG`, `GLOBAL_STATE_DIR`, helper scripts, interpreter and saved setup result
+outside selected source trees. Choose `GLOBAL_SETUP_RESULT` as a new private mode-0600 file
+outside those trees. After approving storage qualification and initial capture:
+
+```sh
+(
+  umask 077
+  set -C
+  python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" global-setup \
+    --scope global --identity "$GLOBAL_SCOPE_ID" --global-config "$GLOBAL_CONFIG" \
+    --backup-root "$GLOBAL_BACKUP_ROOT" --source "$GLOBAL_SOURCE" \
+    --context-entrypoint sources/0/notes.md --state-dir "$GLOBAL_STATE_DIR" --approve \
+    > "$GLOBAL_SETUP_RESULT"
+)
+```
+
+Require exit zero and `status: "configured"` before using that result. It records actual
+software readback and the original backing identity, not hardware crash durability or
+saved consent. Never fabricate or edit it. A replaced store requires separate setup review;
+installation will not requalify it. Setup alone installs no scheduler or hook.
+
+Select literal absolute, no-symlink `TRUSTED_PYTHON` and `TRUSTED_CRONTAB` paths from the
+trusted host, never from recovered data. `--service-qualified` and `--exclusive-writer`
+assert actual operator evidence of a running scheduler and exclusive table-write authority;
+neither a binary nor these flags establishes that evidence. Preview without writing:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" global-preview \
+  --scope global --identity "$GLOBAL_SCOPE_ID" --global-config "$GLOBAL_CONFIG" \
+  --backup-root "$GLOBAL_BACKUP_ROOT" --source "$GLOBAL_SOURCE" \
+  --context-entrypoint sources/0/notes.md --state-dir "$GLOBAL_STATE_DIR" \
+  --setup-result "$GLOBAL_SETUP_RESULT" --python "$TRUSTED_PYTHON" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer
+```
+
+Review the result and blockers. Only with fresh approval for that unchanged scope:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" global-install \
+  --scope global --identity "$GLOBAL_SCOPE_ID" --global-config "$GLOBAL_CONFIG" \
+  --backup-root "$GLOBAL_BACKUP_ROOT" --source "$GLOBAL_SOURCE" \
+  --context-entrypoint sources/0/notes.md --state-dir "$GLOBAL_STATE_DIR" \
+  --setup-result "$GLOBAL_SETUP_RESULT" --python "$TRUSTED_PYTHON" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer --approve
+```
+
+The state-local `global-tick --tick` launcher is pinned to the approved interpreter and
+helper bytes. A once-per-minute scheduler check captures only when the configured interval
+is due; global ticks call no Git, subprocess, model or publication path. They report the
+oldest selected saved-context age when it can be proven, otherwise `null` rather than a
+fabricated age. Captures use the last saved notes, not new semantic context.
+
+Each tick rereads the explicit global policy. `policy.backup.enabled: false`, invalid
+settings or a changed source/root/interval/limit policy refuses further captures before
+writes. Changing settings does not retarget an old installation: remove and review a new
+setup instead. A missing or changed runtime helper fails safely until reviewed reinstall.
+
+Removal needs fresh approval, the exact original identity/state and continuing scheduler
+qualification; it can run from a fresh process even after interrupted installation/removal:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" global-remove \
+  --scope global --identity "$GLOBAL_SCOPE_ID" --state-dir "$GLOBAL_STATE_DIR" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer --approve
+```
+
+Removal confirms the owned scheduler block is gone **before** deleting unchanged launcher,
+binding and ownership files. It preserves unrelated jobs, snapshots and existing `state.json`.
+Blocked/uncertain readback retains recovery records; inspect blockers and retry with fresh
+consent, never delete receipts to force success. Verify actual scheduled execution separately:
+fixture success and software readback do not establish live host coverage or durable storage.
 
 ### Host connections require separate qualification
 

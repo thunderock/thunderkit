@@ -30,6 +30,7 @@ MANIFEST: Final = (
     ("skills/references/checkpoint_setup.py", "scripts/checkpoint_setup.py"),
     ("skills/references/checkpoint_cli.py", "scripts/checkpoint_cli.py"),
     ("skills/references/checkpoint_host.py", "scripts/checkpoint_host.py"),
+    ("skills/references/checkpoint_global.py", "scripts/checkpoint_global.py"),
     ("skills/references/restore_context.py", "scripts/restore_context.py"),
     ("skills/references/continuity.schema.json", "references/continuity.schema.json"),
     ("skills/references/backup-manifest.schema.json", "references/backup-manifest.schema.json"),

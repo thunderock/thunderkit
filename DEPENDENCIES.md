@@ -218,9 +218,15 @@ serialized executable grant or saved approval. See the
 exact identity, matching backup root and a selected subset of `global.approved_sources`.
 Global capture has no project root, branch history or push. Its versioned nested policy must
 validate too; see the [global settings example](README.md#capture-an-independently-approved-global-scope).
-Global capture/runtime support is not global scheduler support: the implemented host and
-schedule commands require a local project repository. There is no global host installation
-or periodic-service command on this surface; that coverage remains a gap.
+`global-setup` records actual storage qualification and a verified snapshot. Preserve its
+successful private JSON stdout for `global-preview` and separately approved `global-install`.
+The global wrapper pins the selected interpreter/helpers, source subset, policy and backing
+identity; it installs no Git hook and launches no subprocess during a tick. `global-remove`
+requires fresh approval and confirms removal of the owned schedule before deleting its
+unchanged private integration files. Snapshots and preexisting cadence state survive.
+Both scheduler qualification flags below are required. Changed or disabled global policy
+refuses capture; reconfiguration requires reviewed reinstall. See the
+[global schedule commands](README.md#configure-an-independent-global-schedule).
 
 `host-preview` and separately approved `host-install` bind the exact unchanged setup scope
 and recorded storage identity, verified snapshot and explicit trusted `--python`. A replaced

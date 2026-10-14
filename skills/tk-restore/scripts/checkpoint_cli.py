@@ -110,6 +110,25 @@ def _parser() -> _SafeParser:
             command.add_argument("--exclusive-writer", action="store_true", default=False)
         if name != "schedule-preview":
             command.add_argument("--approve", action="store_true", default=False)
+    for name in ("global-setup", "global-preview", "global-install", "global-remove"):
+        command = commands.add_parser(name, allow_abbrev=False)
+        command.add_argument("--scope", choices=("global",), required=True)
+        command.add_argument("--identity", required=True)
+        command.add_argument("--state-dir", type=_cli_path, required=True)
+        if name != "global-remove":
+            command.add_argument("--global-config", type=_cli_path, required=True)
+            command.add_argument("--backup-root", type=_cli_path, required=True)
+            command.add_argument("--source", type=_cli_path, action="append", required=True)
+            command.add_argument("--context-entrypoint", type=C.validate_relpath, action="append", default=[])
+        if name in ("global-preview", "global-install"):
+            command.add_argument("--setup-result", type=_cli_path, required=True)
+            command.add_argument("--python", type=_cli_path, required=True)
+        if name != "global-setup":
+            command.add_argument("--crontab", type=_cli_path, required=True)
+            command.add_argument("--service-qualified", action="store_true", default=False)
+            command.add_argument("--exclusive-writer", action="store_true", default=False)
+        if name != "global-preview":
+            command.add_argument("--approve", action="store_true", default=False)
     return parser
 
 
@@ -316,6 +335,94 @@ def _host_command(args: _Arguments) -> tuple[dict[str, object], bool]:
             "ownership_retained": result.installation is not None and result.status == "blocked"}, result.status in ("configured", "removed")
 
 
+def _global_setup(args: _Arguments) -> tuple[dict[str, object], bool]:
+    settings = _settings(args)
+    if not settings.backup.enabled:
+        raise C.ContinuityError("backup_disabled", "Global policy disables checkpoint capture.")
+    snapshot = C.SnapshotRequest(settings, S.inspect_storage(args.backup_root), tuple(args.source),
+                                tuple(args.context_entrypoint))
+    _global_preflight(snapshot, args.state_dir)
+    qualified = S.qualify_storage(snapshot.storage, approval=True)
+    _receipt_require(qualified.readback_verified)
+    snapshot = C.SnapshotRequest(settings, qualified.identity, snapshot.approved_sources,
+                                snapshot.context_entrypoints)
+    result = H.checkpoint(H.CheckpointRequest(snapshot, args.state_dir))
+    success = (result.status == "captured" and result.snapshot is not None
+               and result.snapshot.status in ("complete", "unchanged"))
+    return {"schema": 1, "kind": "global-setup-result", "status": "configured" if success else "blocked",
+            "settings": C.settings_to_json(settings), "storage": asdict(qualified.identity),
+            "sources": list(args.source), "context_entrypoints": list(args.context_entrypoint),
+            "state_dir": args.state_dir,
+            "snapshot": asdict(result.snapshot) if result.snapshot is not None else None,
+            "blockers": list(result.warnings) if not success else []}, success
+
+
+def _global_snapshot(args: _Arguments) -> C.SnapshotRequest:
+    settings = _settings(args)
+    raw = _receipt_object(_private_json(args.setup_result), {"schema", "kind", "status", "settings",
+        "storage", "sources", "context_entrypoints", "state_dir", "snapshot", "blockers"})
+    _receipt_require(type(raw["schema"]) is int and raw["schema"] == 1
+                     and raw["kind"] == "global-setup-result" and raw["status"] == "configured"
+                     and raw["blockers"] == [])
+    if (raw["settings"] != C.settings_to_json(settings) or raw["sources"] != list(map(str, args.source))
+            or raw["context_entrypoints"] != args.context_entrypoint or raw["state_dir"] != str(args.state_dir)):
+        raise C.ContinuityError("setup_scope_changed", "Global setup scope has changed; review it again.")
+    store = _receipt_object(raw["storage"], {"root", "device", "inode", "backing_fingerprint",
+                                            "mount_fingerprint", "durability"})
+    storage = C.StorageIdentity(_cli_path(_receipt_text(store["root"])),
+        _receipt_int(store["device"]), _receipt_int(store["inode"]),
+        None if store["backing_fingerprint"] is None else _receipt_text(store["backing_fingerprint"]),
+        None if store["mount_fingerprint"] is None else _receipt_text(store["mount_fingerprint"]),
+        _receipt_text(store["durability"]))
+    request = C.SnapshotRequest(settings, storage, tuple(args.source), tuple(args.context_entrypoint))
+    S._check_storage(storage)
+    _global_preflight(request, args.state_dir)
+    saved = _receipt_object(raw["snapshot"], {"identity", "snapshot_path", "status", "omissions", "history_status",
+                                             "manifest_sha256", "last_locator", "last_verified_snapshot"})
+    _receipt_require(saved["identity"] == asdict(settings.identity) and saved["status"] in ("complete", "unchanged")
+                     and saved["omissions"] == [] and saved["history_status"] == "not-applicable")
+    path = _cli_path(_receipt_text(saved["snapshot_path"]))
+    digest = C.validate_sha256(saved["manifest_sha256"])
+    _receipt_require(path.parent == storage.root / "global" / settings.identity.id / "snapshots")
+    manifest = S.verify_snapshot(path, settings.identity, settings.limits)
+    with Setup._directory(path) as parent:
+        content, _ = Setup._read_file(parent, "manifest.json", C.MANIFEST_MAX_BYTES)
+    _receipt_require(hashlib.sha256(content).hexdigest() == digest and manifest.completion == "complete"
+                     and manifest.repository is None and manifest.context_entrypoints == request.context_entrypoints)
+    return request
+
+
+def _global_command(args: _Arguments) -> tuple[dict[str, object], bool]:
+    if args.command == "global-setup":
+        return _global_setup(args)
+    if not args.service_qualified or not args.exclusive_writer:
+        raise C.ContinuityError("scheduler_unqualified", "Qualified service and exclusive writer evidence are required.")
+    # Read-only input checks precede construction/launch of the explicit transport.
+    snapshot = None if args.command == "global-remove" else _global_snapshot(args)
+    import checkpoint_global as Global
+    import checkpoint_host as Host
+    driver = Host.CrontabDriver(args.crontab, service_qualified=args.service_qualified,
+                               exclusive_writer=args.exclusive_writer)
+    if args.command == "global-remove":
+        installation = Global.load_global(args.state_dir, identity=C.ScopeIdentity("global", args.identity))
+        result = Global.remove_global(installation, driver, approval=True)
+    else:
+        assert snapshot is not None
+        assert args.global_config is not None
+        request = Global.GlobalScheduleRequest(snapshot, args.state_dir, args.python, args.global_config)
+        preview = Global.preview_global(request, driver, service_qualified=args.service_qualified,
+                                        exclusive_writer=args.exclusive_writer)
+        if args.command == "global-preview":
+            return {"status": preview.status, "blockers": preview.blockers}, preview.status == "approval_required"
+        result = Global.apply_global(preview, driver, approval=True)
+    output = asdict(result)
+    if result.installation is not None:
+        # Durable loading uses the private state directory, not an exported
+        # bootstrap payload. Keep raw binding bytes out of the operator JSON.
+        del output["installation"]["binding"]
+    return output, result.status in ("configured", "removed")
+
+
 def _json_path(value: object) -> str:
     if isinstance(value, Path):
         return str(value)
@@ -335,8 +442,12 @@ def main(argv: list[str] | None = None) -> int:
             if ((args.scope == "global" and (args.project_root is not None or args.global_config is None))
                     or (args.scope == "project" and (args.project_root is None or args.global_config is not None))):
                 return _error("invalid_arguments", "Capture arguments must match the selected scope.")
-        if args.command not in ("preview", "host-preview", "schedule-preview") and not args.approve:
+        if args.command not in ("preview", "host-preview", "schedule-preview", "global-preview") and not args.approve:
             return _error("approval_required", "Fresh --approve is required for this invocation.")
+        if args.command.startswith("global-"):
+            output, success = _global_command(args)
+            print(json.dumps(output, default=_json_path, ensure_ascii=True, allow_nan=False))
+            return 0 if success else 2
         if args.command.startswith(("host-", "schedule-")):
             output, success = _host_command(args)
             print(json.dumps(output, default=_json_path, ensure_ascii=True, allow_nan=False))
