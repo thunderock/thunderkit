@@ -21,7 +21,7 @@ import stat
 import subprocess
 import sys
 import time
-from typing import Literal, NoReturn, cast
+from typing import Literal, NoReturn, Protocol, cast
 import uuid
 
 import backup_store as S
@@ -551,6 +551,110 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, TypeError, KeyError, UnicodeError, subprocess.TimeoutExpired):
         print(json.dumps({"error": {"code": "connection_failed", "detail": "Checkpoint connection did not complete."}}), file=sys.stderr)
         return 2
+
+
+class ScheduleDriver(Protocol):
+    """Trusted existing host manager; replacement is compare-and-swap."""
+    def read(self) -> bytes: ...
+    def replace(self, expected: bytes, content: bytes) -> bool: ...
+
+
+@dataclass(frozen=True)
+class SchedulePreview:
+    connection: InstalledConnection
+    status: Status
+    previous: bytes = b""
+    block: bytes = b""
+    blockers: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class InstalledSchedule:
+    connection: InstalledConnection
+    block: bytes
+
+
+@dataclass(frozen=True)
+class ScheduleResult:
+    status: Status
+    installation: InstalledSchedule | None = None
+    blockers: tuple[str, ...] = ()
+
+
+def _connection_matches(connection: InstalledConnection) -> None:
+    _require(type(connection) is InstalledConnection and len(connection.files) == 2)
+    _check_directories(connection.directories)
+    _require(all(_record(item.path) == item for item in connection.files), "owned_connection_changed")
+    _require(connection.periodic_command == shlex.join((str(connection.hook_path), "--tick")), "invalid_schedule_command")
+    binding = next((item for item in connection.files if item.path == connection.state_dir / _BINDING), None)
+    _require(binding is not None and connection.hook_path in {item.path for item in connection.files})
+    assert binding is not None
+    _load_binding(binding.path, binding.sha256)
+
+
+def _table(data: bytes) -> bytes:
+    _require(type(data) is bytes and len(data) <= C.CONFIG_MAX_BYTES, "invalid_crontab")
+    _require(not data or data.endswith(b"\n"), "invalid_crontab")
+    _require(b"\0" not in data and b"\r" not in data, "invalid_crontab")
+    data.decode("utf-8", "strict")
+    return data
+
+
+def preview_schedule(connection: InstalledConnection, driver: ScheduleDriver, *,
+                     service_qualified: bool = False, exclusive_writer: bool = False) -> SchedulePreview:
+    """A binary on PATH is not service qualification or exclusive-writer proof."""
+    try:
+        _require(service_qualified is True and exclusive_writer is True, "scheduler_unqualified")
+        _connection_matches(connection)
+        previous = _table(driver.read())
+        token = hashlib.sha256(str(connection.hook_path).encode()).hexdigest()
+        marker = f"# thunderkit-checkpoint {token}".encode()
+        _require(marker not in previous, "schedule_already_present")
+        command = connection.periodic_command.encode()
+        _require(not any(value in command for value in (b"\n", b"\r", b"%")), "unsafe_schedule_command")
+        block = marker + b" begin\n* * * * * " + command + b"\n" + marker + b" end\n"
+        _table(previous + block)
+        return SchedulePreview(connection, "approval_required", previous, block)
+    except (C.ContinuityError, OSError, UnicodeError) as error:
+        return SchedulePreview(connection, "blocked", blockers=(error.code if isinstance(error, C.ContinuityError)
+                                                                 else "schedule_inspection_failed",))
+
+
+def apply_schedule(preview: SchedulePreview, driver: ScheduleDriver, *, approval: bool = False) -> ScheduleResult:
+    if approval is not True:
+        return ScheduleResult("approval_required")
+    if preview.status != "approval_required":
+        return ScheduleResult("blocked", blockers=preview.blockers)
+    try:
+        with _lock(preview.connection.state_dir, ".connection-install.lock"):
+            _require(preview_schedule(preview.connection, driver, service_qualified=True, exclusive_writer=True)
+                     == preview, "stale_schedule_preview")
+            desired = preview.previous + preview.block
+            _require(driver.replace(preview.previous, desired), "schedule_conflict")
+            _require(driver.read() == desired, "schedule_readback_failed")
+        return ScheduleResult("configured", InstalledSchedule(preview.connection, preview.block))
+    except (C.ContinuityError, OSError) as error:
+        return ScheduleResult("blocked", blockers=(error.code if isinstance(error, C.ContinuityError)
+                                                    else "schedule_install_failed",))
+
+
+def remove_schedule(installation: InstalledSchedule, driver: ScheduleDriver, *, approval: bool = False) -> ScheduleResult:
+    if approval is not True:
+        return ScheduleResult("approval_required")
+    try:
+        _require(type(installation) is InstalledSchedule)
+        connection = installation.connection
+        _connection_matches(connection)
+        with _lock(connection.state_dir, ".connection-install.lock"):
+            current = _table(driver.read())
+            _require(current.count(installation.block) == 1, "owned_schedule_changed")
+            desired = current.replace(installation.block, b"", 1)
+            _require(driver.replace(current, desired), "schedule_conflict")
+            _require(driver.read() == desired, "schedule_readback_failed")
+        return ScheduleResult("removed")
+    except (C.ContinuityError, OSError, UnicodeError) as error:
+        return ScheduleResult("blocked", blockers=(error.code if isinstance(error, C.ContinuityError)
+                                                    else "schedule_remove_failed",))
 
 
 if __name__ == "__main__":
