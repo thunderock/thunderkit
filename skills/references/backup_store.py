@@ -65,6 +65,63 @@ def _remaining(maximum: float) -> float:
     return maximum
 
 
+class HistoryExpired(BaseException):
+    """Optional allowance only; never a content refusal or outer cancellation."""
+
+
+class HistoryBudget:
+    """An in-process absolute cutoff nested under the caller's work deadline."""
+
+    def __init__(self, outer: WorkBudget, end: float) -> None:
+        self.outer = outer
+        self.end = end
+        self.expired = False
+
+    def check(self) -> None:
+        self.outer.check()
+        if time.monotonic() >= self.end:
+            self.expired = True
+        if self.expired:
+            raise HistoryExpired()
+
+    def remaining(self, maximum: float) -> float:
+        maximum = self.outer.remaining(maximum)
+        self.check()
+        remaining = self.end - time.monotonic()
+        if remaining <= 0:
+            self.expired = True
+            raise HistoryExpired()
+        return min(maximum, remaining)
+
+
+_history_budgets: ContextVar[tuple[HistoryBudget, ...]] = ContextVar("history_budgets", default=())
+
+
+@contextmanager
+def history_scope(budget: HistoryBudget) -> Iterator[None]:
+    """Supply optional-history policy without changing standalone S defaults."""
+    token = _history_budgets.set((*_history_budgets.get(), budget))
+    try:
+        yield
+    finally:
+        _history_budgets.reset(token)
+
+
+@contextmanager
+def history_work() -> Iterator[None]:
+    """Spend the shared allowance only at existing exception-safe work checks."""
+    with ExitStack() as stack:
+        for budget in _history_budgets.get():
+            stack.enter_context(work_scope(budget))
+        _work()
+        yield
+        _work()
+
+
+def history_expired() -> bool:
+    return any(budget.expired for budget in _history_budgets.get())
+
+
 class CleanupGuard(Protocol):
     """Caller-owned cancellation deferral, limited to acquisition and teardown."""
 
@@ -429,12 +486,13 @@ def _verified(snapshot: Path, identity: C.ScopeIdentity, limits: C.Limits,
         if seen != set(expected):
             _fail("integrity_mismatch")
         if manifest.history.status == "bundled":
-            bundle, _ = _read(root, "history.bundle", manifest.history.size)
-            if len(bundle) != manifest.history.size or _hash(bundle) != manifest.history.sha256:
-                _fail("integrity_mismatch")
-            _verify_history(bundle, manifest.history, limits)
-            if history_requested:
-                selected = bundle
+            with history_work():
+                bundle, _ = _read(root, "history.bundle", manifest.history.size)
+                if len(bundle) != manifest.history.size or _hash(bundle) != manifest.history.sha256:
+                    _fail("integrity_mismatch")
+                _verify_history(bundle, manifest.history, limits)
+                if history_requested:
+                    selected = bundle
         elif history_requested:
             _fail("history_invalid")
         # Pin the exact manifest and snapshot directory during this read.
@@ -595,11 +653,32 @@ def _prior(scope: Path, identity: C.ScopeIdentity) -> tuple[Path | None, C.Backu
             limits = C.Limits(max_file_bytes=C.MAXIMUMS["max_file_bytes"],
                               max_snapshot_bytes=C.MAXIMUMS["max_snapshot_bytes"],
                               max_files=C.MAXIMUMS["max_files"])
-            manifest = verify_snapshot(path, identity, limits)
-            if manifest.completion != "complete" or manifest.snapshot_id != path.parent.name:
-                _fail("invalid_locator")
+            # Syntax, scope and no-follow locator target checks are mandatory,
+            # even when no optional-history time remains. This is not trust in
+            # the old payload: only the full verifier below can establish that.
             with _directory(path.parent) as snapshot_fd:
                 encoded, _ = _read(snapshot_fd, "manifest.json", C.MANIFEST_MAX_BYTES)
+            manifest = C.validate_manifest(C.decode_json(encoded, max_bytes=C.MANIFEST_MAX_BYTES),
+                                           expected_identity=identity, limits=limits)
+            if manifest.completion != "complete" or manifest.snapshot_id != path.parent.name:
+                _fail("invalid_locator")
+            try:
+                with history_work():
+                    verified = verify_snapshot(path, identity, limits)
+            except HistoryExpired:
+                # Preserve the locator bytes, but expose no unverified path,
+                # hash or manifest for dedupe, retention or last-verified claims.
+                with _directory(path.parent) as snapshot_fd:
+                    again, _ = _read(snapshot_fd, "manifest.json", C.MANIFEST_MAX_BYTES)
+                if again != encoded or _read(fd, "latest.json", C.CONFIG_MAX_BYTES)[0] != raw:
+                    _fail("invalid_locator")
+                return None, None, None
+            if verified != manifest:
+                _fail("invalid_locator")
+            with _directory(path.parent) as snapshot_fd:
+                again, _ = _read(snapshot_fd, "manifest.json", C.MANIFEST_MAX_BYTES)
+            if again != encoded or _read(fd, "latest.json", C.CONFIG_MAX_BYTES)[0] != raw:
+                _fail("invalid_locator")
             return path.parent, manifest, _hash(encoded)
     except C.ContinuityError as error:
         if error.code == "scratch_unavailable":
@@ -1213,15 +1292,18 @@ def _capture_history(request: C.SnapshotRequest, git: _Git | None, ref: str | No
         _fail("source_changed")
     limits = request.settings.limits
     try:
-        _scan_graph(git, root, head, limits)
-        if _git_state(request, git) != (ref, head):
-            _fail("source_changed")
-        bundle = git.run(root, ["bundle", "create", "-", ref], limits.max_snapshot_bytes - file_bytes)
-        if _git_state(request, git) != (ref, head):
-            _fail("source_changed")
-        history = C.HistoryRecord("bundled", "history.bundle", len(bundle), _hash(bundle), ref, head)
-        _verify_history(bundle, history, limits)
-        return history, bundle
+        with history_work():
+            _scan_graph(git, root, head, limits)
+            if _git_state(request, git) != (ref, head):
+                _fail("source_changed")
+            bundle = git.run(root, ["bundle", "create", "-", ref], limits.max_snapshot_bytes - file_bytes)
+            if _git_state(request, git) != (ref, head):
+                _fail("source_changed")
+            history = C.HistoryRecord("bundled", "history.bundle", len(bundle), _hash(bundle), ref, head)
+            _verify_history(bundle, history, limits)
+            return history, bundle
+    except HistoryExpired:
+        return unprotected, None
     except C.ContinuityError as error:
         if error.code in ("source_changed", "history_ref_mismatch"):
             raise
@@ -1300,6 +1382,10 @@ def create_snapshot(request: C.SnapshotRequest, *, fault: Fault | None = None) -
         _event(fault, "after_scope_lock", scope, writer)
         payload, files, omissions, deleted = _capture_files(request, fault, git, head)
         history, bundle = _capture_history(request, git, ref, head, sum(f.size for f in files))
+        if history_expired():
+            extra = list(omissions)
+            _omit(extra, "Optional history verification exceeded its time allowance.", request.settings.limits)
+            omissions = tuple(extra)
         if history.status == "unprotected":
             extra = list(omissions)
             _omit(extra, "Branch history is unprotected.", request.settings.limits)
@@ -1327,17 +1413,40 @@ def create_snapshot(request: C.SnapshotRequest, *, fault: Fault | None = None) -
         snapshots_fd = _enter(stack, _child_directory(scope_fd, "snapshots"))
         writer.mkdir(scope_fd, ".staging")
         stages_fd = _enter(stack, _child_directory(scope_fd, ".staging"))
-        writer.owned_directory(stages_fd, stage_name, stack)
-        with _child_directory(stages_fd, stage_name) as stage:
-            _payload_write(writer, stage, payload, files)
-            if bundle is not None:
-                writer.write(stage, "history.bundle", bundle)
-            writer.write(stage, "manifest.json", encoded)
-        verify_snapshot(scope / ".staging" / stage_name, identity, request.settings.limits)
-        _event(fault, "before_manifest_publish", scope, writer)
-        if _git_state(request, git) != (ref, head):
-            _fail("source_changed")
-        writer.rename(stages_fd, stage_name, snapshots_fd, stage_name)
+        for attempt in range(2):
+            encoded = _encoded(asdict(manifest))
+            C.validate_manifest(C.decode_json(encoded, max_bytes=C.MANIFEST_MAX_BYTES), expected_identity=identity, limits=request.settings.limits)
+            with _resources() as stage_cleanup:
+                try:
+                    writer.owned_directory(stages_fd, stage_name, stage_cleanup)
+                    with _child_directory(stages_fd, stage_name) as stage:
+                        _payload_write(writer, stage, payload, files)
+                        if bundle is not None:
+                            with history_work():
+                                writer.write(stage, "history.bundle", bundle)
+                        writer.write(stage, "manifest.json", encoded)
+                    verify_snapshot(scope / ".staging" / stage_name, identity, request.settings.limits)
+                except HistoryExpired:
+                    if bundle is None or attempt:
+                        raise
+                else:
+                    _event(fault, "before_manifest_publish", scope, writer)
+                    if _git_state(request, git) != (ref, head):
+                        _fail("source_changed")
+                    writer.rename(stages_fd, stage_name, snapshots_fd, stage_name)
+                    break
+            # Only an unverified owned stage is discarded. Re-stage and fully
+            # verify the independently captured files once, under the SAME outer
+            # deadline; never rerun the prior-history path or relabel a tree.
+            stage_name = uuid.uuid4().hex
+            bundle = None
+            history = C.HistoryRecord("unprotected", ref=ref, head=head if ref else None)
+            extra = list(omissions)
+            _omit(extra, "Branch history is unprotected.", request.settings.limits)
+            _omit(extra, "Optional history verification exceeded its time allowance.", request.settings.limits)
+            omissions = tuple(extra)
+            manifest = replace(manifest, snapshot_id=stage_name, history=history,
+                               omissions=omissions, completion="partial")
         final = scope / "snapshots" / stage_name
         verify_snapshot(final, identity, request.settings.limits)
         if manifest.completion == "complete":

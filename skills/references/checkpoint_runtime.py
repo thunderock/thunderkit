@@ -225,7 +225,10 @@ def _deadline(seconds: float) -> Iterator[_Timer]:
     failed = False
     try:
         signal.setitimer(signal.ITIMER_REAL, seconds)
-        with S.cleanup_scope(timer.guard), S.work_scope(timer), G.work_scope(timer):
+        # One absolute optional cutoff reserves half the operation for current
+        # files and cleanup. No retry replenishes it or extends the outer end.
+        history = S.HistoryBudget(timer, timer.end - seconds / 2)
+        with S.cleanup_scope(timer.guard), S.work_scope(timer), G.work_scope(timer), S.history_scope(history):
             yield timer
     except BaseException:
         failed = True
@@ -771,8 +774,9 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                             warnings.append("history_not_requested")
                         else:
                             try:
-                                reachable = scope.reachable((tip[0], tip[1]))
-                            except _HistoryCapacity:
+                                with S.history_work():
+                                    reachable = scope.reachable((tip[0], tip[1]))
+                            except (_HistoryCapacity, S.HistoryExpired):
                                 # Do not repeat an already exhausted graph scan
                                 # inside S, or turn a resource limit into a grant.
                                 capture_request = replace(capture_request, include_history=False)
@@ -818,6 +822,9 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                     if tip is not None:
                         _require(scope.git_tip() == tip, "repository_changed")
                     snapshot = S.create_snapshot(capture_request, fault=scope.capture_guard)
+                    if S.history_expired() and "history_budget_exceeded" not in warnings:
+                        warnings.append("history_budget_exceeded")
+                        gaps += ("history_unprotected", "history_reconciliation_incomplete")
                     scope.check()
                     if tip is not None:
                         _require(scope.git_tip() == tip, "repository_changed")
@@ -885,6 +892,9 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                     with timer.guard():
                         if owned is not None:
                             scope.remove_owned(_LOCK, owned, directory=True)
+    except S.HistoryExpired:
+        warnings.append("history_budget_exceeded")
+        return result("failed", "History verification allowance expired; retain verified snapshots without advancing cadence or publication.")
     except _Deadline:
         warnings.append("deadline_exceeded")
         if push is not None and push.status == "unknown":
