@@ -31,7 +31,8 @@ JsonValue: TypeAlias = model_config.JsonValue
 CLASSES: Final = ("planner", "executors", "reviewers")
 TARGET_FIELDS: Final = ("ecosystem", "package", "version", "skill_name", "selector", "mode")
 MODEL_FREE: Final = frozenset({("tk-ask", "validate"), ("tk-memory", "view"),
-                              ("tk-router", "bootstrap"), ("tk-handoff", "save")})
+                              ("tk-router", "bootstrap"), ("tk-handoff", "save"),
+                              ("tk-restore", "load"), ("tk-restore", "preview"), ("tk-restore", "export")})
 
 
 class _Arguments(argparse.Namespace):

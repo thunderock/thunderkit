@@ -32,10 +32,20 @@ EXPECTED: Final = (
     "scripts/capability_gates.py",
     "scripts/tk-resolve.py",
     "scripts/peer_lock.py",
+    "scripts/continuity_config.py",
+    "scripts/backup_store.py",
+    "scripts/checkpoint_push.py",
+    "scripts/checkpoint_runtime.py",
+    "scripts/checkpoint_setup.py",
+    "scripts/checkpoint_cli.py",
+    "scripts/checkpoint_host.py",
+    "scripts/restore_context.py",
+    "references/continuity.schema.json",
+    "references/backup-manifest.schema.json",
 )
 FIXTURE_SKILLS: Final = ("tk-x", "tk-test")
 OWNED_SKILLS: Final = frozenset({"tk-router", "tk-test", "tk-ask", "tk-docs", "tk-memory",
-                               "tk-handoff", "tk-verify-work", "tk-quick"})
+                               "tk-handoff", "tk-restore", "tk-verify-work", "tk-quick"})
 MANAGED_PATHS: Final = (
     "skills", "skills/references", "skills/tk-x", "skills/tk-x/SKILL.md",
     "skills/tk-test/references", "skills/tk-test/scripts",

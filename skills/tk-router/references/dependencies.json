@@ -894,6 +894,17 @@
       "targets": [],
       "fallback": "Thunderkit owns memory viewing and saving because project context must remain under its persistence policy."
     },
+    "tk-restore": {
+      "role": "continuity",
+      "default_operation": "load",
+      "operations": [
+        "load",
+        "preview",
+        "export"
+      ],
+      "targets": [],
+      "fallback": "Thunderkit owns model-free inert context loading and read-only export preview; export requires fresh approval for the exact preview, scope and new or empty destination. No execution or resume authority is restored."
+    },
     "tk-handoff": {
       "role": "continuity",
       "default_operation": "save",

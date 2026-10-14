@@ -23,6 +23,16 @@ MANIFEST: Final = (
     ("skills/references/capability_gates.py", "scripts/capability_gates.py"),
     ("skills/references/tk-resolve.py", "scripts/tk-resolve.py"),
     ("skills/references/peer_lock.py", "scripts/peer_lock.py"),
+    ("skills/references/continuity_config.py", "scripts/continuity_config.py"),
+    ("skills/references/backup_store.py", "scripts/backup_store.py"),
+    ("skills/references/checkpoint_push.py", "scripts/checkpoint_push.py"),
+    ("skills/references/checkpoint_runtime.py", "scripts/checkpoint_runtime.py"),
+    ("skills/references/checkpoint_setup.py", "scripts/checkpoint_setup.py"),
+    ("skills/references/checkpoint_cli.py", "scripts/checkpoint_cli.py"),
+    ("skills/references/checkpoint_host.py", "scripts/checkpoint_host.py"),
+    ("skills/references/restore_context.py", "scripts/restore_context.py"),
+    ("skills/references/continuity.schema.json", "references/continuity.schema.json"),
+    ("skills/references/backup-manifest.schema.json", "references/backup-manifest.schema.json"),
 )
 MANAGED_FILES: Final = tuple(destination for _, destination in MANIFEST)
 JsonValue: TypeAlias = str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
