@@ -118,7 +118,7 @@ class PublicationDeadlineTests(unittest.TestCase):
                 expire_if_armed()
 
             case.fixture.driver.after_push = after_push
-            result = case.with_authority(lambda request: case.fixture.grant)
+            result = case.with_authority(lambda request, *, timeout=None: case.fixture.grant)
             self.assertEqual(result.status, "failed")
             self.assertEqual(result.push.status, "unknown")
             self.assertEqual(case.fixture.driver.writes, 1)
@@ -137,7 +137,7 @@ class PublicationDeadlineTests(unittest.TestCase):
             self.assertEqual(signal.pthread_sigmask(signal.SIG_BLOCK, set()), previous_mask)
             case.fixture.fresh_driver()
             case.clock.mono += 1
-            retried = case.with_authority(lambda request: case.fixture.grant)
+            retried = case.with_authority(lambda request, *, timeout=None: case.fixture.grant)
             self.assertEqual(retried.status, "captured")
             self.assertEqual(retried.push.status, "already-present")
             self.assertEqual(case.fixture.driver.writes, 0)

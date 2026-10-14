@@ -94,7 +94,7 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
     def test_current_tip_push_requires_callback_and_reconciles_bypassed_events(self) -> None:
         issued = []
 
-        def authority(request):
+        def authority(request, *, timeout=None):
             self.assertEqual((request.identity, request.repository, request.oid, request.destination_ref),
                              (self.fixture.identity, self.fixture.repo, self.fixture.oid, self.fixture.ref))
             issued.append(request.oid)
@@ -145,7 +145,7 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
                                             self.settings.limits), self.notes.read_bytes())
         calls = []
 
-        def authority(request):
+        def authority(request, *, timeout=None):
             calls.append(request)
             return self.fixture.grant
 
@@ -169,7 +169,7 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
                                             self.settings.limits), self.notes.read_bytes())
         calls = []
 
-        def authority(request):
+        def authority(request, *, timeout=None):
             calls.append(request)
             return self.fixture.grant
 
@@ -199,7 +199,7 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
         self.assertEqual((control.status, control.history_status), ("complete", "not-applicable"))
         calls = []
 
-        def authority(request):
+        def authority(request, *, timeout=None):
             calls.append(request)
             return self.fixture.grant
 
@@ -234,7 +234,7 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
                                         include_history=False, history_ref=None)
         calls = []
 
-        def authority(request):
+        def authority(request, *, timeout=None):
             calls.append(request)
             return self.fixture.grant
 
@@ -293,7 +293,7 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
                              "H10-F2: unreachable rewritten tips must not accumulate in saved state")
             self.assertTrue(superseded.isdisjoint(state["observed_oids"]))
         self.fixture.fresh_driver()
-        published = self.with_authority(lambda request: self.fixture.grant)
+        published = self.with_authority(lambda request, *, timeout=None: self.fixture.grant)
         self.assertEqual(published.push.status, "pushed")
         self.assertEqual(self.fixture.remote_oid(), self.fixture.oid)
         self.assertEqual(self.fixture.driver.writes, 1)
@@ -314,7 +314,7 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
         self.clock.mono += 1
         issued = []
 
-        def authority(request):
+        def authority(request, *, timeout=None):
             issued.append(request.oid)
             return self.fixture.grant
 
@@ -341,7 +341,7 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
         self.notes.write_bytes(b"API_TOKEN=" + b"ghp_" + b"Z" * 36 + b"\n")
         calls = []
 
-        def authority(request):
+        def authority(request, *, timeout=None):
             calls.append(request)
             return self.fixture.grant
 
