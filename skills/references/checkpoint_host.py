@@ -755,6 +755,18 @@ def _save_result(state: Path, value: object) -> None:
             _unlink(owned)
 
 
+def _check_current_policy(project: Path) -> None:
+    """Observe revocation at the host boundary, without restoring new authority."""
+    path = C.safe_path(project / ".thunderkit/continuity.json")
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return
+    policy = C.validate_policy(C.decode_json(_read(path)[0]))
+    backup = cast(C.JsonObject, policy.get("backup", {}))
+    _require(backup.get("enabled", True) is True, "backup_disabled")
+
+
 def _run_connection(path: Path, digest: str, *, trigger: str = "due", phase: str = "committed",
                    events: bytes = b"") -> C.JsonObject:
     _require(trigger in ("due", "ref"))
@@ -764,6 +776,9 @@ def _run_connection(path: Path, digest: str, *, trigger: str = "due", phase: str
     assert budget is not None
     with S.work_scope(budget):
         request, _ = _load_binding(path, digest)
+        project = request.snapshot.settings.project_root
+        assert project is not None
+        _check_current_policy(project)
     ref = request.snapshot.history_ref
     assert ref is not None
     if trigger == "ref" and not _relevant(events, phase, ref):
