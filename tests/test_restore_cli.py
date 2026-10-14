@@ -16,12 +16,123 @@ class RestoreCLITests(unittest.TestCase):
     def setUp(self) -> None:
         self.fixture = fixtures.RestoreContextTests()
         self.fixture.setUp()
-        self.addCleanup(self.fixture.doCleanups)
+        self.addCleanup(self.cleanup_fixture)
         self.source, self.manifest = self.fixture.snapshot_without_checkout()
         self.command = fixtures.RESTORE
         self.identity = self.fixture.identity.id
         self.environment = dict(os.environ)
         self.environment.pop("PYTHONPATH", None)
+
+    def cleanup_fixture(self) -> None:
+        self.assertTrue(self.fixture.doCleanups(), "Nested fixture cleanup must not hide errors")
+        self.assertFalse(self.fixture.base.exists())
+
+    def test_common_limits_restore_lost_config_snapshot_above_defaults(self) -> None:
+        f = self.fixture
+        f.project.mkdir()
+        (f.project / "notes").mkdir()
+        (f.project / "notes/context.md").write_text(fixtures.CONTEXT, encoding="utf-8")
+        payload = b"a" * (10 * 1024 * 1024 + 1)
+        (f.project / "large.txt").write_bytes(payload)
+        limits = fixtures.C.Limits(max_file_bytes=12 * 1024 * 1024,
+                                   max_snapshot_bytes=16 * 1024 * 1024)
+        qualification = fixtures.S.qualify_storage(fixtures.S.inspect_storage(f.backups), approval=True)
+        settings = fixtures.C.ResolvedSettings(
+            identity=f.identity, project_root=f.project, backup_root=f.backups,
+            context_path=None, context_source="unconfigured",
+            backup=fixtures.C.BackupPolicy(enabled=True), limits=limits,
+        )
+        captured = fixtures.S.create_snapshot(fixtures.C.SnapshotRequest(
+            settings=settings, storage=qualification.identity, approved_sources=(f.project,),
+            context_entrypoints=("notes/context.md",), include_history=False,
+        ))
+        self.assertEqual(captured.status, "complete")
+        assert captured.snapshot_path is not None
+        source = captured.snapshot_path / "manifest.json"
+        fixtures.S.verify_snapshot(source, f.identity, limits)
+        shutil.rmtree(f.project)  # Only the disposable checkout owned by this case.
+        self.assertFalse(f.project.exists())
+        self.assertEqual(tuple(f.home.iterdir()), ())
+        common = ("--context", str(source), "--identity", self.identity)
+        destination = f.work / "above-default-export"
+        export_args = (*common, "--destination", str(destination))
+        before = f.tree()
+        for command, args in (("load", common), ("preview", export_args)):
+            denied = self.run_cli(command, *args)
+            self.assertEqual(denied.returncode, 2)
+            self.assertEqual(json.loads(denied.stderr)["error"]["code"], "invalid_manifest")
+        flags = ("--max-file-bytes", str(12 * 1024 * 1024),
+                 "--max-snapshot-bytes", str(16 * 1024 * 1024),
+                 "--max-context-bytes", "256", "--max-files", "2",
+                 "--max-path-bytes", "4096", "--max-sources", "1")
+        loaded = self.run_cli("load", *common, *flags)
+        self.assertEqual(loaded.returncode, 0,
+                         "R8-limits: real load must accept bounded common overrides: " + loaded.stderr)
+        self.assertEqual(self.output(loaded)["text"], fixtures.CONTEXT)
+        preview = self.output(self.run_cli("preview", *export_args, *flags))
+        self.assertEqual(preview["exported_paths"], ["large.txt", "notes/context.md"])
+        self.assertEqual(f.tree(), before, "Load and preview stay read-only")
+        result = self.output(self.run_cli("export", *export_args, *flags, "--approve",
+                             "--expect-manifest-sha256", str(preview["manifest_sha256"])))
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual((destination / "large.txt").read_bytes(), payload)
+        self.assertEqual((destination / "notes/context.md").read_text(), fixtures.CONTEXT)
+        self.assertFalse(f.project.exists())
+        self.assertEqual(tuple(f.home.iterdir()), ())
+
+    def test_common_limits_tighten_real_recovery_without_writes(self) -> None:
+        destination = self.fixture.work / "bounded-export"
+        common = ("--context", str(self.source), "--identity", self.identity)
+        export_args = (*common, "--destination", str(destination))
+        preview = self.output(self.run_cli("preview", *export_args))
+        total = sum(entry.size for entry in self.manifest.files)
+        largest = max(entry.size for entry in self.manifest.files)
+        self.assertLess(largest, total)
+        cases = (
+            (("--max-file-bytes", "1"), "invalid_manifest"),
+            (("--max-file-bytes", str(largest), "--max-snapshot-bytes", str(total - 1)),
+             "invalid_manifest"),
+            (("--max-files", "1"), "invalid_manifest"),
+            (("--max-path-bytes", "1"), "unsafe_path"),
+        )
+        before = self.fixture.tree()
+        for command in ("load", "preview", "export"):
+            args = common if command == "load" else export_args
+            if command == "export":
+                args = (*args, "--approve", "--expect-manifest-sha256", str(preview["manifest_sha256"]))
+            for flags, expected in cases:
+                with self.subTest(command=command, flags=flags):
+                    process = self.run_cli(command, *args, *flags)
+                    self.assertEqual(process.returncode, 2)
+                    self.assertEqual(process.stdout, "")
+                    self.assertFalse(destination.exists())
+                    self.assertEqual(self.fixture.tree(), before)
+                    self.assertEqual(json.loads(process.stderr)["error"]["code"], expected,
+                                     "R8-budget: supplied limits must reach real validation")
+        context_denied = self.run_cli("load", *common, "--max-context-bytes", "1")
+        self.assertEqual(context_denied.returncode, 2)
+        self.assertEqual(json.loads(context_denied.stderr)["error"]["code"], "read_budget_exceeded")
+        self.assertEqual(self.fixture.tree(), before)
+
+    def test_load_limit_override_preserves_unmentioned_policy_limits(self) -> None:
+        policy = self.fixture.home / "recovery-policy.json"
+        policy.write_text(json.dumps({"schema": 1, "kind": "global-settings", "policy": {
+            "backup": {"limits": {"max_file_bytes": 1, "max_files": 1}}}}))
+        common = ("--context", str(self.source), "--identity", self.identity,
+                  "--global-config", str(policy))
+        before = self.fixture.tree()
+        for flags in (("--max-file-bytes", "256"), ("--max-files", "2")):
+            with self.subTest(flags=flags):
+                process = self.run_cli("load", *common, *flags)
+                self.assertEqual(process.returncode, 2)
+                self.assertEqual(process.stdout, "")
+                self.assertEqual(self.fixture.tree(), before)
+                self.assertEqual(json.loads(process.stderr)["error"]["code"], "invalid_manifest",
+                                 "R8-policy: overriding one field must preserve the other cap")
+        loaded = self.run_cli("load", *common, "--max-file-bytes", "256", "--max-files", "2")
+        self.assertEqual(loaded.returncode, 0, "R8-policy: explicit overrides must apply: " + loaded.stderr)
+        self.assertEqual(self.output(loaded)["text"], fixtures.CONTEXT)
+        self.assertEqual(self.fixture.tree(), before)
 
     def run_cli(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run([sys.executable, str(self.command), *args], cwd=self.fixture.work,
