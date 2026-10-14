@@ -216,6 +216,59 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
         self.assertIsNone(result.push)
         self.assertFalse((self.state / ".checkpoint.lock").exists())
 
+    def test_unborn_whole_project_omits_ignored_files_except_named_context(self) -> None:
+        project = self.fixture.base / "unborn-whole-project"
+        self.fixture.raw("init", "--initial-branch=work", f"--template={self.fixture.template}",
+                         str(project), cwd=self.fixture.base)
+        (project / ".gitignore").write_text("scratch-notes.txt\nselected-context.md\n")
+        (project / "notes.md").write_text("# Visible pre-commit context\n")
+        (project / "scratch-notes.txt").write_text("Ignored ordinary content\n")
+        (project / "selected-context.md").write_text("# Explicitly named ignored context\n")
+        ignored = self.fixture.raw("check-ignore", "--", "scratch-notes.txt", "selected-context.md",
+                                   cwd=project)
+        self.assertEqual(ignored.stdout.splitlines(), ["scratch-notes.txt", "selected-context.md"])
+        self.assertEqual(self.fixture.raw("rev-list", "--all", cwd=project).stdout, "")
+        self.settings = replace(self.settings, project_root=project, approved_sources=(project,))
+        self.snapshot_request = replace(self.snapshot_request, settings=self.settings,
+                                        approved_sources=(project,), context_entrypoints=("notes.md",),
+                                        include_history=False, history_ref=None)
+        calls = []
+
+        def authority(request):
+            calls.append(request)
+            return self.fixture.grant
+
+        result = self.with_authority(authority)
+        self.assertEqual(result.status, "captured", result.warnings)
+        self.assertEqual(result.snapshot.history_status, "not-applicable")
+        manifest = self.s.verify_snapshot(result.snapshot.snapshot_path, self.fixture.identity,
+                                           self.settings.limits)
+        self.assertEqual({entry.relpath for entry in manifest.files}, {".gitignore", "notes.md"},
+                         "H13-ignore: unborn whole-project capture must honor Git ignore rules")
+        self.assertEqual(manifest.deleted_paths, ())
+        self.assertEqual(calls, [])
+        self.assertIsNone(result.push)
+        self.assertEqual(self.fixture.driver.calls, [])
+        self.assertFalse((self.state / ".checkpoint.lock").exists())
+        # Ignored context is allowed only when explicitly selected by this caller.
+        self.snapshot_request = replace(self.snapshot_request,
+            context_entrypoints=("notes.md", "selected-context.md"))
+        selected = self.with_authority(authority)
+        self.assertEqual(selected.status, "captured", selected.warnings)
+        manifest = self.s.verify_snapshot(selected.snapshot.snapshot_path, self.fixture.identity,
+                                           self.settings.limits)
+        self.assertEqual({entry.relpath for entry in manifest.files},
+                         {".gitignore", "notes.md", "selected-context.md"})
+        self.assertEqual(self.s.read_payload(selected.snapshot.snapshot_path, "selected-context.md",
+                                             self.fixture.identity, self.settings.limits),
+                         b"# Explicitly named ignored context\n")
+        self.assertEqual(manifest.context_entrypoints, ("notes.md", "selected-context.md"))
+        self.assertEqual(manifest.deleted_paths, ())
+        self.assertEqual(calls, [])
+        self.assertIsNone(selected.push)
+        self.assertEqual(self.fixture.driver.calls, [])
+        self.assertFalse((self.state / ".checkpoint.lock").exists())
+
     def test_rewritten_tips_do_not_accumulate_unreachable_observation_state(self) -> None:
         self.settings = replace(self.settings, limits=self.c.Limits(max_files=3))
         self.snapshot_request = replace(self.snapshot_request, settings=self.settings)
