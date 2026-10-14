@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
@@ -30,8 +31,45 @@ import continuity_config as C
 
 Status = Literal["approval_required", "blocked", "configured", "removed"]
 _BINDING = "connection.json"
+_RECEIPT = "connection-receipt.json"
+_SCHEDULE = "connection-schedule.json"
 _HOOK = "reference-transaction"
 _MODULES = ("continuity_config", "backup_store", "checkpoint_push", "checkpoint_runtime", "checkpoint_host")
+
+
+@dataclass(frozen=True)
+class _Budget:
+    end: float
+    code: str = "connection_deadline"
+
+    def check(self) -> None:
+        _require(time.monotonic() < self.end, self.code)
+
+    def remaining(self, maximum: float) -> float:
+        value = min(maximum, self.end - time.monotonic())
+        _require(value > 0, self.code)
+        return value
+
+
+_budget: ContextVar[_Budget | None] = ContextVar("host_budget", default=None)
+
+
+@contextmanager
+def _operation(seconds: float) -> Iterator[_Budget]:
+    existing = _budget.get()
+    budget = existing or _Budget(time.monotonic() + seconds)
+    token = _budget.set(budget)
+    try:
+        budget.check()
+        yield budget
+        budget.check()
+    finally:
+        _budget.reset(token)
+
+
+def _end(seconds: float) -> float:
+    budget = _budget.get()
+    return time.monotonic() + (seconds if budget is None else budget.remaining(seconds))
 
 
 @dataclass(frozen=True)
@@ -58,6 +96,8 @@ class InstalledConnection:
     directories: tuple[tuple[Path, tuple[int, ...]], ...]
     periodic_command: str
     created_hooks: bool = False
+    removing: bool = False
+    pending: tuple[OwnedFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -140,37 +180,75 @@ def _git_environment() -> dict[str, str]:
     return env
 
 
-def _git(project: Path, args: tuple[str, ...]) -> bytes:
-    command = ("/usr/bin/git", *args)
-    chunks: list[bytes] = []
+def _transport(command: tuple[str, ...], cwd: Path, env: dict[str, str], end: float,
+               data: bytes | None, *, timeout_code: str, failure_code: str, size_code: str) -> bytes:
+    budget = _Budget(end, timeout_code)
+    budget.check()
+    output: list[bytes] = []
     count = 0
-    end = time.monotonic() + 5
-    with subprocess.Popen(command, cwd=project, env=_git_environment(), stdin=subprocess.DEVNULL,
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True) as process:
+    offset = 0
+    process = subprocess.Popen(command, cwd=cwd, env=env,
+        stdin=subprocess.DEVNULL if data is None else subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+    try:
         assert process.stdout is not None and process.stderr is not None
-        try:
-            with selectors.DefaultSelector() as selector:
-                selector.register(process.stdout, selectors.EVENT_READ, True)
-                selector.register(process.stderr, selectors.EVENT_READ, False)
-                while selector.get_map():
-                    remaining = end - time.monotonic()
-                    _require(remaining > 0, "git_inspection_timeout")
-                    for key, _ in selector.select(remaining):
-                        data = os.read(key.fd, 65536)
-                        if not data:
+        with selectors.DefaultSelector() as selector:
+            for stream, keep in ((process.stdout, True), (process.stderr, False)):
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, keep)
+            if process.stdin is not None:
+                os.set_blocking(process.stdin.fileno(), False)
+                if data:
+                    selector.register(process.stdin, selectors.EVENT_WRITE, None)
+                else:
+                    process.stdin.close()
+            while selector.get_map():
+                for key, event in selector.select(budget.remaining(5)):
+                    budget.check()
+                    if event & selectors.EVENT_WRITE:
+                        assert data is not None and process.stdin is not None
+                        try:
+                            offset += os.write(key.fd, data[offset:offset + 4096])
+                        except BrokenPipeError:
+                            _fail(failure_code)
+                        if offset == len(data):
+                            selector.unregister(key.fileobj)
+                            process.stdin.close()
+                    else:
+                        chunk = os.read(key.fd, 65536)
+                        if not chunk:
                             selector.unregister(key.fileobj)
                         else:
-                            count += len(data)
-                            _require(count <= C.CONFIG_MAX_BYTES, "git_inspection_too_large")
+                            count += len(chunk)
+                            _require(count <= C.CONFIG_MAX_BYTES, size_code)
                             if key.data:
-                                chunks.append(data)
-            code = process.wait(timeout=max(0.001, end - time.monotonic()))
-            _require(code == 0, "git_inspection_failed")
+                                output.append(chunk)
+            try:
+                code = process.wait(timeout=budget.remaining(5))
+            except subprocess.TimeoutExpired:
+                _fail(timeout_code)
+            budget.check()
+            _require(code == 0, failure_code)
+    finally:
+        # The group is ours even if its leader already exited. Never leave a
+        # descendant holding pipes; cleanup does not spend/reset work budget.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=0.5)
         finally:
-            if process.poll() is None:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait(timeout=5)
-    return b"".join(chunks)
+            for pipe in (process.stdin, process.stdout, process.stderr):
+                if pipe is not None:
+                    pipe.close()
+    return b"".join(output)
+
+
+def _git(project: Path, args: tuple[str, ...]) -> bytes:
+    return _transport(("/usr/bin/git", *args), project, _git_environment(), _end(5), None,
+        timeout_code="git_inspection_timeout", failure_code="git_inspection_failed",
+        size_code="git_inspection_too_large")
 
 
 def _hooks(project: Path) -> tuple[Path, str]:
@@ -208,25 +286,48 @@ def _runtime_files(python: Path) -> tuple[dict[str, str], tuple[int, ...]]:
 
 
 def _hook_bytes(python: Path, binding: Path, digest: str, files: dict[str, str]) -> bytes:
-    # Hash and execute the SAME bytes; never hash a module then reopen it to import.
-    text = (f"#!{python} -I\n" + "import hashlib,importlib.util,sys\nfrom pathlib import Path\n"
-            + "if len(sys.argv)!=2: raise SystemExit(2)\n"
-            + "phase=sys.argv[1]\n"
-            + "if phase in ('preparing','prepared','aborted'): raise SystemExit(0)\n"
-            + "if phase not in ('committed','--tick'): raise SystemExit(2)\n"
-            + f"expected={files!r}\n"
-            + "sources={}\nfor path,digest in expected.items():\n"
-            + " data=Path(path).read_bytes()\n"
-            + " if hashlib.sha256(data).hexdigest()!=digest: raise SystemExit(2)\n"
-            + " sources[path]=data\n"
-            + "sys.dont_write_bytecode=True\n"
-            + "for path,data in sources.items():\n"
-            + " name=Path(path).stem\n spec=importlib.util.spec_from_file_location(name,path)\n"
-            + " module=importlib.util.module_from_spec(spec)\n sys.modules[name]=module\n"
-            + " exec(compile(data,path,'exec'),module.__dict__)\n"
-            + f"args=['run','--binding',{str(binding)!r},'--expect',{digest!r}]\n"
-            + "args+=['--trigger','due'] if phase=='--tick' else ['--trigger','ref','--phase',phase]\n"
-            + "raise SystemExit(sys.modules['checkpoint_host'].main(args))\n")
+    # Verify every bounded, no-follow source before executing any helper bytes.
+    text = f"#!{python} -I\n" + """import sys
+if len(sys.argv)!=2: raise SystemExit(2)
+phase=sys.argv[1]
+if phase in ('preparing','prepared','aborted'): raise SystemExit(0)
+if phase not in ('committed','--tick'): raise SystemExit(2)
+import hashlib,importlib.util,json,os,stat
+from pathlib import Path
+""" + f"expected={files!r}\nlimit={C.CONFIG_MAX_BYTES}\n" + """try:
+ sources={}
+ for path,digest in expected.items():
+  p=Path(path); fd=os.open(p.anchor,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+  try:
+   for part in p.parts[1:-1]:
+    child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=fd)
+    os.close(fd); fd=child
+   source=os.open(p.name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK,dir_fd=fd)
+   try:
+    before=os.fstat(source)
+    if not stat.S_ISREG(before.st_mode) or before.st_nlink!=1 or before.st_size>limit or before.st_mode&0o022 or before.st_uid not in (0,os.geteuid()): raise ValueError()
+    data=b''
+    while len(data)<=limit:
+     chunk=os.read(source,min(65536,limit+1-len(data)))
+     if not chunk: break
+     data+=chunk
+    if before!=os.fstat(source) or len(data)!=before.st_size: raise ValueError()
+   finally: os.close(source)
+  finally: os.close(fd)
+  if hashlib.sha256(data).hexdigest()!=digest: raise ValueError()
+  sources[path]=data
+ sys.dont_write_bytecode=True
+ for path,data in sources.items():
+  name=Path(path).stem
+  spec=importlib.util.spec_from_file_location(name,path)
+  module=importlib.util.module_from_spec(spec); sys.modules[name]=module
+  exec(compile(data,path,'exec'),module.__dict__)
+except Exception:
+ print(json.dumps({'error':{'code':'connection_runtime_changed','detail':'Pinned runtime unavailable.'}}),file=sys.stderr)
+ raise SystemExit(2)
+""" + f"args=['run','--binding',{str(binding)!r},'--expect',{digest!r}]\n" + """args+=['--trigger','due'] if phase=='--tick' else ['--trigger','ref','--phase',phase]
+raise SystemExit(sys.modules['checkpoint_host'].main(args))
+"""
     return text.encode()
 
 
@@ -243,7 +344,7 @@ def preview_connections(request: HostRequest) -> HostPreview:
         _require(stat.S_IMODE(request.state_dir.lstat().st_mode) == 0o700, "unsafe_state_directory")
         hooks, config_hash = _hooks(project)
         _require(not hooks.exists() or not list(hooks.iterdir()), "foreign_hooks")
-        _require(not any((request.state_dir / name).exists() for name in (_BINDING, "connection-receipt.json")),
+        _require(not any(os.path.lexists(request.state_dir / name) for name in (_BINDING, _RECEIPT, _SCHEDULE)),
                  "connection_exists")
         S._check_storage(snapshot.storage)
         pointer = C.decode_locator(C.read_json(snapshot.storage.root / "projects" / snapshot.settings.identity.id / "latest.json"), pointer=True)
@@ -311,7 +412,8 @@ def apply_connections(preview: HostPreview, *, approval: bool = False) -> HostRe
         return HostResult("approval_required")
     if preview.status != "approval_required":
         return HostResult("blocked", blockers=preview.blockers)
-    files: list[OwnedFile] = []
+    staged: list[OwnedFile] = []
+    receipt: InstalledConnection | None = None
     created_hooks = False
     hook_identity: tuple[int, ...] | None = None
     try:
@@ -324,28 +426,50 @@ def apply_connections(preview: HostPreview, *, approval: bool = False) -> HostRe
                     os.fsync(parent)
                 created_hooks = True
             hook_identity = _identity(preview.hook_path.parent)
-            files.append(_write_new(preview.request.state_dir / _BINDING, preview.binding, 0o600))
-            # Hook is the activation point and is installed last.
-            files.append(_write_new(preview.hook_path, preview.hook, 0o700))
+            targets = (preview.request.state_dir / _BINDING, preview.hook_path)
+            for target, data, mode in ((targets[0], preview.binding, 0o600), (targets[1], preview.hook, 0o700)):
+                staged.append(_write_new(target.parent / (".connection-" + uuid.uuid4().hex), data, mode))
+            project = preview.hook_path.parents[2]
+            receipt = InstalledConnection(preview.request.state_dir, preview.hook_path,
+                tuple(replace(item, path=target) for item, target in zip(staged, targets)),
+                _directories((project, project / ".git", preview.hook_path.parent, preview.request.state_dir)),
+                preview.periodic_command, created_hooks, removing=True, pending=tuple(staged))
+            # Recoverable intent precedes activation. Rename preserves the pinned
+            # inodes, and missing final members remain safe on a fresh-process retry.
+            _write_new(receipt.state_dir / _RECEIPT, _installation_bytes(receipt), 0o600)
+            _require(load_connections(receipt.state_dir, project_root=project) == receipt,
+                     "connection_receipt_readback_failed")
             _check_directories(preview.directories)
-            return HostResult("configured", InstalledConnection(preview.request.state_dir, preview.hook_path,
-                              tuple(files), tuple(sorted(set((*preview.directories,
-                                  (preview.hook_path.parent, hook_identity))))), preview.periodic_command, created_hooks))
+            for item, target in zip(staged, targets):
+                _require(not os.path.lexists(target), "owned_connection_changed")
+                _require(_record(item.path) == item, "owned_connection_changed")
+                with S._directory(target.parent) as parent:
+                    os.rename(item.path.name, target.name, src_dir_fd=parent, dst_dir_fd=parent)
+                    os.fsync(parent)
+            complete = replace(receipt, removing=False, pending=())
+            _replace_owned(receipt.state_dir / _RECEIPT, _installation_bytes(complete))
+            _require(load_connections(receipt.state_dir, project_root=project) == complete,
+                     "connection_receipt_readback_failed")
+            receipt = complete
+        return HostResult("configured", receipt)
     except (C.ContinuityError, OSError) as error:
-        retained = []
-        for item in reversed(files):
-            try:
-                _unlink(item)
-            except (C.ContinuityError, OSError):
-                retained.append(item.path)
-        if created_hooks and preview.hook_path is not None:
+        retained: list[Path] = []
+        for item in reversed(staged):
+            if os.path.lexists(item.path):
+                try:
+                    _unlink(item)
+                except (C.ContinuityError, OSError):
+                    retained.append(item.path)
+        if receipt is not None and os.path.lexists(receipt.state_dir / _RECEIPT):
+            retained.extend(item.path for item in receipt.files if os.path.lexists(item.path))
+        elif created_hooks and preview.hook_path is not None:
             try:
                 _require(_identity(preview.hook_path.parent) == hook_identity, "connection_path_changed")
                 preview.hook_path.parent.rmdir()
             except (C.ContinuityError, OSError):
                 retained.append(preview.hook_path.parent)
-        return HostResult("blocked", blockers=(error.code if isinstance(error, C.ContinuityError)
-                                                else "connection_install_failed",), retained_paths=tuple(retained))
+        return HostResult("blocked", receipt,
+            (error.code if isinstance(error, C.ContinuityError) else "connection_install_failed",), tuple(retained))
 
 
 def _unlink(item: OwnedFile) -> None:
@@ -357,25 +481,169 @@ def _unlink(item: OwnedFile) -> None:
         os.fsync(parent)
 
 
+def _installation_bytes(receipt: InstalledConnection) -> bytes:
+    return _encoded({"schema": 1, "kind": "checkpoint-installation", **asdict(receipt)})
+
+
+def _private(path: Path) -> bytes:
+    data, info = _read(path)
+    _require(info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o600)
+    return data
+
+
+def _replace_owned(path: Path, data: bytes) -> None:
+    previous = _record(path)
+    temporary = path.parent / (".connection-" + uuid.uuid4().hex)
+    owned = _write_new(temporary, data, 0o600)
+    try:
+        _require(_record(path) == previous, "owned_connection_changed")
+        with S._directory(path.parent) as parent:
+            os.replace(temporary.name, path.name, src_dir_fd=parent, dst_dir_fd=parent)
+            os.fsync(parent)
+        _require(_private(path) == data, "connection_receipt_readback_failed")
+    finally:
+        if os.path.lexists(temporary):
+            _unlink(owned)
+
+
+def _path(value: C.JsonValue) -> Path:
+    text = C.validate_path_text(value, absolute=True)
+    path = Path(text)
+    _require(str(path) == text)
+    return path
+
+
+def _integer(value: C.JsonValue) -> int:
+    _require(type(value) is int and 0 <= value < 2**128)
+    return cast(int, value)
+
+
+def _installation_shape(receipt: InstalledConnection) -> None:
+    _require(type(receipt) is InstalledConnection)
+    project = receipt.hook_path.parent.parent.parent
+    _require(receipt.hook_path == project / ".git/hooks" / _HOOK)
+    _require(type(receipt.created_hooks) is bool and type(receipt.removing) is bool)
+    _require(len(receipt.files) == 2 and {item.path for item in receipt.files}
+             == {receipt.hook_path, receipt.state_dir / _BINDING})
+    _require(not receipt.pending or receipt.removing)
+    _require(len(receipt.pending) <= 2 and len({p.path for p in receipt.pending}) == len(receipt.pending))
+    for item in receipt.pending:
+        _require(item.path.name.startswith(".connection-") and len(item.path.name) == 44)
+        _require(all(c in "0123456789abcdef" for c in item.path.name[len(".connection-"):]))
+        _require(any(replace(item, path=target.path) == target and item.path.parent == target.path.parent
+                     for target in receipt.files))
+    for item in receipt.files:
+        _require(type(item) is OwnedFile)
+        _path(str(item.path))
+        _integer(item.device)
+        _integer(item.inode)
+        _require(type(item.mode) is int and item.mode == stat.S_IFREG | (
+            0o700 if item.path == receipt.hook_path else 0o600))
+        C.validate_sha256(item.sha256)
+    roots = (project, project / ".git", receipt.hook_path.parent, receipt.state_dir)
+    expected = {p for root in roots for p in (root, *root.parents)}
+    _require(len(receipt.directories) == len(expected)
+             and {p for p, _ in receipt.directories} == expected)
+    for path, identity in receipt.directories:
+        _path(str(path))
+        _require(len(identity) == 5)
+        for number in identity:
+            _integer(number)
+        _require(stat.S_ISDIR(identity[2]))
+        if path in roots:
+            _require(identity[3] == os.geteuid() and not identity[2] & 0o022)
+    _require(receipt.periodic_command == shlex.join((str(receipt.hook_path), "--tick")))
+
+
+def _installation_matches(receipt: InstalledConnection) -> None:
+    _installation_shape(receipt)
+    for path, identity in receipt.directories:
+        if (receipt.removing and receipt.created_hooks and path == receipt.hook_path.parent
+                and not os.path.lexists(path)):
+            continue
+        _require(_identity(path) == identity, "connection_path_changed")
+    for item in (*receipt.files, *receipt.pending):
+        if receipt.removing and not os.path.lexists(item.path):
+            continue
+        _require(_record(item.path) == item, "owned_connection_changed")
+
+
+def load_connections(state_dir: Path, *, project_root: Path) -> InstalledConnection:
+    """Load exact local ownership, never execution authority or saved consent.
+
+    A durable removing intent permits only absent original members on retry;
+    present members must still match their original identity and content.
+    """
+    try:
+        _path(str(state_dir))
+        _path(str(project_root))
+        raw = _object(C.decode_json(_private(state_dir / _RECEIPT)), {
+            "schema", "kind", "state_dir", "hook_path", "files", "directories",
+            "periodic_command", "created_hooks", "removing", "pending"})
+        _require(type(raw["schema"]) is int and raw["schema"] == 1
+                 and raw["kind"] == "checkpoint-installation")
+        _require(raw["state_dir"] == str(state_dir)
+                 and raw["hook_path"] == str(project_root / ".git/hooks" / _HOOK))
+        _require(type(raw["created_hooks"]) is bool and type(raw["removing"]) is bool)
+        decoded: dict[str, tuple[OwnedFile, ...]] = {}
+        for key in ("files", "pending"):
+            files: list[OwnedFile] = []
+            _require(isinstance(raw[key], list))
+            for value in cast(list[C.JsonValue], raw[key]):
+                row = _object(value, {"path", "device", "inode", "mode", "sha256"})
+                files.append(OwnedFile(_path(row["path"]), _integer(row["device"]),
+                             _integer(row["inode"]), _integer(row["mode"]), C.validate_sha256(row["sha256"])))
+            decoded[key] = tuple(files)
+        directories: list[tuple[Path, tuple[int, ...]]] = []
+        _require(isinstance(raw["directories"], list))
+        for value in cast(list[C.JsonValue], raw["directories"]):
+            _require(isinstance(value, list) and len(value) == 2)
+            assert isinstance(value, list)
+            _require(isinstance(value[1], list))
+            directories.append((_path(value[0]), tuple(_integer(v) for v in cast(list[C.JsonValue], value[1]))))
+        receipt = InstalledConnection(state_dir, project_root / ".git/hooks" / _HOOK,
+            decoded["files"], tuple(directories), _text(raw["periodic_command"]),
+            cast(bool, raw["created_hooks"]), cast(bool, raw["removing"]), decoded["pending"])
+        _installation_matches(receipt)
+        return receipt
+    except (OSError, ValueError, TypeError, KeyError):
+        _fail("invalid_connection")
+
+
 def remove_connections(receipt: InstalledConnection, *, approval: bool = False) -> HostResult:
     if approval is not True:
         return HostResult("approval_required")
+    retained: tuple[Path, ...] = ()
     try:
-        _require(type(receipt) is InstalledConnection and len(receipt.files) == 2)
-        _require({item.path for item in receipt.files} == {receipt.hook_path, receipt.state_dir / _BINDING})
-        _require(receipt.hook_path.name == _HOOK and receipt.hook_path.parent.name == "hooks"
-                 and receipt.hook_path.parent.parent.name == ".git")
+        _installation_shape(receipt)
+        # Before even acquiring a lock, refuse replacement roots/changed members.
+        _check_directories(tuple(row for row in receipt.directories
+                                 if not (receipt.removing and receipt.created_hooks
+                                         and row[0] == receipt.hook_path.parent and not os.path.lexists(row[0]))))
         with _lock(receipt.state_dir, ".connection-install.lock"):
-            _check_directories(receipt.directories)
-            _require(all(_record(item.path) == item for item in receipt.files), "owned_connection_changed")
-            for item in sorted(receipt.files, key=lambda row: row.path != receipt.hook_path):
-                _unlink(item)
-            if receipt.created_hooks:
-                receipt.hook_path.parent.rmdir()
+            current = load_connections(receipt.state_dir, project_root=receipt.hook_path.parents[2])
+            _require(replace(current, removing=receipt.removing) == receipt, "owned_connection_changed")
+            _require(not os.path.lexists(receipt.state_dir / _SCHEDULE), "owned_schedule_present")
+            # Persist intent BEFORE the first unlink. Even failure of later metadata
+            # writes leaves a restartable exact set, not an adoption of new paths.
+            receipt = replace(current, removing=True)
+            if not current.removing:
+                _replace_owned(receipt.state_dir / _RECEIPT, _installation_bytes(receipt))
+            for item in sorted((*receipt.files, *receipt.pending), key=lambda row: row.path != receipt.hook_path):
+                if os.path.lexists(item.path):
+                    _unlink(item)
+            if receipt.created_hooks and os.path.lexists(receipt.hook_path.parent):
+                _require(_identity(receipt.hook_path.parent) == dict(receipt.directories)[receipt.hook_path.parent],
+                         "connection_path_changed")
+                # A later unrelated entry is not ours to remove, nor a cleanup failure.
+                if not any(receipt.hook_path.parent.iterdir()):
+                    receipt.hook_path.parent.rmdir()
+            _unlink(_record(receipt.state_dir / _RECEIPT))
         return HostResult("removed")
     except (C.ContinuityError, OSError) as error:
-        return HostResult("blocked", blockers=(error.code if isinstance(error, C.ContinuityError)
-                                                else "connection_remove_failed",))
+        retained = tuple(item.path for item in (*receipt.files, *receipt.pending) if os.path.lexists(item.path))
+        return HostResult("blocked", receipt, (error.code if isinstance(error, C.ContinuityError)
+                                                else "connection_remove_failed",), retained)
 
 
 def _object(value: C.JsonValue, names: set[str]) -> C.JsonObject:
@@ -487,32 +755,40 @@ def _save_result(state: Path, value: object) -> None:
             _unlink(owned)
 
 
-def run_connection(path: Path, digest: str, *, trigger: str = "due", phase: str = "committed",
+def _run_connection(path: Path, digest: str, *, trigger: str = "due", phase: str = "committed",
                    events: bytes = b"") -> C.JsonObject:
-    started = time.monotonic()
     _require(trigger in ("due", "ref"))
     if trigger == "ref" and phase in ("preparing", "prepared", "aborted"):
         return {"status": "ignored", "reason": "uncommitted_transaction"}
-    request, _ = _load_binding(path, digest)
+    budget = _budget.get()
+    assert budget is not None
+    with S.work_scope(budget):
+        request, _ = _load_binding(path, digest)
     ref = request.snapshot.history_ref
     assert ref is not None
     if trigger == "ref" and not _relevant(events, phase, ref):
         return {"status": "ignored", "reason": "unrelated_ref"}
     with _lock(request.state_dir, ".connection-run.lock"):
-        remaining = H.MAX_DEADLINE_SECONDS - (time.monotonic() - started)
-        _require(remaining > 0, "connection_deadline")
+        remaining = budget.remaining(H.MAX_DEADLINE_SECONDS)
         result = H.checkpoint(H.CheckpointRequest(request.snapshot, request.state_dir,
             trigger="due" if trigger == "due" else "event", deadline_seconds=remaining,
             event_id=hashlib.sha256(events).hexdigest() if trigger == "ref" else None))
+        budget.check()
         value = C.decode_json(_encoded(asdict(result)))
         _save_result(request.state_dir, value)
         return value
 
 
+def run_connection(path: Path, digest: str, *, trigger: str = "due", phase: str = "committed",
+                   events: bytes = b"") -> C.JsonObject:
+    with _operation(H.MAX_DEADLINE_SECONDS):
+        return _run_connection(path, digest, trigger=trigger, phase=phase, events=events)
+
+
 def _stdin() -> bytes:
     parts: list[bytes] = []
     total = 0
-    end = time.monotonic() + 5
+    end = _end(5)
     import select
     while True:
         remaining = end - time.monotonic()
@@ -531,18 +807,19 @@ class _Parser(argparse.ArgumentParser):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = _Parser(description=__doc__, allow_abbrev=False)
-    commands = parser.add_subparsers(dest="command", required=True)
-    run = commands.add_parser("run", allow_abbrev=False)
-    run.add_argument("--binding", required=True)
-    run.add_argument("--expect", required=True)
-    run.add_argument("--trigger", choices=("due", "ref"), default="due")
-    run.add_argument("--phase", default="committed")
     try:
-        args = parser.parse_args(argv)
-        path = Path(C.validate_path_text(args.binding, absolute=True))
-        events = _stdin() if args.trigger == "ref" and args.phase == "committed" else b""
-        result = run_connection(path, args.expect, trigger=args.trigger, phase=args.phase, events=events)
+        with _operation(H.MAX_DEADLINE_SECONDS):
+            parser = _Parser(description=__doc__, allow_abbrev=False)
+            commands = parser.add_subparsers(dest="command", required=True)
+            run = commands.add_parser("run", allow_abbrev=False)
+            run.add_argument("--binding", required=True)
+            run.add_argument("--expect", required=True)
+            run.add_argument("--trigger", choices=("due", "ref"), default="due")
+            run.add_argument("--phase", default="committed")
+            args = parser.parse_args(argv)
+            path = Path(C.validate_path_text(args.binding, absolute=True))
+            events = _stdin() if args.trigger == "ref" and args.phase == "committed" else b""
+            result = run_connection(path, args.expect, trigger=args.trigger, phase=args.phase, events=events)
         print(json.dumps(result))
         return 0 if result["status"] in ("captured", "duplicate", "not-due", "ignored") else 2
     except C.ContinuityError as error:
@@ -582,9 +859,10 @@ class ScheduleResult:
 
 
 def _connection_matches(connection: InstalledConnection) -> None:
-    _require(type(connection) is InstalledConnection and len(connection.files) == 2)
-    _check_directories(connection.directories)
-    _require(all(_record(item.path) == item for item in connection.files), "owned_connection_changed")
+    _installation_matches(connection)
+    _require(not connection.removing, "owned_connection_changed")
+    _require(load_connections(connection.state_dir, project_root=connection.hook_path.parents[2]) == connection,
+             "owned_connection_changed")
     _require(connection.periodic_command == shlex.join((str(connection.hook_path), "--tick")), "invalid_schedule_command")
     binding = next((item for item in connection.files if item.path == connection.state_dir / _BINDING), None)
     _require(binding is not None and connection.hook_path in {item.path for item in connection.files})
@@ -606,13 +884,11 @@ def preview_schedule(connection: InstalledConnection, driver: ScheduleDriver, *,
     try:
         _require(service_qualified is True and exclusive_writer is True, "scheduler_unqualified")
         _connection_matches(connection)
+        _require(not os.path.lexists(connection.state_dir / _SCHEDULE), "owned_schedule_present")
         previous = _table(driver.read())
-        token = hashlib.sha256(str(connection.hook_path).encode()).hexdigest()
-        marker = f"# thunderkit-checkpoint {token}".encode()
+        block = _schedule_block(connection)
+        marker = block.split(b" begin\n", 1)[0]
         _require(marker not in previous, "schedule_already_present")
-        command = connection.periodic_command.encode()
-        _require(not any(value in command for value in (b"\n", b"\r", b"%")), "unsafe_schedule_command")
-        block = marker + b" begin\n* * * * * " + command + b"\n" + marker + b" end\n"
         _table(previous + block)
         return SchedulePreview(connection, "approval_required", previous, block)
     except (C.ContinuityError, OSError, UnicodeError) as error:
@@ -620,22 +896,66 @@ def preview_schedule(connection: InstalledConnection, driver: ScheduleDriver, *,
                                                                  else "schedule_inspection_failed",))
 
 
+def _schedule_data(installation: InstalledSchedule, absent: bytes) -> bytes:
+    return _encoded({"schema": 1, "kind": "checkpoint-schedule",
+        "connection_sha256": hashlib.sha256(_installation_bytes(installation.connection)).hexdigest(),
+        "block": installation.block.decode("utf-8"), "absent_sha256": hashlib.sha256(absent).hexdigest()})
+
+
+def _schedule_block(connection: InstalledConnection) -> bytes:
+    token = hashlib.sha256(str(connection.hook_path).encode()).hexdigest()
+    marker = f"# thunderkit-checkpoint {token}".encode()
+    command = connection.periodic_command.encode()
+    _require(not any(value in command for value in (b"\n", b"\r", b"%")), "unsafe_schedule_command")
+    return marker + b" begin\n* * * * * " + command + b"\n" + marker + b" end\n"
+
+
+def _schedule_guard(connection: InstalledConnection) -> tuple[InstalledSchedule, str]:
+    raw = _object(C.decode_json(_private(connection.state_dir / _SCHEDULE)),
+                  {"schema", "kind", "connection_sha256", "block", "absent_sha256"})
+    _require(type(raw["schema"]) is int and raw["schema"] == 1 and raw["kind"] == "checkpoint-schedule")
+    _require(raw["connection_sha256"] == hashlib.sha256(_installation_bytes(connection)).hexdigest())
+    block = _text(raw["block"]).encode("utf-8")
+    _require(block == _schedule_block(connection), "owned_schedule_changed")
+    return InstalledSchedule(connection, block), C.validate_sha256(raw["absent_sha256"])
+
+
+def load_schedule(state_dir: Path, *, project_root: Path) -> InstalledSchedule:
+    """Read durable exact schedule ownership, including unconfirmed publication."""
+    connection = load_connections(state_dir, project_root=project_root)
+    _require(not connection.removing, "owned_connection_changed")
+    return _schedule_guard(connection)[0]
+
+
 def apply_schedule(preview: SchedulePreview, driver: ScheduleDriver, *, approval: bool = False) -> ScheduleResult:
     if approval is not True:
         return ScheduleResult("approval_required")
     if preview.status != "approval_required":
         return ScheduleResult("blocked", blockers=preview.blockers)
+    installation: InstalledSchedule | None = None
+    published = False
     try:
         with _lock(preview.connection.state_dir, ".connection-install.lock"):
             _require(preview_schedule(preview.connection, driver, service_qualified=True, exclusive_writer=True)
                      == preview, "stale_schedule_preview")
+            installation = InstalledSchedule(preview.connection, preview.block)
+            guard = preview.connection.state_dir / _SCHEDULE
+            _write_new(guard, _schedule_data(installation, preview.previous), 0o600)
+            _require(_schedule_guard(preview.connection)[0] == installation, "schedule_readback_failed")
             desired = preview.previous + preview.block
+            # A transport exception may follow publication. The prewritten guard
+            # survives both failures and the process exiting before readback.
             _require(driver.replace(preview.previous, desired), "schedule_conflict")
-            _require(driver.read() == desired, "schedule_readback_failed")
-        return ScheduleResult("configured", InstalledSchedule(preview.connection, preview.block))
-    except (C.ContinuityError, OSError) as error:
-        return ScheduleResult("blocked", blockers=(error.code if isinstance(error, C.ContinuityError)
-                                                    else "schedule_install_failed",))
+            published = True
+            try:
+                _require(driver.read() == desired, "schedule_readback_failed")
+            except (C.ContinuityError, OSError, UnicodeError):
+                _fail("schedule_readback_failed")
+        return ScheduleResult("configured", installation)
+    except (C.ContinuityError, OSError, UnicodeError) as error:
+        code = error.code if isinstance(error, C.ContinuityError) else "schedule_install_failed"
+        return ScheduleResult("blocked", installation,
+                              ("schedule_readback_failed" if published else code,))
 
 
 def remove_schedule(installation: InstalledSchedule, driver: ScheduleDriver, *, approval: bool = False) -> ScheduleResult:
@@ -644,17 +964,84 @@ def remove_schedule(installation: InstalledSchedule, driver: ScheduleDriver, *, 
     try:
         _require(type(installation) is InstalledSchedule)
         connection = installation.connection
-        _connection_matches(connection)
+        _installation_matches(connection)
         with _lock(connection.state_dir, ".connection-install.lock"):
+            _require(load_connections(connection.state_dir, project_root=connection.hook_path.parents[2]) == connection,
+                     "owned_connection_changed")
+            owned, absent_digest = _schedule_guard(connection)
+            _require(owned == installation, "owned_schedule_changed")
             current = _table(driver.read())
-            _require(current.count(installation.block) == 1, "owned_schedule_changed")
-            desired = current.replace(installation.block, b"", 1)
-            _require(driver.replace(current, desired), "schedule_conflict")
-            _require(driver.read() == desired, "schedule_readback_failed")
+            if current.count(installation.block) == 1:
+                desired = current.replace(installation.block, b"", 1)
+                # Record the exact prospective absence BEFORE replacement, so a
+                # failed readback can be reconciled in a fresh approved process.
+                _replace_owned(connection.state_dir / _SCHEDULE, _schedule_data(installation, desired))
+                _require(driver.replace(current, desired), "schedule_conflict")
+            else:
+                _require(hashlib.sha256(current).hexdigest() == absent_digest, "owned_schedule_changed")
+                desired = current
+            try:
+                _require(driver.read() == desired, "schedule_readback_failed")
+            except (C.ContinuityError, OSError, UnicodeError):
+                _fail("schedule_readback_failed")
+            _unlink(_record(connection.state_dir / _SCHEDULE))
         return ScheduleResult("removed")
     except (C.ContinuityError, OSError, UnicodeError) as error:
-        return ScheduleResult("blocked", blockers=(error.code if isinstance(error, C.ContinuityError)
-                                                    else "schedule_remove_failed",))
+        return ScheduleResult("blocked", installation, (error.code if isinstance(error, C.ContinuityError)
+                                                        else "schedule_remove_failed",))
+
+
+class CrontabDriver:
+    """Pinned local transport, NOT global CAS or proof of a running service.
+
+    Independent service and exclusive-writer attestations are mandatory. Each
+    call bounds compare, input/output, confirmation and owned-child reaping.
+    """
+
+    def __init__(self, executable: Path, *, service_qualified: bool = False,
+                 exclusive_writer: bool = False, timeout_seconds: float = 5.0) -> None:
+        _require(service_qualified is True and exclusive_writer is True, "scheduler_unqualified")
+        _require(type(timeout_seconds) in (int, float) and 0 < timeout_seconds <= 5, "invalid_scheduler_timeout")
+        self.executable = _path(str(executable))
+        self.timeout_seconds = timeout_seconds
+        try:
+            self.pin = _record(self.executable)
+            _require(bool(self.pin.mode & 0o111), "scheduler_executable_changed")
+            parent = _identity(self.executable.parent)
+            _require(parent[3] in (0, os.geteuid()) and not parent[2] & 0o022,
+                     "scheduler_executable_changed")
+            self.parents = tuple((path, _identity(path)) for path in self.executable.parents)
+        except (C.ContinuityError, OSError):
+            _fail("scheduler_executable_changed")
+
+    def _run(self, arg: str, end: float, data: bytes | None = None) -> bytes:
+        _Budget(end, "scheduler_timeout").check()
+        try:
+            _check_directories(self.parents)
+            _require(_record(self.executable) == self.pin, "scheduler_executable_changed")
+        except (C.ContinuityError, OSError):
+            _fail("scheduler_executable_changed")
+        return _transport((str(self.executable), arg), self.executable.parent,
+            {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}, end, data,
+            timeout_code="scheduler_timeout",
+            failure_code="scheduler_read_failed" if arg == "-l" else "scheduler_write_failed",
+            size_code="invalid_crontab")
+
+    def read(self) -> bytes:
+        return _table(self._run("-l", _end(self.timeout_seconds)))
+
+    def replace(self, expected: bytes, content: bytes) -> bool:
+        end = _end(self.timeout_seconds)
+        _table(expected)
+        _table(content)
+        if _table(self._run("-l", end)) != expected:
+            return False
+        self._run("-", end, content)
+        try:
+            _require(_table(self._run("-l", end)) == content, "schedule_readback_failed")
+        except (C.ContinuityError, OSError, UnicodeError):
+            _fail("schedule_readback_failed")
+        return True
 
 
 if __name__ == "__main__":
