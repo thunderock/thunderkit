@@ -102,6 +102,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p>   preview and approval, not an overwrite. Write only the approved owned files; canonical    configuration uses <code>schema_version: 2</code>. Append the dated decision (what, why, rejected),    recording an old selection as the rejected alternative when a choice changes.</p>
 <ol><li>Read back the result and normalize any saved config again. Report which writes actually</li></ol>
 <p>   succeeded and which did not; a partial failure is not a completed save. Retain the    approved delta for reconciliation without deleting or rewriting prior decisions.</p>
+<p>Save current owned artifacts and context before asking the approved checkpoint controller to run <code>checkpoint_cli.py capture</code> under the <a href="skills/tk-memory/references/delegation.md.html#approved-preservation-checkpoints">shared preservation rule</a>. Native workers remain delivery-disabled. Capture consent is separate from config-write approval; never put machine-local roots, credentials or publication grants in model selections.</p>
 <h2 id="decision-log-entry-format">Decision-log entry format</h2>
 <p>Append-only: add new entries at the end; never reorder, delete or rewrite old entries. Correct or supersede a decision with a new dated entry referring to the old one. Use the actual known decision date; if unknown, ask rather than inventing it. Each entry:</p>
 <pre><code>## 2026-09-03 — Chose portable CLI dispatch over the orchestrator

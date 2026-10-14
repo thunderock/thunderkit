@@ -44,7 +44,7 @@ footer{margin-top:3rem;padding-top:1rem;border-top:1px solid var(--brd);color:va
 <p><code>delegate</code> means hand the task to <code>gsd-fast</code> and keep this skill&#x27;s scope and escalation rules. <code>fallback</code> means use the inline procedure below. <code>blocked</code> means stop and report the reason. OpenCode and Hermes have no fast target, so the resolver returns <code>fallback</code> / <code>unsupported_host</code> there. A missing lock returns <code>peer_unlocked</code>: print <code>npx thunderkit peers --host &lt;host&gt;</code> and use the fallback. The resolver result is a routing decision, not evidence that an edit happened.</p>
 <h2 id="fallback">Fallback</h2>
 <ol><li>Read the files you will change.</li><li>Make the edit.</li><li>Run the targeted test or check.</li><li>Make one atomic Conventional Commit containing only this change.</li></ol>
-<p>No push, PR, tag or publish. Never skip the test to make the path faster.</p>
+<p>The edit stage permits no push, PR, tag or publish. Never skip the test to make the path faster. Save current context and unfinished changes before escalation or pause, then have the approved checkpoint controller run <code>checkpoint_cli.py capture</code> under the <a href="skills/tk-fast/references/delegation.md.html#approved-preservation-checkpoints">shared preservation rule</a>. Only that separate controller has the scoped checkpoint exception; native workers remain delivery-disabled. Preservation does not require a plan, model selection or a partial commit.</p>
 <h2 id="output-contract">Output contract</h2>
 <pre><code>change: &lt;one sentence&gt;
 files: &lt;paths&gt;

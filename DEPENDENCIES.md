@@ -205,14 +205,45 @@ bounded writable scratch. Recovery can read an explicit snapshot without the ori
 or model config. Export and checkpoint writes each require their own explicit approval.
 See the [recovery and preservation guide](README.md#recovery-and-preservation) for actual commands.
 
-Project `checkpoint_cli.py` preview/setup/capture does not activate host connections or provide
-publication authority. The separate `checkpoint_host.py` API requires an existing verified
-snapshot and fresh approval before installing a repository-local `reference-transaction` hook.
-Foreign hooks and external hook managers are refused, not replaced. Its scheduler API requires
-a qualified running service and a trusted read/compare-and-swap driver with exclusive-writer
-authority. A generated periodic command is not scheduler activation or proof of idle coverage.
-No new daemon, replacement global hook manager, automatic model selection or credential copying
-is part of this setup.
+`checkpoint_cli.py preview`, `setup` and `resume-setup` are project-only. Setup writes inert
+private settings and a first verified snapshot, not host connections or publication authority.
+`resume-setup` needs fresh approval for the exact failed local claim with unchanged scope and
+ownership evidence; it is not an adoption or cleanup command. Retain the actual successful
+setup stdout using `umask 077` in a new user-owned mode-0600 file outside capture sources.
+`--setup-result` requires that exact successful `SetupResult` JSON, not a fabricated example,
+serialized executable grant or saved approval. See the
+[setup and receipt commands](README.md#preview-project-setup-and-capture-a-checkpoint).
+
+`capture --scope global --global-config` supports independently approved global files with an
+exact identity, matching backup root and a selected subset of `global.approved_sources`.
+Global capture has no project root, branch history or push. Its versioned nested policy must
+validate too; see the [global settings example](README.md#capture-an-independently-approved-global-scope).
+Global capture/runtime support is not global scheduler support: the implemented host and
+schedule commands require a local project repository. There is no global host installation
+or periodic-service command on this surface; that coverage remains a gap.
+
+`host-preview` and separately approved `host-install` bind the exact unchanged setup scope
+and recorded storage identity, verified snapshot and explicit trusted `--python`. A replaced
+store is refused without requalifying the replacement. Installation activates only the
+repository-local `reference-transaction` hook; foreign hooks and external hook managers are
+refused, not replaced. `schedule-preview`, `schedule-install` and `schedule-remove` use an
+explicit trusted `--crontab` and require both `--service-qualified` and `--exclusive-writer`,
+backed by actual operator evidence of a qualified running service and exclusive-writer
+authority. Binary presence and those flags alone do not establish these conditions.
+The driver preserves unrelated crontab bytes with read/compare-and-swap replacement.
+
+Remove the schedule before `host-remove`; both removals require fresh approval and reload
+private ownership records. Retain blocked/uncertain ownership state for inspected recovery;
+do not delete it to force success. Changed files and snapshots are not cleanup targets.
+Portable `backup.enabled: false` is checked at the installed project host boundary and stops
+capture without removing the connection. Other installed settings remain frozen and need
+reviewed reinstall. See the [host commands](README.md#host-connections-require-separate-qualification)
+and [schedule/removal commands](README.md#preview-install-and-remove-the-project-schedule).
+
+A generated periodic command is not scheduler activation or observed idle coverage. Loading a
+skill creates no authority or daemon activation; full host activation requires separate
+approval and real qualification. No new daemon, replacement global hook manager, automatic
+model selection or credential copying is part of this setup.
 
 The [approved checkpoint controller exception](skills/references/delegation.md#approved-preservation-checkpoints)
 does not relax native `delivery:disabled` or preparation-only `tk-ship`. A default-on push

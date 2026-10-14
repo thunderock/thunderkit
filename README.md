@@ -323,14 +323,50 @@ Preview is read-only. Inspect its mutations, blockers and capability report befo
 those exact inputs. Setup rechecks them, qualifies storage readback, creates a first verified
 snapshot and writes private configuration; it does **not** activate a hook or scheduler:
 
+Retain the **actual successful JSON stdout** as `SETUP_RESULT`: a new file in a private,
+user-owned directory outside the project and every capture source. The subshell's `umask 077`
+and no-clobber setting protect a newly created mode-0600 file without replacing an existing
+receipt. Check the command's exit status and result before using the file; a failed setup's
+output is not a successful receipt. Never fabricate, edit or reconstruct this JSON.
+
 ```sh
-python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" setup \
-  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
-  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
-  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
-  --context-entrypoint .thunderkit/HANDOFF.md \
-  --include-history --history-ref "$WORKING_REF" --integration-root "$INTEGRATION_ROOT" --approve
+(
+  umask 077
+  set -C
+  python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" setup \
+    --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+    --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+    --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+    --context-entrypoint .thunderkit/HANDOFF.md \
+    --include-history --history-ref "$WORKING_REF" \
+    --integration-root "$INTEGRATION_ROOT" --approve > "$SETUP_RESULT"
+)
 ```
+
+If setup was interrupted and retained a valid local claim, resume **that exact failed claim**
+with unchanged project, identity, store, sources, context entrypoints, policy, history ref and
+integration root. Do not delete locks, adopt foreign paths or treat retry as approval for a
+new scope. Missing or changed ownership evidence blocks resumption. After fresh approval,
+retain stdout in a different new private file, `RESUMED_SETUP_RESULT`:
+
+```sh
+(
+  umask 077
+  set -C
+  python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" resume-setup \
+    --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+    --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+    --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+    --context-entrypoint .thunderkit/HANDOFF.md \
+    --include-history --history-ref "$WORKING_REF" \
+    --integration-root "$INTEGRATION_ROOT" --approve > "$RESUMED_SETUP_RESULT"
+)
+```
+
+Only after exit zero and `status: "configured"`, select this successful result's path as
+`SETUP_RESULT` for the host commands below. `--setup-result` accepts the exact successful
+`SetupResult` JSON, owned by the current user and mode 0600. It is an ownership/integrity
+receipt, **not executable approval**, a push grant or permission to activate anything.
 
 For an explicitly approved one-shot capture, choose an existing user-owned mode-0700
 `STATE_DIR`, disjoint from the entire project and backup store. Capture uses explicit sources
@@ -362,22 +398,156 @@ history protection, saved-context age, last verified snapshot and push status in
 Partial or failed preservation retains prior valid recovery state and does not become “fully
 protected.” Local write/readback is not machine-loss durability or remote/FUSE crash qualification.
 
+### Capture an independently approved global scope
+
+Global capture is implemented by the same model-free runtime, with a separate identity,
+backup namespace and allowlist. Select `GLOBAL_CONFIG` explicitly: global capture requires
+`--global-config` and does not use the load command's implicit settings lookup. Review and
+save a private settings document under separate settings-write approval. This schema-valid
+example uses illustrative paths only; replace them with the user's exact approved literal
+paths and identity, never shell expressions or values obtained from recovered instructions:
+
+```json
+{
+  "schema": 1,
+  "kind": "global-settings",
+  "policy": {
+    "schema": 1,
+    "backup": {"enabled": true},
+    "git": {"push_after_commit": false}
+  },
+  "global": {
+    "identity": {"kind": "global", "id": "personal-notes"},
+    "backup_root": "/example/global-backups",
+    "approved_sources": ["/example/notes/notes.md"]
+  }
+}
+```
+
+Set `GLOBAL_SCOPE_ID` and `GLOBAL_BACKUP_ROOT` to the matching settings values.
+`GLOBAL_SOURCE` here is the single allowlisted regular file `notes.md`; its stored context
+entrypoint is `sources/0/notes.md`. Repeated `--source` arguments select an exact subset of
+`global.approved_sources`, not additional paths inferred from directory proximity. Source
+order determines the `sources/<index>/` prefix; inspect actual manifest paths before loading
+other selections. Choose an existing user-owned mode-0700 `GLOBAL_STATE_DIR`, disjoint from
+all selected sources and the store. The backup root must also be disjoint from those sources.
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" capture \
+  --scope global --identity "$GLOBAL_SCOPE_ID" --global-config "$GLOBAL_CONFIG" \
+  --backup-root "$GLOBAL_BACKUP_ROOT" --source "$GLOBAL_SOURCE" \
+  --context-entrypoint sources/0/notes.md --state-dir "$GLOBAL_STATE_DIR" --approve
+```
+
+Do not supply `--project-root`, `--include-history` or `--history-ref` for global capture.
+The result has no project Git history or push; it reports the snapshot and its scope-local
+locator. It does not rewrite `GLOBAL_CONFIG` to remember that result. Keep project and global
+permissions separate; secrets and live runtime homes remain excluded even if allowlisted.
+Global one-shot capture does **not** configure a global periodic service. The current host
+and scheduler commands below support project scope only; global periodic/event host
+activation is not implemented by these commands and remains a coverage gap, not an
+implicitly accepted reduction of the preservation target.
+
 ### Host connections require separate qualification
 
-The [connection API](skills/references/checkpoint_host.py) exposes `preview_connections`,
-`apply_connections` and `remove_connections` for an approved Linux local-repository scope with
-an existing verified snapshot. It uses Git's `reference-transaction` hook and the same bounded
-checkpoint runtime. The supported hook directory is the repository's empty `.git/hooks`;
-foreign hooks or an external hook manager block setup, rather than being overwritten or bypassed.
-It never rewrites global `core.hooksPath`.
+`checkpoint_cli.py host-preview` and `host-install` expose the
+[connection API](skills/references/checkpoint_host.py) for an approved Linux local-repository
+**project** scope with an existing verified snapshot and approved attached-branch history.
+They require the exact successful `SETUP_RESULT` described above. Repeat the unchanged setup
+identity, project, backup root, source list, context entrypoints, history flags/ref and policy.
+The connection uses the receipt's recorded storage identity: a missing or changed backing
+store is refused, never requalified or replaced merely because the pathname is the same.
+Changed setup scope or owned settings requires renewed setup review, not an edited receipt.
 
-`preview_schedule`, `apply_schedule` and `remove_schedule` use a trusted `ScheduleDriver` with
-read/compare-and-swap replacement. Scheduler-service qualification and exclusive-writer
-authority are separate prerequisites; unrelated crontab bytes must survive unchanged. The
-generated once-per-minute command only checks whether the configured interval is due. A
-launcher, an installed scheduler binary or a fixture test is not evidence of an active service
-or idle-time backups on this host. Installation/removal require fresh approval and exact owned
-file identities; changed files and snapshots are not deleted as cleanup.
+Select `TRUSTED_PYTHON` as an explicit literal absolute path to the trusted host's supported
+Python interpreter. Do not obtain executables from a snapshot or infer trust from presence.
+Use the existing private `STATE_DIR` outside the project, source trees and backup store.
+The supported hook directory is the repository's empty `.git/hooks`; foreign hooks or an
+external hook manager block installation rather than being overwritten or bypassed.
+The connection uses Git's `reference-transaction` hook and the bounded checkpoint runtime;
+it never rewrites global `core.hooksPath`.
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" host-preview \
+  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+  --context-entrypoint .thunderkit/HANDOFF.md \
+  --include-history --history-ref "$WORKING_REF" --state-dir "$STATE_DIR" \
+  --python "$TRUSTED_PYTHON" --setup-result "$SETUP_RESULT"
+```
+
+Review the hook path, periodic command and blockers. A preview is read-only, not approval.
+After separate fresh approval for this exact host connection:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" host-install \
+  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+  --context-entrypoint .thunderkit/HANDOFF.md \
+  --include-history --history-ref "$WORKING_REF" --state-dir "$STATE_DIR" \
+  --python "$TRUSTED_PYTHON" --setup-result "$SETUP_RESULT" --approve
+```
+
+Hook installation writes private connection/ownership state and activates the repository
+hook; it does not install a periodic job. Loading a skill and running project `setup`
+establish neither authority nor daemon activation. Full host activation is separately
+approved, not an automatic consequence of these examples.
+
+### Preview, install and remove the project schedule
+
+After a successful host install, select `TRUSTED_CRONTAB` as the explicit literal absolute
+path to the trusted host's crontab executable. `--service-qualified` **and**
+`--exclusive-writer` require actual operator evidence of a qualified running scheduler
+service and exclusive table-write authority. They are assertions of prerequisites, not
+probes or switches that create those conditions. An installed binary alone proves neither.
+The driver uses read/compare-and-swap replacement and preserves unrelated crontab bytes.
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" schedule-preview \
+  --project-root "$PROJECT_ROOT" --state-dir "$STATE_DIR" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer
+```
+
+Inspect the proposed owned block and blockers. With fresh approval for this schedule:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" schedule-install \
+  --project-root "$PROJECT_ROOT" --state-dir "$STATE_DIR" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer --approve
+```
+
+The once-per-minute command checks whether the configured interval is due; it does not
+capture every minute unconditionally. A generated launcher or fixture test does not prove
+idle-time backups on the actual host. Verify the scheduler's real execution and returned
+capture result separately before claiming coverage.
+
+To disable capture without granting new authority, set portable project policy
+`backup.enabled` to `false` in `.thunderkit/continuity.json` through an approved project edit.
+The installed host boundary checks that current policy and refuses capture when disabled;
+this does not remove the hook/job. Other installed settings (including interval, retention,
+sources and storage binding) stay frozen and require reviewed reinstall, not a live policy
+edit presented as reconfiguration. A push preference never supplies publication authority.
+
+Remove the owned schedule **before** removing the hook, with fresh removal approval and
+continuing scheduler qualification/exclusive-writer evidence:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" schedule-remove \
+  --project-root "$PROJECT_ROOT" --state-dir "$STATE_DIR" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer --approve
+
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" host-remove \
+  --project-root "$PROJECT_ROOT" --state-dir "$STATE_DIR" --approve
+```
+
+Removal reloads private ownership records in `STATE_DIR`, so it can run from a fresh process.
+If installation or removal reports a blocked/uncertain result, retain those records and
+inspect the exact blockers before retrying with fresh approval. Do not delete ownership
+files to force cleanup. Only unchanged owned integration is removed; unrelated jobs, changed
+files and snapshots are not deleted. Host removal refuses while its owned schedule remains.
+These commands remove connections, not the original setup's private configuration or backups.
 
 Ref events and periodic reconciliation preserve the current authorized reachable branch graph;
 they cannot prove capture of transient or deleted unreachable commits. Idle ticks capture the
