@@ -216,6 +216,74 @@ class GitCheckpointRuntimeTests(unittest.TestCase):
         self.assertIsNone(result.push)
         self.assertFalse((self.state / ".checkpoint.lock").exists())
 
+    def test_rewritten_tips_do_not_accumulate_unreachable_observation_state(self) -> None:
+        self.settings = replace(self.settings, limits=self.c.Limits(max_files=3))
+        self.snapshot_request = replace(self.snapshot_request, settings=self.settings)
+        self.fixture.config("gc.auto", "0")
+        self.fixture.config("maintenance.auto", "false")
+        first = self.api.checkpoint(self.request(), clock=self.clock)
+        self.assert_history_saved(first)
+        superseded = set()
+        for number in range(3):
+            superseded.add(self.fixture.oid)
+            self.fixture.raw("commit", "--amend", "--allow-empty", "-m", f"revised draft {number}")
+            self.fixture.oid = self.fixture.head()
+            self.fixture.known_oids.add(self.fixture.oid)
+            self.clock.mono += 1
+            result = self.api.checkpoint(self.request(), clock=self.clock)
+            self.assertEqual(result.status, "captured",
+                             "H10-F2: rewritten observations must not exhaust the current graph budget")
+            self.assert_history_saved(result)
+            current = set(self.fixture.raw("rev-list", "HEAD", "--").stdout.splitlines())
+            state = json.loads((self.state / "state.json").read_text())
+            self.assertEqual(set(state["observed_oids"]), current,
+                             "H10-F2: unreachable rewritten tips must not accumulate in saved state")
+            self.assertTrue(superseded.isdisjoint(state["observed_oids"]))
+        self.fixture.fresh_driver()
+        published = self.with_authority(lambda request: self.fixture.grant)
+        self.assertEqual(published.push.status, "pushed")
+        self.assertEqual(self.fixture.remote_oid(), self.fixture.oid)
+        self.assertEqual(self.fixture.driver.writes, 1)
+        self.assertFalse((self.state / ".checkpoint.lock").exists())
+
+    def test_observation_envelope_capacity_does_not_block_captured_tip_publication(self) -> None:
+        first = self.api.checkpoint(self.request(), clock=self.clock)
+        self.assert_history_saved(first)
+        state_path = self.state / "state.json"
+        # Tighten this private process's real state cap around a valid envelope,
+        # avoiding thousands of fixture subprocesses while exercising admission.
+        state_bound = state_path.stat().st_size + 16
+        self.assertLess(state_bound, self.api.STATE_MAX_BYTES)
+        self.fixture.raw("commit", "--allow-empty", "-m", "new tip at state capacity")
+        self.fixture.oid = self.fixture.head()
+        self.fixture.known_oids.add(self.fixture.oid)
+        self.fixture.fresh_driver()
+        self.clock.mono += 1
+        issued = []
+
+        def authority(request):
+            issued.append(request.oid)
+            return self.fixture.grant
+
+        with patch.object(self.api, "STATE_MAX_BYTES", state_bound):
+            result = self.with_authority(authority)
+        self.assertIsNotNone(result.snapshot)
+        self.assertEqual(result.snapshot.status, "complete")
+        self.assertEqual(result.status, "captured",
+                         "H10-F2-envelope: bounded observation metadata must not prevent exact-tip publication")
+        self.assertEqual(result.push.status, "pushed")
+        self.assertEqual(issued, [self.fixture.oid])
+        self.assertEqual(self.fixture.remote_oid(), self.fixture.oid)
+        self.assertEqual(self.fixture.driver.writes, 1)
+        self.assertLessEqual(state_path.stat().st_size, state_bound)
+        state = json.loads(state_path.read_text())
+        reachable = set(self.fixture.raw("rev-list", "HEAD", "--").stdout.splitlines())
+        self.assertIn(self.fixture.oid, state["observed_oids"])
+        self.assertTrue(set(state["observed_oids"]) <= reachable)
+        self.assertIn("observation_history_truncated", result.coverage_gaps,
+                      "A bounded observation window must disclose that earlier observations may repeat")
+        self.assertFalse((self.state / ".checkpoint.lock").exists())
+
     def test_partial_snapshot_does_not_call_publication_authority(self) -> None:
         self.notes.write_bytes(b"API_TOKEN=" + b"ghp_" + b"Z" * 36 + b"\n")
         calls = []
