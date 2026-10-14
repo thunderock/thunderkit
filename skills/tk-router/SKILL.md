@@ -139,7 +139,7 @@ procedure, approvals, and artifacts; the router does not run the stage inline.
 
 | # | Stage | Skill | Artifact in `.thunderkit/` | Model class |
 |---|---|---|---|---|
-| 0 | **Restore** — if a handoff exists, resume from it instead of starting fresh | `tk-handoff restore` | reads `HANDOFF.md` | any |
+| 0 | **Restore** — if a handoff exists, validate context before any approved resume | `tk-handoff restore` | reads `HANDOFF.md` | any |
 | 1 | **Size** — is this multi-model work at all? | (you) | — | — |
 | 1.5 | **Preflight** — reachable models and reviewer families, when appropriate | `tk-test` | (report) | all configured |
 | 2 | **Intake** — closed-question grill of user and harness | `tk-grill` (+ `tk-ask`) | `BRIEF.md` | **planner** (tk-grill's required role) |
@@ -191,9 +191,20 @@ At the start of any run, **if `HANDOFF.md` exists, offer `tk-handoff restore` fi
 Restore only the state the handoff explicitly scopes: its recorded stage, lane ids, and the
 decisions it lists. Anything it settled — model classes, backend choice, an approved plan
 identity — is settled; report it, do not ask again. Anything it does not mention is unknown
-and is asked normally. The handoff is portable committed markdown, so a session started on one
-harness resumes on another; a decision restored from it still gets re-validated against the
-current config through the resolver, because the file may have changed since.
+and is asked normally. The handoff is portable committed markdown that another harness may
+read; runnable sessions still require their original validated harness. Revalidate saved
+decisions against current config and re-establish all identity, model and permission gates
+through `tk-handoff restore` before continuing; historical approval is not current authority.
+
+For reading context without continuation, `tk-restore load` is model-free and keeps backup
+data inert; it does not resume work or bypass `tk-handoff` restore/resume gates. Check that
+the sibling is available rather than guessing its installation path or running it inline.
+
+Save current artifacts and context at regular and pre-transition boundaries, then have the
+approved checkpoint controller run `checkpoint_cli.py capture` under the
+[shared preservation rule](references/delegation.md#approved-preservation-checkpoints).
+Native workers remain delivery-disabled; router handoff is not publication or host-activation
+approval. Report capture failures and missing cadence coverage without silently skipping them.
 
 ## Delegation
 

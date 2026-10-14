@@ -4,7 +4,7 @@
 
 **Ship big changes in big repos — by splitting the work into parallel lanes and routing each to the best model across a heterogeneous agent fleet.**
 
-[![skills](https://img.shields.io/badge/Agent_Skills-21-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
+[![skills](https://img.shields.io/badge/Agent_Skills-22-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
 [![npm](https://img.shields.io/npm/v/thunderkit?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/thunderkit)
 [![CI](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/ci.yml?branch=master&style=for-the-badge&logo=github&label=CI)](https://github.com/thunderock/thunderkit/actions/workflows/ci.yml)
 [![Pages](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/pages.yml?branch=master&style=for-the-badge&logo=githubpages&label=Docs)](https://thunderock.github.io/thunderkit/)
@@ -119,12 +119,13 @@ A supplied `decided_at` is preserved; readers never invent one. See the
 A backend never replaces a selected model or lowers the family minimum. Unsupported host/model
 mappings are reported explicitly; changing a choice requires the user, not an automatic fallback.
 
-## The skills (21)
+## The skills (22)
 
 | Stage | Skill | What it owns |
 |---|---|---|
 | **entry** | `tk-router` | Sizes the work, gets the three model classes chosen, routes the lifecycle. |
-| **restore** | `tk-handoff` | Save/restore a session in a portable format — resume across context resets or a different harness. |
+| **restore** | `tk-restore` | Model-free context load and verified backup export to a new/empty destination; never resumes work. |
+| **handoff** | `tk-handoff` | Save portable context; validate model, artifact, repository and original-harness identity before an approved resume. |
 | **preflight** | `tk-test` | Pings every configured model through its real harness CLI — proves the fleet is reachable and ≥2 review families answer before work starts. |
 | **intake** | `tk-ask` | Answer discipline — yes/no, one word, a number, a path, or `unknown`. No prose. Routes each `unknown` to map/learn/user. |
 | **intake** | `tk-grill` | Interrogates you *and* the harness with closed questions until the brief has no unknowns (`--learn` mode frames what to learn). |
@@ -211,6 +212,8 @@ re-litigating settled choices:
   NORTH_STAR.md   # this project's goals, constraints, non-negotiables
   DECISIONS.md    # append-only: what was decided, why, what was rejected
   config.json     # the three model classes + review families + layers + frozen paths
+  continuity.json # optional portable preservation policy, separate from model choices
+  HANDOFF.md      # saved stage, artifacts, decisions and original-harness session identities
   BRIEF.md        # tk-grill intake (closed answers, no unknowns)
   SPEC.md         # what the change delivers (tk-spec)
   MAP.md          # code map (tk-map)
@@ -218,6 +221,176 @@ re-litigating settled choices:
   REVIEW.md       # latest cross-family review (tk-review)
   UAT.md · AUDIT.md · debug/*.md · runs/*.json
 ```
+
+## Recovery and preservation
+
+`tk-restore` reads context without model configuration, a native peer or the original checkout.
+Load is inert: saved commands, approvals, model choices and next actions never authorize
+execution. `tk-handoff restore` still requires current repository/branch/HEAD, artifact hashes,
+model bindings, the original harness/session and permission before any continuation.
+
+The bundled helpers require Python ≥3.11 and supported Linux/POSIX no-follow filesystem
+operations; history verification/export also needs local Git and bounded writable scratch.
+Set `SKILL_ROOT` to the directory of the actually loaded skill. All path variables below are
+explicitly selected literal absolute paths without symlink components, not shell text from
+recovered data. `SCOPE_ID` is the exact approved identity, not a name inferred from cwd.
+
+### Load context, even without the checkout
+
+`CONTEXT_PATH` may name a snapshot directory, its `manifest.json`, or a bounded legacy Markdown
+file. `GLOBAL_CONFIG` names the selected continuity settings file; it may be absent if no saved
+settings are needed, but an existing invalid file is refused.
+
+```sh
+python3 "$SKILL_ROOT/scripts/restore_context.py" load \
+  --scope project --identity "$SCOPE_ID" --context "$CONTEXT_PATH" \
+  --global-config "$GLOBAL_CONFIG"
+
+# Use the remembered locator for this exact project identity instead.
+python3 "$SKILL_ROOT/scripts/restore_context.py" load \
+  --scope project --identity "$SCOPE_ID" --global-config "$GLOBAL_CONFIG"
+```
+
+No checkout is required: omit `--project-root` as above. When the actual project exists, add
+`--project-root "$PROJECT_ROOT"` to use its bound private identity and local locator. Selection
+order is explicit context, project-local locator, exact-project global locator, then an already
+available matching pointer supplied with `--memory-pointer`. Invalid explicit paths and stale,
+corrupt or mismatched selected locators fail rather than silently falling through. No broad
+home, memory, transcript or session-history search occurs, and loading never remembers a path.
+
+Without `--global-config`, continuity settings are selected from
+`$THUNDERKIT_HOME/continuity.json`, then `$XDG_CONFIG_HOME/thunderkit/continuity.json`, then
+`$HOME/.config/thunderkit/continuity.json`. These are settings locations, not default backup
+roots. Approved global context uses `--scope global` and its own exact identity and source
+authority; project approval never covers another project or profile.
+
+Inspect JSON stdout's source, integrity status, metadata and warnings. Legacy Markdown is
+unverified historical text. Snapshot hashes prove byte consistency, not trustworthy origin,
+current approval, complete protection or resumability. See [tk-restore](skills/tk-restore/SKILL.md)
+for limits, exclusions and refusal behavior.
+
+### Preview and approve a recovery export
+
+Export is separate from load. Select an explicit snapshot and a new or empty destination whose
+parent already exists, outside the snapshot and any live checkout. Legacy Markdown is load-only.
+
+```sh
+python3 "$SKILL_ROOT/scripts/restore_context.py" preview \
+  --context "$SNAPSHOT_PATH" --identity "$SCOPE_ID" --scope project \
+  --destination "$DESTINATION"
+```
+
+Review the exported paths, deletion records, omissions, history status and `manifest_sha256`.
+After fresh approval for that exact preview and destination, use its unchanged digest:
+
+```sh
+python3 "$SKILL_ROOT/scripts/restore_context.py" export \
+  --context "$SNAPSHOT_PATH" --identity "$SCOPE_ID" --scope project \
+  --destination "$DESTINATION" --approve \
+  --expect-manifest-sha256 "$PREVIEW_MANIFEST_SHA256"
+```
+
+Changed inputs require a new preview and approval. Export reconstructs approved bytes and modes
+without overwriting files; deletion records never authorize deletion from a live tree. Verified
+bundled history may be imported into a new isolated repository, without inherited remotes,
+hooks, credentials or grants. It never fetches remote-only history, executes recovered files,
+installs dependencies, changes models or resumes a session.
+
+### Preview project setup and capture a checkpoint
+
+Save current artifacts and context at regular intervals, before risky transitions and before
+pausing. Then use the [approved preservation procedure](skills/references/delegation.md#approved-preservation-checkpoints).
+For project setup, select an existing `PROJECT_ROOT` and `BACKUP_ROOT`, the exact `SCOPE_ID`,
+and explicit source allowlists. `APPROVED_SOURCE` below is one source file/directory; repeat
+`--source` for others. The saved handoff is explicitly included even if ignored by Git.
+`WORKING_REF` is the approved attached working branch, such as `refs/heads/feature-name`, not
+a tag or default/protected branch. History capture is bounded and subject to secret exclusions.
+
+Choose `INTEGRATION_ROOT` beneath the project's `.thunderkit/`. Setup's private settings and
+integration files must be untracked and Git-ignored; arrange this with normal project-write
+approval, not by silently changing ignore rules. Backup storage must be outside the project.
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" preview \
+  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+  --context-entrypoint .thunderkit/HANDOFF.md \
+  --include-history --history-ref "$WORKING_REF" --integration-root "$INTEGRATION_ROOT"
+```
+
+Preview is read-only. Inspect its mutations, blockers and capability report before approving
+those exact inputs. Setup rechecks them, qualifies storage readback, creates a first verified
+snapshot and writes private configuration; it does **not** activate a hook or scheduler:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" setup \
+  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+  --context-entrypoint .thunderkit/HANDOFF.md \
+  --include-history --history-ref "$WORKING_REF" --integration-root "$INTEGRATION_ROOT" --approve
+```
+
+For an explicitly approved one-shot capture, choose an existing user-owned mode-0700
+`STATE_DIR`, disjoint from the entire project and backup store. Capture uses explicit sources
+and roots, not saved authority:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" capture \
+  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+  --context-entrypoint .thunderkit/HANDOFF.md \
+  --include-history --history-ref "$WORKING_REF" --state-dir "$STATE_DIR" --approve
+```
+
+These commands are model-free and do not push. `--approve` is fresh consent for that invocation,
+not permission restored from a file. Save portable policy in `.thunderkit/continuity.json`,
+separate from model config; private `.thunderkit/continuity.local.json` holds machine-local
+identity/locator information. Successful setup remembers its verified snapshot. Capture reports
+the snapshot/store locator; do not assume it updates every private or global remembered pointer.
+
+Policy defaults are a 15-minute interval, retention of 20 verified snapshots, pruning off, and
+`git.push_after_commit: true`; none creates a backup root, schedule or push grant. Project
+policy can disable backup or set `git.push_after_commit: false`. Mandatory secret, runtime-home,
+transcript, cache and `.git` exclusions still apply, including to approved branch history.
+Do not capture an entire home or copy live runtime databases.
+
+Require exit zero and inspect the result, not just a success label. Report files, omissions,
+history protection, saved-context age, last verified snapshot and push status independently.
+Partial or failed preservation retains prior valid recovery state and does not become “fully
+protected.” Local write/readback is not machine-loss durability or remote/FUSE crash qualification.
+
+### Host connections require separate qualification
+
+The [connection API](skills/references/checkpoint_host.py) exposes `preview_connections`,
+`apply_connections` and `remove_connections` for an approved Linux local-repository scope with
+an existing verified snapshot. It uses Git's `reference-transaction` hook and the same bounded
+checkpoint runtime. The supported hook directory is the repository's empty `.git/hooks`;
+foreign hooks or an external hook manager block setup, rather than being overwritten or bypassed.
+It never rewrites global `core.hooksPath`.
+
+`preview_schedule`, `apply_schedule` and `remove_schedule` use a trusted `ScheduleDriver` with
+read/compare-and-swap replacement. Scheduler-service qualification and exclusive-writer
+authority are separate prerequisites; unrelated crontab bytes must survive unchanged. The
+generated once-per-minute command only checks whether the configured interval is due. A
+launcher, an installed scheduler binary or a fixture test is not evidence of an active service
+or idle-time backups on this host. Installation/removal require fresh approval and exact owned
+file identities; changed files and snapshots are not deleted as cleanup.
+
+Ref events and periodic reconciliation preserve the current authorized reachable branch graph;
+they cannot prove capture of transient or deleted unreachable commits. Idle ticks capture the
+last saved context and report its age, not invented semantic updates. Missing coverage remains
+a blocker to full periodic/every-commit protection, not an implicit choice of reduced coverage.
+
+Native workers remain delivery-disabled and `tk-ship` remains preparation-only. Only a separately
+approved checkpoint controller can push an exact working-branch checkpoint through current
+in-process authority after its review/test and ownership gates. A fresh `PushGrant` binds the
+exact repository, remote and ref; it is never stored in configuration or restored from backup.
+There is no force, tag, PR, publish, merge or default/protected-branch write on this path.
+Machine-loss durability, connection activation and observed idle execution remain separate
+operator gates; installing a skill or running project setup establishes none of them.
 
 ## Development
 

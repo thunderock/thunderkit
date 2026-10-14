@@ -196,6 +196,31 @@ same existing task-owned local-disk `HERMES_HOME` inside the project, with the m
 Thunderkit does not mutate a shared Hermes home or copy credentials into the project to make
 that route ready. See the [delegation contract](skills/references/delegation.md) for full gates.
 
+## Recovery and checkpoint connections
+
+Recovery and preservation helpers are Thunderkit-owned, model-free software, not native-peer
+workflows. `tk-restore` load/preview/export uses Python ≥3.11 and supported Linux/POSIX no-follow
+filesystem operations; bundled-history verification/export additionally needs local Git and
+bounded writable scratch. Recovery can read an explicit snapshot without the original checkout
+or model config. Export and checkpoint writes each require their own explicit approval.
+See the [recovery and preservation guide](README.md#recovery-and-preservation) for actual commands.
+
+Project `checkpoint_cli.py` preview/setup/capture does not activate host connections or provide
+publication authority. The separate `checkpoint_host.py` API requires an existing verified
+snapshot and fresh approval before installing a repository-local `reference-transaction` hook.
+Foreign hooks and external hook managers are refused, not replaced. Its scheduler API requires
+a qualified running service and a trusted read/compare-and-swap driver with exclusive-writer
+authority. A generated periodic command is not scheduler activation or proof of idle coverage.
+No new daemon, replacement global hook manager, automatic model selection or credential copying
+is part of this setup.
+
+The [approved checkpoint controller exception](skills/references/delegation.md#approved-preservation-checkpoints)
+does not relax native `delivery:disabled` or preparation-only `tk-ship`. A default-on push
+preference cannot replace a fresh exact-repository/remote/ref `PushGrant` from current in-process
+authority after the captured commit's review/test and ownership gates. Never save or restore
+that grant. Ref-event capture and reachable-history reconciliation do not prove preservation of
+transient unreachable commits; real storage durability and host cadence need separate evidence.
+
 ## Context cost and standalone skills
 
 The OMH full profile installs **123 skills**; core installs **10**, according to the

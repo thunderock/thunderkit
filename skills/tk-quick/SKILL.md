@@ -53,9 +53,15 @@ The owned procedure is the skill:
 2. Make the change on the author model; keep each commit to one logical step.
 3. Run the relevant tests before each commit.
 4. Give the reviewer the diff and the test output; address findings or record why not.
-5. Commit only after the review returns. No push, PR, tag or publish.
+5. Commit only after the review returns. The edit stage permits no push, PR, tag or publish.
 
 Without a valid configuration, stop as blocked and ask for one; never pick a model silently.
+
+Save current context and the change's test/review artifacts at preservation boundaries, then
+have the approved checkpoint controller run `checkpoint_cli.py capture` under the
+[shared preservation rule](references/delegation.md#approved-preservation-checkpoints).
+Only that separate controller has the scoped checkpoint exception; native workers remain
+delivery-disabled. A snapshot does not replace the different-family review before each commit.
 
 ## Asking the user
 

@@ -15,8 +15,10 @@ Takes `.thunderkit/plan.json` from `tk-plan` and implements only its reviewed, a
 Choose **one full-plan owner**: a qualified native handoff, or one explicitly bound portable
 owner. Disjoint lanes may run concurrently under that owner; dependency and verification gates
 control advancement. Never launch a native execution engine per lane or a parallel fallback.
-No route may push, open a PR, publish or merge to master. Local feature-branch integration is a
-separate, scoped approval; external delivery permission does not change this skill's policy.
+No execution route may push, open a PR, publish or merge to master. Local feature-branch
+integration is a separate, scoped approval. Only the separately approved checkpoint controller
+has the narrow preservation exception below; external delivery permission does not enable
+delivery by an execution lane or native owner.
 
 ## Inputs and paths
 
@@ -245,6 +247,12 @@ native owner instead of executing a second workflow alongside it.
 
 ## Layer gating and recovery
 
+Save current artifacts and context at each preservation boundary, then have the approved
+checkpoint controller run `checkpoint_cli.py capture` under the
+[shared preservation rule](references/delegation.md#approved-preservation-checkpoints).
+Native workers remain delivery-disabled; capture neither retires an uncertain owner nor
+replaces any layer, review or continuation gate.
+
 - Start only approved, bounded lanes whose dependencies have verified, integrated predecessor
   commits under the one owner. Check same-layer paths and frozen paths again, including generated
   outputs. Each lane has its own worktree, runnable verification command, cwd and prerequisites.
@@ -291,4 +299,6 @@ not exit 0 or an old pass. Check availability before handing the current diff to
 before any later UAT transition. Independent current-family review remains separate from native
 completion; neither this report nor a native gate grants delivery authority.
 
-Never push or open a PR — stop at merged local commits and hand to `tk-review`.
+Execution workers never push or open a PR — stop at merged local commits and hand to
+`tk-review`. Separately approved controller checkpoints follow the preservation rule above,
+not a worker delivery path.
