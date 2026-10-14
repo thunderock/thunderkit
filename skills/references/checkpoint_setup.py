@@ -35,6 +35,9 @@ _LOCK = ".thunderkit-setup.lock"
 _CLAIM = ".setup-claim.json"
 _CLAIM_PENDING = ".setup-claim-pending"
 _MAX_CAPTURES = 128
+# Ownership metadata is not settings. Per-entry digests bound even the largest
+# legal file set without losing the ability to verify an interrupted subset.
+_CLAIM_MAX_BYTES = C.MANIFEST_MAX_BYTES
 
 
 @dataclass(frozen=True)
@@ -130,7 +133,7 @@ class _Claim:
     scope: OwnedPath
     marker: OwnedPath
     captures: tuple[_CaptureRecord, ...] = ()
-    pending: tuple[C.ManifestFile, ...] | None = None
+    pending: tuple[str, ...] | None = None
     latest: Path | None = None
 
 
@@ -292,10 +295,10 @@ def _new_private_path(path: Path, project: Path) -> None:
                 _fail("private_storage_readonly")
 
 
-def _encoded(document: C.JsonObject) -> bytes:
+def _encoded(document: C.JsonObject, *, max_bytes: int = C.CONFIG_MAX_BYTES) -> bytes:
     content = json.dumps(document, sort_keys=True, separators=(",", ":"),
                          ensure_ascii=True, allow_nan=False).encode("utf-8") + b"\n"
-    C.decode_json(content, max_bytes=C.CONFIG_MAX_BYTES)
+    C.decode_json(content, max_bytes=max_bytes)
     return content
 
 
@@ -593,6 +596,7 @@ def _preview_setup(request: SetupRequest, captured: _CapturedScope | None = None
     try:
         storage, mutations = _inspect(request, captured)
         fingerprints = _fingerprints(request)
+        _pending_entries(fingerprints, request.settings.limits)
         if not request.include_history:
             assert request.settings.project_root is not None
             _history_preflight(request.settings.project_root)
@@ -656,13 +660,13 @@ def _prepare_parent(path: Path, project: Path, directories: list[OwnedPath],
             parents.append(record)
 
 
-def _matches(record: OwnedPath) -> bool:
+def _matches(record: OwnedPath, *, max_bytes: int = C.CONFIG_MAX_BYTES) -> bool:
     try:
         with _directory(record.path.parent) as parent:
             if record.content_sha256 is None:
                 info = os.stat(record.path.name, dir_fd=parent, follow_symlinks=False)
                 return stat.S_ISDIR(info.st_mode) and _owned(record.path, info) == record
-            data, info = _read_file(parent, record.path.name, C.CONFIG_MAX_BYTES)
+            data, info = _read_file(parent, record.path.name, max_bytes)
             return _owned(record.path, info, hashlib.sha256(data).hexdigest()) == record
     except (C.ContinuityError, OSError):
         return False
@@ -758,16 +762,32 @@ def _reserve_scope(request: SetupRequest) -> OwnedPath:
         raise _ReservationError(code, tuple(created)) from None
 
 
+def _entry_digest(item: C.ManifestFile) -> str:
+    return hashlib.sha256(_encoded({"relpath": item.relpath, "size": item.size,
+                                   "sha256": item.sha256, "mode": item.mode})).hexdigest()
+
+
+def _pending_entries(fingerprints: tuple[SetupFingerprint, ...], limits: C.Limits) -> tuple[str, ...]:
+    files = {item.payload.relpath: item.payload for item in fingerprints if item.payload is not None}
+    if len(files) > limits.max_files:
+        _fail("inspection_budget_exceeded")
+    pending = tuple(sorted(_entry_digest(item) for item in files.values()))
+    # Reserve room for the binding envelope and capture records. This check is
+    # read-only, before qualification, namespace reservation or any staging write.
+    _encoded({"pending": list(pending)}, max_bytes=_CLAIM_MAX_BYTES - C.CONFIG_MAX_BYTES)
+    return pending
+
+
 def _claim_document(request: SetupRequest, scope: OwnedPath, marker: OwnedPath,
                     captures: tuple[_CaptureRecord, ...],
-                    pending: tuple[C.ManifestFile, ...] | None, latest: Path | None) -> C.JsonObject:
+                    pending: tuple[str, ...] | None, latest: Path | None) -> C.JsonObject:
     project = request.settings.project_root
     assert project is not None and request.settings.backup_root is not None
     with _directory(project) as fd:
         root = _check_directory(project, os.fstat(fd))
     storage = S.inspect_storage(request.settings.backup_root)
     return {
-        "schema": 1, "kind": "setup-ownership", "identity": {
+        "schema": 2, "kind": "setup-ownership", "identity": {
             "kind": request.settings.identity.kind, "id": request.settings.identity.id},
         "project": {"path": str(project), "device": root.device, "inode": root.inode},
         "scope": {"path": str(scope.path), "device": scope.device, "inode": scope.inode},
@@ -779,9 +799,7 @@ def _claim_document(request: SetupRequest, scope: OwnedPath, marker: OwnedPath,
         "latest": None if latest is None else str(latest),
         "captures": [{"name": item.path.name, "device": item.device, "inode": item.inode,
                       "sha256": item.manifest_sha256} for item in captures],
-        "pending": None if pending is None else [
-            {"relpath": item.relpath, "size": item.size, "sha256": item.sha256, "mode": item.mode}
-            for item in pending],
+        "pending": None if pending is None else list(pending),
     }
 
 
@@ -796,11 +814,11 @@ def _load_claim(request: SetupRequest) -> _Claim:
     scope = _scope_path(request)
     with _directory(scope) as fd:
         owned = _check_directory(scope, os.fstat(fd))
-        data, info = _read_file(fd, _CLAIM, C.CONFIG_MAX_BYTES)
+        data, info = _read_file(fd, _CLAIM, _CLAIM_MAX_BYTES)
     if info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600:
         _fail("resume_unavailable")
     marker = _owned(scope / _CLAIM, info, hashlib.sha256(data).hexdigest())
-    raw = C.decode_json(data)
+    raw = C.decode_json(data, max_bytes=_CLAIM_MAX_BYTES)
     if not isinstance(raw, dict):
         _fail("resume_unavailable")
     records = raw.get("captures")
@@ -816,17 +834,13 @@ def _load_claim(request: SetupRequest) -> _Claim:
             _fail("resume_unavailable")
         captures.append(_CaptureRecord(scope / "snapshots" / name, _claim_int(record["device"]),
                                        _claim_int(record["inode"]), C.validate_sha256(record["sha256"])))
-    pending: tuple[C.ManifestFile, ...] | None = None
+    pending: tuple[str, ...] | None = None
     if pending_raw is not None:
         if not isinstance(pending_raw, list) or len(pending_raw) > request.settings.limits.max_files:
             _fail("resume_unavailable")
-        files: list[C.ManifestFile] = []
-        for item in pending_raw:
-            if not isinstance(item, dict) or set(item) != {"relpath", "size", "sha256", "mode"}:
-                _fail("resume_unavailable")
-            files.append(C.ManifestFile(C.validate_relpath(item["relpath"]), _claim_int(item["size"]),
-                                        C.validate_sha256(item["sha256"]), _claim_int(item["mode"])))
-        pending = tuple(files)
+        pending = tuple(C.validate_sha256(item) for item in pending_raw)
+        if pending != tuple(sorted(set(pending))):
+            _fail("resume_unavailable")
     latest_raw = raw.get("latest")
     latest: Path | None = None
     if latest_raw is not None:
@@ -837,25 +851,32 @@ def _load_claim(request: SetupRequest) -> _Claim:
     # Canonical comparison rejects unknown keys and bool/int aliasing as well as
     # same-content replacement at a different inode. Same-user forgery is not
     # cryptographically distinguishable; only a current caller can approve use.
-    if _encoded(raw) != _encoded(expected) or len({c.path for c in captures}) != len(captures):
+    if (_encoded(raw, max_bytes=_CLAIM_MAX_BYTES) != _encoded(expected, max_bytes=_CLAIM_MAX_BYTES)
+            or len({c.path for c in captures}) != len(captures)):
         _fail("resume_unavailable")
     return _Claim(owned, marker, tuple(captures), pending, latest)
 
 
 def _publish_claim(request: SetupRequest, scope: OwnedPath, captures: tuple[_CaptureRecord, ...],
-                   pending: tuple[C.ManifestFile, ...] | None, previous: _Claim | None = None,
+                   pending: tuple[str, ...] | None, previous: _Claim | None = None,
                    *, latest: Path | None = None) -> _Claim:
     if len(captures) > _MAX_CAPTURES or not _matches(scope):
         _fail("scope_changed")
+    document = _claim_document(request, scope, scope, captures, pending, latest)
+    # Dry serialization only: reserve the largest supported inode/device fields.
+    # Never publish these placeholders or treat them as an ownership claim.
+    document["marker"] = {"device": 2 ** 64 - 1, "inode": 2 ** 64 - 1}
+    _encoded(document, max_bytes=_CLAIM_MAX_BYTES)
     with _directory(scope.path) as parent:
-        if previous is not None and not _matches(previous.marker):
+        if previous is not None and not _matches(previous.marker, max_bytes=_CLAIM_MAX_BYTES):
             _fail("scope_changed")
         name = _CLAIM if previous is None else _CLAIM_PENDING
         fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
         try:
             os.fchmod(fd, 0o600)
             marker = _owned(scope.path / _CLAIM, os.fstat(fd))
-            data = _encoded(_claim_document(request, scope, marker, captures, pending, latest))
+            document["marker"] = {"device": _claim_int(marker.device), "inode": _claim_int(marker.inode)}
+            data = _encoded(document, max_bytes=_CLAIM_MAX_BYTES)
             offset = 0
             while offset < len(data):
                 count = os.write(fd, data[offset:])
@@ -867,7 +888,7 @@ def _publish_claim(request: SetupRequest, scope: OwnedPath, captures: tuple[_Cap
         finally:
             os.close(fd)
         if previous is not None:
-            if not _matches(previous.marker) or not _matches(scope):
+            if not _matches(previous.marker, max_bytes=_CLAIM_MAX_BYTES) or not _matches(scope):
                 _fail("scope_changed")
             os.replace(name, _CLAIM, src_dir_fd=parent, dst_dir_fd=parent)
         os.fsync(parent)
@@ -909,7 +930,7 @@ def _scope_state(request: SetupRequest, claim: _Claim
         return data
 
     names = directory(scope, {_CLAIM, "snapshots", ".staging", "latest.json"}, {_CLAIM})
-    file(scope / _CLAIM, C.CONFIG_MAX_BYTES)
+    file(scope / _CLAIM, _CLAIM_MAX_BYTES)
     if ".staging" in names:
         directory(scope / ".staging", set(), set())
     previous = {item.path.name: item for item in claim.captures}
@@ -919,6 +940,9 @@ def _scope_state(request: SetupRequest, claim: _Claim
     complete: set[Path] = set()
     records: list[_CaptureRecord] = []
     total_bytes = 0
+    # This is an aggregate inspection bound, not a replacement for the per-
+    # snapshot validation below. Metadata stays separately bounded per record.
+    inspection_bytes = _MAX_CAPTURES * request.settings.limits.max_snapshot_bytes
     for name in sorted(snapshots):
         if len(name) != 32 or any(c not in "0123456789abcdef" for c in name):
             _fail("scope_changed")
@@ -930,7 +954,7 @@ def _scope_state(request: SetupRequest, claim: _Claim
         manifest = C.validate_manifest(C.decode_json(data, max_bytes=C.MANIFEST_MAX_BYTES),
                                        expected_identity=request.settings.identity, limits=request.settings.limits)
         total_bytes += sum(item.size for item in manifest.files) + manifest.history.size
-        if total_bytes > request.settings.limits.max_snapshot_bytes:
+        if total_bytes > inspection_bytes:
             _fail("inspection_budget_exceeded")
         if (manifest.snapshot_id != name or manifest.repository not in (None, str(project))
                 or any(not any((project / rel).is_relative_to(source) for source in request.approved_sources)
@@ -942,8 +966,8 @@ def _scope_state(request: SetupRequest, claim: _Claim
             if record != previous[name]:
                 _fail("scope_changed")
         else:
-            expected = {item.relpath: item for item in claim.pending or ()}
-            if any(expected.get(item.relpath) != item for item in manifest.files):
+            expected = set(claim.pending or ())
+            if any(_entry_digest(item) not in expected for item in manifest.files):
                 _fail("scope_changed")
         if S.verify_snapshot(path, request.settings.identity, request.settings.limits) != manifest:
             _fail("scope_changed")
@@ -1066,8 +1090,11 @@ def _apply_setup(preview: SetupPreview, captured: _CapturedScope | None = None) 
                 fingerprints, previous_records = _scope_state(preview.request, claim)
                 if captured is not None and fingerprints != captured.fingerprints:
                     _fail("scope_changed")
-                pending_files = tuple(sorted({item.payload.relpath: item.payload for item in preview.fingerprints
-                                              if item.payload is not None}.values(), key=lambda item: item.relpath))
+                # Leave every retained version intact; refuse before creating a
+                # new pending record/capture when the inspection set is full.
+                if len(previous_records) >= _MAX_CAPTURES:
+                    _fail("inspection_budget_exceeded")
+                pending_files = _pending_entries(preview.fingerprints, preview.request.settings.limits)
                 latest = claim.latest
                 with _directory(scope_owned.path) as fd:
                     try:
