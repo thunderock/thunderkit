@@ -7,7 +7,8 @@ or authority. All filesystem access uses anchored no-follow directory handles.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager, nullcontext
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import json
@@ -23,12 +24,76 @@ import os
 from pathlib import Path
 import re
 import stat
-from typing import NoReturn, TypeAlias
+from typing import NoReturn, Protocol, TypeAlias, TypeVar
 import uuid
 
 import continuity_config as C
 
 Fault: TypeAlias = Callable[[str, Path | None], None]
+_T = TypeVar("_T")
+
+
+class CleanupGuard(Protocol):
+    """Caller-owned cancellation deferral, limited to acquisition and teardown."""
+
+    def __call__(self, *, unwinding: bool) -> AbstractContextManager[None]: ...
+
+
+_cleanup_guard: ContextVar[CleanupGuard | None] = ContextVar("snapshot_cleanup_guard", default=None)
+
+
+@contextmanager
+def cleanup_scope(guard: CleanupGuard) -> Iterator[None]:
+    """Cooperate with an enclosing deadline without owning its timer or budget.
+
+    This in-process hook is not authority. Standalone readers/writers retain
+    their normal behavior, and nested scopes restore the previous guard.
+    """
+    token = None
+    failed = False
+    try:
+        with guard(unwinding=False):
+            token = _cleanup_guard.set(guard)
+        yield
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        with guard(unwinding=failed):
+            if token is not None:
+                _cleanup_guard.reset(token)
+
+
+def _guard(*, unwinding: bool = False) -> AbstractContextManager[None]:
+    guard = _cleanup_guard.get()
+    return nullcontext() if guard is None else guard(unwinding=unwinding)
+
+
+@contextmanager
+def _resources() -> Iterator[ExitStack]:
+    stack = ExitStack()
+    primary: BaseException | None = None
+    try:
+        yield stack
+    except BaseException as error:
+        primary = error
+        raise
+    finally:
+        with _guard(unwinding=primary is not None):
+            try:
+                stack.close()
+            except BaseException as cleanup_error:
+                if primary is not None:
+                    raise primary from cleanup_error
+                raise
+
+
+def _enter(stack: ExitStack, resource: AbstractContextManager[_T]) -> _T:
+    # Registration must finish before a deferred deadline can be raised.
+    with _guard():
+        return stack.enter_context(resource)
+
+
 _DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 _FILE = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
 
@@ -46,88 +111,88 @@ def _signature(info: os.stat_result) -> tuple[int, int, int, int, int, int, int]
 @contextmanager
 def _directory(path: Path, missing: str = "integrity_mismatch") -> Iterator[int]:
     C.validate_path_text(str(path), absolute=True)
-    fd = -1
     try:
-        fd = os.open(path.anchor, _DIR)
-        for part in path.parts[1:]:
-            child = os.open(part, _DIR, dir_fd=fd)
-            os.close(fd)
-            fd = child
-        yield fd
+        with _resources() as stack:
+            with _guard():
+                fd = os.open(path.anchor, _DIR)
+                stack.callback(lambda: os.close(fd))
+            for part in path.parts[1:]:
+                with _guard():
+                    child = os.open(part, _DIR, dir_fd=fd)
+                    try:
+                        os.close(fd)
+                    finally:
+                        fd = child
+            yield fd
     except FileNotFoundError:
         _fail(missing)
     except OSError as error:
         _fail("unsafe_path" if error.errno in (errno.ELOOP, errno.ENOTDIR) else missing)
-    finally:
-        if fd >= 0:
-            os.close(fd)
 
 
 @contextmanager
 def _child_directory(parent: int, name: str) -> Iterator[int]:
-    fd = -1
     try:
-        fd = os.open(name, _DIR, dir_fd=parent)
-        yield fd
+        with _resources() as stack:
+            with _guard():
+                fd = os.open(name, _DIR, dir_fd=parent)
+                stack.callback(os.close, fd)
+            yield fd
     except FileNotFoundError:
         _fail("integrity_mismatch")
     except OSError:
         _fail("unsafe_path")
-    finally:
-        if fd >= 0:
-            os.close(fd)
 
 
 def _read(parent: int, name: str, budget: int, *,
           changed: str = "integrity_mismatch", fault: Fault | None = None,
           path: Path | None = None) -> tuple[bytes, os.stat_result]:
-    fd = -1
-    try:
-        before = os.stat(name, dir_fd=parent, follow_symlinks=False)
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
-            _fail("unsafe_path")
-        if before.st_size > budget:
-            _fail("read_budget_exceeded")
-        fd = os.open(name, _FILE, dir_fd=parent)
-        if _signature(os.fstat(fd)) != _signature(before):
-            _fail(changed)
-        chunks: list[bytes] = []
-        remaining = budget + 1
-        while remaining:
-            chunk = os.read(fd, min(65536, remaining))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        if fault is not None:
-            fault("after_source_read", path)
-        after = os.fstat(fd)
-        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
-        if _signature(before) != _signature(after) or _signature(before) != _signature(current):
-            _fail(changed)
-        data = b"".join(chunks)
-        if len(data) != before.st_size:
-            _fail(changed)
-        if changed == "source_changed":
-            # Coarse filesystem timestamps can miss same-size rewrites. Compare
-            # a bounded second pass on the same FD, then recheck its identity.
-            os.lseek(fd, 0, os.SEEK_SET)
-            offset = 0
-            while offset < len(data):
-                chunk = os.read(fd, min(65536, len(data) - offset))
-                if not chunk or chunk != data[offset:offset + len(chunk)]:
-                    _fail(changed)
-                offset += len(chunk)
-            if os.read(fd, 1) or _signature(os.fstat(fd)) != _signature(before):
+    with _resources() as stack:
+        try:
+            before = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+                _fail("unsafe_path")
+            if before.st_size > budget:
+                _fail("read_budget_exceeded")
+            with _guard():
+                fd = os.open(name, _FILE, dir_fd=parent)
+                stack.callback(os.close, fd)
+            if _signature(os.fstat(fd)) != _signature(before):
                 _fail(changed)
-        return data, before
-    except FileNotFoundError:
-        _fail(changed)
-    except OSError:
-        _fail("unsafe_path")
-    finally:
-        if fd >= 0:
-            os.close(fd)
+            chunks: list[bytes] = []
+            remaining = budget + 1
+            while remaining:
+                chunk = os.read(fd, min(65536, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            if fault is not None:
+                fault("after_source_read", path)
+            after = os.fstat(fd)
+            current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if _signature(before) != _signature(after) or _signature(before) != _signature(current):
+                _fail(changed)
+            data = b"".join(chunks)
+            if len(data) != before.st_size:
+                _fail(changed)
+            if changed == "source_changed":
+                # Coarse filesystem timestamps can miss same-size rewrites. Compare
+                # a bounded second pass on the same FD, then recheck its identity.
+                os.lseek(fd, 0, os.SEEK_SET)
+                offset = 0
+                while offset < len(data):
+                    chunk = os.read(fd, min(65536, len(data) - offset))
+                    if not chunk or chunk != data[offset:offset + len(chunk)]:
+                        _fail(changed)
+                    offset += len(chunk)
+                if os.read(fd, 1) or _signature(os.fstat(fd)) != _signature(before):
+                    _fail(changed)
+            return data, before
+        except FileNotFoundError:
+            _fail(changed)
+        except OSError:
+            _fail("unsafe_path")
 
 
 def _hash(data: bytes) -> str:
@@ -137,7 +202,9 @@ def _hash(data: bytes) -> str:
 def _mount_identity(root: Path, device: int) -> tuple[str, str]:
     """Read only the kernel mount table; longest component match, never prefix."""
     try:
-        with open("/proc/self/mountinfo", "rb") as stream:
+        with _resources() as stack:
+            with _guard():
+                stream = stack.enter_context(open("/proc/self/mountinfo", "rb"))
             raw = stream.read(1024 * 1024 + 1)
         if len(raw) > 1024 * 1024:
             _fail("storage_unqualified")
@@ -282,7 +349,9 @@ def _verified(snapshot: Path, identity: C.ScopeIdentity, limits: C.Limits,
 
         def walk(fd: int, prefix: str) -> None:
             nonlocal selected
-            with os.scandir(fd) as entries:
+            with _resources() as entries_stack:
+                with _guard():
+                    entries = entries_stack.enter_context(os.scandir(fd))
                 for item in entries:
                     name = prefix + "/" + item.name
                     info = item.stat(follow_symlinks=False)
@@ -363,10 +432,16 @@ class _Writer:
             with _child_directory(parent, name):
                 pass
 
-    def write(self, parent: int, name: str, data: bytes, mode: int = 0o644) -> None:
+    def write(self, parent: int, name: str, data: bytes, mode: int = 0o644,
+              *, cleanup: ExitStack | None = None) -> None:
         self.check()
-        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
-        try:
+        with _resources() as stack:
+            with _guard():
+                fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+                stack.callback(os.close, fd)
+                if cleanup is not None:
+                    info = os.fstat(fd)
+                    cleanup.callback(_owned_unlink, parent, name, (info.st_dev, info.st_ino))
             view = memoryview(data)
             while view:
                 self.check()
@@ -377,12 +452,21 @@ class _Writer:
             self.check()
             os.fchmod(fd, mode)
             os.fsync(fd)
-        finally:
-            os.close(fd)
         os.fsync(parent)
         readback, info = _read(parent, name, len(data))
         if readback != data or stat.S_IMODE(info.st_mode) != mode:
             _fail("integrity_mismatch")
+
+    def owned_directory(self, parent: int, name: str, stack: ExitStack) -> None:
+        self.check()
+        with _guard():
+            try:
+                os.mkdir(name, 0o700, dir_fd=parent)
+            except FileExistsError:
+                _fail("snapshot_busy")
+            inode = _inode(parent, name)
+            stack.callback(_owned_remove, parent, name, inode)
+            os.fsync(parent)
 
     def rename(self, parent: int, name: str, destination: int, target: str) -> None:
         self.check()
@@ -399,6 +483,16 @@ def _owned_remove(parent: int, name: str, inode: tuple[int, int]) -> None:
             return
         shutil.rmtree(name, dir_fd=parent)
         os.fsync(parent)
+    except FileNotFoundError:
+        pass
+
+
+def _owned_unlink(parent: int, name: str, inode: tuple[int, int]) -> None:
+    try:
+        info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        if (info.st_dev, info.st_ino) == inode and stat.S_ISREG(info.st_mode) and info.st_nlink == 1:
+            os.unlink(name, dir_fd=parent)
+            os.fsync(parent)
     except FileNotFoundError:
         pass
 
@@ -525,54 +619,61 @@ class _Git:
         errors = 0
         deadline = time.monotonic() + 30
         try:
-            with subprocess.Popen([self.binary, *self.options, *args], cwd=cwd, env=self.env,
-                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                  stderr=subprocess.PIPE) as process:
+            with _resources() as stack:
+                with _guard():
+                    process = stack.enter_context(subprocess.Popen(
+                        [self.binary, *self.options, *args], cwd=cwd, env=self.env,
+                        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+                    stack.callback(_stop_git, process)
                 assert process.stdout is not None and process.stderr is not None
-                try:
-                    with selectors.DefaultSelector() as poller:
-                        poller.register(process.stdout, selectors.EVENT_READ, True)
-                        poller.register(process.stderr, selectors.EVENT_READ, False)
-                        while poller.get_map():
-                            remaining = deadline - time.monotonic()
-                            if remaining <= 0:
-                                _fail("history_invalid")
-                            for key, _ in poller.select(min(remaining, 0.2)):
-                                chunk = os.read(key.fd, 65536)
-                                if not chunk:
-                                    poller.unregister(key.fileobj)
-                                elif key.data:
-                                    if len(output) + len(chunk) > budget:
-                                        _fail("read_budget_exceeded")
-                                    output.extend(chunk)
-                                else:
-                                    errors += len(chunk)
-                                    if errors > 65536:
-                                        _fail("history_invalid")
-                    code = process.wait(timeout=max(0.01, deadline - time.monotonic()))
-                    if code and not allow_failure:
+                with _guard():
+                    poller = stack.enter_context(selectors.DefaultSelector())
+                poller.register(process.stdout, selectors.EVENT_READ, True)
+                poller.register(process.stderr, selectors.EVENT_READ, False)
+                while poller.get_map():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
                         _fail("history_invalid")
-                    return bytes(output) if code == 0 else b""
-                finally:
-                    if process.poll() is None:
-                        process.kill()
-                        process.wait()
+                    for key, _ in poller.select(min(remaining, 0.2)):
+                        chunk = os.read(key.fd, 65536)
+                        if not chunk:
+                            poller.unregister(key.fileobj)
+                        elif key.data:
+                            if len(output) + len(chunk) > budget:
+                                _fail("read_budget_exceeded")
+                            output.extend(chunk)
+                        else:
+                            errors += len(chunk)
+                            if errors > 65536:
+                                _fail("history_invalid")
+                code = process.wait(timeout=max(0.01, deadline - time.monotonic()))
+                if code and not allow_failure:
+                    _fail("history_invalid")
+                return bytes(output) if code == 0 else b""
         except (OSError, subprocess.TimeoutExpired):
             _fail("history_invalid")
+
+
+def _stop_git(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is None:
+        process.kill()
+        process.wait()
 
 
 @contextmanager
 def _git_session() -> Iterator[_Git]:
     # Scheduler environments often omit TMPDIR. Its absence is not corruption.
     # An explicitly configured unavailable directory must not silently fall back.
-    try:
-        scratch = os.environ.get("TMPDIR") or tempfile.gettempdir()
-        C.safe_path(Path(scratch), must_exist=True)
-        temporary = tempfile.TemporaryDirectory(prefix="thunderkit-S-git-", dir=scratch)
-    except (OSError, C.ContinuityError):
-        _fail("scratch_unavailable")
-    with temporary as name:
-        yield _Git(Path(name))
+    with _resources() as stack:
+        try:
+            scratch = os.environ.get("TMPDIR") or tempfile.gettempdir()
+            C.safe_path(Path(scratch), must_exist=True)
+            with _guard():
+                temporary = tempfile.TemporaryDirectory(prefix="thunderkit-S-git-", dir=scratch)
+                stack.callback(temporary.cleanup)
+        except (OSError, C.ContinuityError):
+            _fail("scratch_unavailable")
+        yield _Git(Path(temporary.name))
 
 
 def _has_repository(root: Path | None) -> bool:
@@ -697,7 +798,9 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | 
                 continue
             def walk(fd: int, path: Path, relative: str) -> None:
                 nonlocal visited
-                with os.scandir(fd) as entries:
+                with _resources() as entries_stack:
+                    with _guard():
+                        entries = entries_stack.enter_context(os.scandir(fd))
                     for item in entries:
                         if visited > limits.max_files + limits.max_sources:
                             _omit(omissions, "File inventory exceeds count budget.", limits)
@@ -768,7 +871,7 @@ def _capture_files(request: C.SnapshotRequest, fault: Fault | None, git: _Git | 
 def _absent_worktree_path(root: int, relative: str) -> bool:
     """Check presence without following a link, including any replaced ancestor."""
     parts = relative.split("/")
-    with ExitStack() as stack:
+    with _resources() as stack:
         parent = root
         for index, part in enumerate(parts):
             try:
@@ -777,7 +880,7 @@ def _absent_worktree_path(root: int, relative: str) -> bool:
                 return True
             if index == len(parts) - 1 or not stat.S_ISDIR(info.st_mode):
                 return False
-            parent = stack.enter_context(_child_directory(parent, part))
+            parent = _enter(stack, _child_directory(parent, part))
     return False
 
 
@@ -999,7 +1102,9 @@ def _verify_history(bundle: bytes, history: C.HistoryRecord, limits: C.Limits) -
             repository = git.scratch / "verify.git"
             repository.mkdir(mode=0o700)
             path = git.scratch / "history.bundle"
-            with path.open("xb") as output:
+            with _resources() as streams:
+                with _guard():
+                    output = streams.enter_context(path.open("xb"))
                 output.write(bundle)
             git.run(repository, ["init", "--bare", "--template=", "--object-format=" + ("sha256" if len(history.head) == 64 else "sha1")], 4096)
             git.run(repository, ["bundle", "verify", str(path)], 65536)
@@ -1044,12 +1149,12 @@ def _payload_write(writer: _Writer, stage: int, payload: dict[str, bytes], files
     writer.mkdir(stage, "payload")
     with _child_directory(stage, "payload") as payload_fd:
         for entry in files:
-            with ExitStack() as stack:
+            with _resources() as stack:
                 parent = payload_fd
                 parts = entry.relpath.split("/")
                 for part in parts[:-1]:
                     writer.mkdir(parent, part)
-                    parent = stack.enter_context(_child_directory(parent, part))
+                    parent = _enter(stack, _child_directory(parent, part))
                 writer.write(parent, parts[-1], payload[entry.relpath], entry.mode)
 
 
@@ -1059,7 +1164,9 @@ def _prune(writer: _Writer, snapshots: int, scope: Path, identity: C.ScopeIdenti
                       max_snapshot_bytes=C.MAXIMUMS["max_snapshot_bytes"],
                       max_files=C.MAXIMUMS["max_files"])
     owned: list[tuple[str, str, tuple[int, int]]] = []
-    with os.scandir(snapshots) as entries:
+    with _resources() as entries_stack:
+        with _guard():
+            entries = entries_stack.enter_context(os.scandir(snapshots))
         for index, entry in enumerate(entries):
             if index >= C.MAXIMUMS["max_files"]:
                 break
@@ -1091,90 +1198,75 @@ def create_snapshot(request: C.SnapshotRequest, *, fault: Fault | None = None) -
     identity = request.settings.identity
     scope = request.storage.root / ("projects" if identity.kind == "project" else "global") / identity.id
     writer = _Writer(request.storage)
-    with ExitStack() as stack:
-        git = stack.enter_context(_git_session()) if _has_repository(request.settings.project_root) else None
+    with _resources() as stack:
+        git = _enter(stack, _git_session()) if _has_repository(request.settings.project_root) else None
         ref, head = _git_state(request, git)
-        root_fd = stack.enter_context(_directory(request.storage.root, "storage_missing"))
+        root_fd = _enter(stack, _directory(request.storage.root, "storage_missing"))
         group = "projects" if identity.kind == "project" else "global"
         writer.mkdir(root_fd, group)
-        group_fd = stack.enter_context(_child_directory(root_fd, group))
+        group_fd = _enter(stack, _child_directory(root_fd, group))
         writer.mkdir(group_fd, identity.id)
-        scope_fd = stack.enter_context(_child_directory(group_fd, identity.id))
+        scope_fd = _enter(stack, _child_directory(group_fd, identity.id))
         previous, previous_manifest, previous_hash = _prior(scope, identity)
-        writer.mkdir(scope_fd, ".snapshot.lock", exclusive=True)
-        lock_inode = _inode(scope_fd, ".snapshot.lock")
+        writer.owned_directory(scope_fd, ".snapshot.lock", stack)
         stage_name = uuid.uuid4().hex
-        stage_inode: tuple[int, int] | None = None
-        stages_fd = -1
-        try:
-            _event(fault, "after_scope_lock", scope, writer)
-            payload, files, omissions, deleted = _capture_files(request, fault, git, head)
-            history, bundle = _capture_history(request, git, ref, head, sum(f.size for f in files))
-            if history.status == "unprotected":
-                extra = list(omissions)
-                _omit(extra, "Branch history is unprotected.", request.settings.limits)
-                omissions = tuple(extra)
-            context = tuple(p for p in request.context_entrypoints if p in payload)
-            if context != request.context_entrypoints:
-                extra = list(omissions)
-                _omit(extra, "Requested context was not captured.", request.settings.limits)
-                omissions = tuple(extra)
-            manifest = C.BackupManifest(1, identity, stage_name, datetime.now(timezone.utc).isoformat(),
-                                        str(request.settings.project_root) if head else None, ref, head, head,
-                                        files, deleted, context, history, omissions,
-                                        "partial" if omissions or not files or history.status == "unprotected" else "complete")
-            if previous_manifest is not None and manifest.completion == "complete":
-                comparable = replace(manifest, snapshot_id=previous_manifest.snapshot_id, timestamp=previous_manifest.timestamp)
-                if comparable == previous_manifest:
-                    if _git_state(request, git) != (ref, head):
-                        _fail("source_changed")
-                    writer.check()
-                    return C.SnapshotResult(identity, previous, "unchanged", (), history.status,
-                                            previous_hash, scope / "latest.json", previous)
-            encoded = _encoded(asdict(manifest))
-            C.validate_manifest(C.decode_json(encoded, max_bytes=C.MANIFEST_MAX_BYTES), expected_identity=identity, limits=request.settings.limits)
-            writer.mkdir(scope_fd, "snapshots")
-            snapshots_fd = stack.enter_context(_child_directory(scope_fd, "snapshots"))
-            writer.mkdir(scope_fd, ".staging")
-            stages_fd = stack.enter_context(_child_directory(scope_fd, ".staging"))
-            writer.mkdir(stages_fd, stage_name, exclusive=True)
-            stage_inode = _inode(stages_fd, stage_name)
-            with _child_directory(stages_fd, stage_name) as stage:
-                _payload_write(writer, stage, payload, files)
-                if bundle is not None:
-                    writer.write(stage, "history.bundle", bundle)
-                writer.write(stage, "manifest.json", encoded)
-            verify_snapshot(scope / ".staging" / stage_name, identity, request.settings.limits)
-            _event(fault, "before_manifest_publish", scope, writer)
-            if _git_state(request, git) != (ref, head):
-                _fail("source_changed")
-            writer.rename(stages_fd, stage_name, snapshots_fd, stage_name)
-            stage_inode = None
-            final = scope / "snapshots" / stage_name
-            verify_snapshot(final, identity, request.settings.limits)
-            if manifest.completion == "complete":
-                _event(fault, "before_locator_publish", scope, writer)
+        _event(fault, "after_scope_lock", scope, writer)
+        payload, files, omissions, deleted = _capture_files(request, fault, git, head)
+        history, bundle = _capture_history(request, git, ref, head, sum(f.size for f in files))
+        if history.status == "unprotected":
+            extra = list(omissions)
+            _omit(extra, "Branch history is unprotected.", request.settings.limits)
+            omissions = tuple(extra)
+        context = tuple(p for p in request.context_entrypoints if p in payload)
+        if context != request.context_entrypoints:
+            extra = list(omissions)
+            _omit(extra, "Requested context was not captured.", request.settings.limits)
+            omissions = tuple(extra)
+        manifest = C.BackupManifest(1, identity, stage_name, datetime.now(timezone.utc).isoformat(),
+                                    str(request.settings.project_root) if head else None, ref, head, head,
+                                    files, deleted, context, history, omissions,
+                                    "partial" if omissions or not files or history.status == "unprotected" else "complete")
+        if previous_manifest is not None and manifest.completion == "complete":
+            comparable = replace(manifest, snapshot_id=previous_manifest.snapshot_id, timestamp=previous_manifest.timestamp)
+            if comparable == previous_manifest:
                 if _git_state(request, git) != (ref, head):
                     _fail("source_changed")
-                pointer = {"schema": 1, "kind": "context-pointer", "identity": asdict(identity), "path": str(final / "manifest.json")}
-                temporary = ".locator-" + uuid.uuid4().hex
-                writer.write(scope_fd, temporary, _encoded(pointer))
-                try:
-                    writer.rename(scope_fd, temporary, scope_fd, "latest.json")
-                finally:
-                    try:
-                        os.unlink(temporary, dir_fd=scope_fd)
-                    except FileNotFoundError:
-                        pass
-                observed, _ = _read(scope_fd, "latest.json", C.CONFIG_MAX_BYTES)
-                if observed != _encoded(pointer):
-                    _fail("integrity_mismatch")
-                if request.settings.backup.prune:
-                    _prune(writer, snapshots_fd, scope, identity, final, request.settings.backup.retention)
-            return C.SnapshotResult(identity, final, manifest.completion, omissions, manifest.history.status,
-                                    _hash(encoded), scope / "latest.json" if previous is not None or manifest.completion == "complete" else None,
-                                    previous)
-        finally:
-            if stage_inode is not None:
-                _owned_remove(stages_fd, stage_name, stage_inode)
-            _owned_remove(scope_fd, ".snapshot.lock", lock_inode)
+                writer.check()
+                return C.SnapshotResult(identity, previous, "unchanged", (), history.status,
+                                        previous_hash, scope / "latest.json", previous)
+        encoded = _encoded(asdict(manifest))
+        C.validate_manifest(C.decode_json(encoded, max_bytes=C.MANIFEST_MAX_BYTES), expected_identity=identity, limits=request.settings.limits)
+        writer.mkdir(scope_fd, "snapshots")
+        snapshots_fd = _enter(stack, _child_directory(scope_fd, "snapshots"))
+        writer.mkdir(scope_fd, ".staging")
+        stages_fd = _enter(stack, _child_directory(scope_fd, ".staging"))
+        writer.owned_directory(stages_fd, stage_name, stack)
+        with _child_directory(stages_fd, stage_name) as stage:
+            _payload_write(writer, stage, payload, files)
+            if bundle is not None:
+                writer.write(stage, "history.bundle", bundle)
+            writer.write(stage, "manifest.json", encoded)
+        verify_snapshot(scope / ".staging" / stage_name, identity, request.settings.limits)
+        _event(fault, "before_manifest_publish", scope, writer)
+        if _git_state(request, git) != (ref, head):
+            _fail("source_changed")
+        writer.rename(stages_fd, stage_name, snapshots_fd, stage_name)
+        final = scope / "snapshots" / stage_name
+        verify_snapshot(final, identity, request.settings.limits)
+        if manifest.completion == "complete":
+            _event(fault, "before_locator_publish", scope, writer)
+            if _git_state(request, git) != (ref, head):
+                _fail("source_changed")
+            pointer = {"schema": 1, "kind": "context-pointer", "identity": asdict(identity), "path": str(final / "manifest.json")}
+            temporary = ".locator-" + uuid.uuid4().hex
+            with _resources() as locator_cleanup:
+                writer.write(scope_fd, temporary, _encoded(pointer), cleanup=locator_cleanup)
+                writer.rename(scope_fd, temporary, scope_fd, "latest.json")
+            observed, _ = _read(scope_fd, "latest.json", C.CONFIG_MAX_BYTES)
+            if observed != _encoded(pointer):
+                _fail("integrity_mismatch")
+            if request.settings.backup.prune:
+                _prune(writer, snapshots_fd, scope, identity, final, request.settings.backup.retention)
+        return C.SnapshotResult(identity, final, manifest.completion, omissions, manifest.history.status,
+                                _hash(encoded), scope / "latest.json" if previous is not None or manifest.completion == "complete" else None,
+                                previous)

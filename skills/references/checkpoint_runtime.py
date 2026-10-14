@@ -164,9 +164,10 @@ class _Timer:
             raise _Deadline()
 
     @contextmanager
-    def guard(self) -> Iterator[None]:
+    def guard(self, *, unwinding: bool | None = None) -> Iterator[None]:
         # Preserve the primary failure (including KeyboardInterrupt/SystemExit).
-        unwinding = sys.exc_info()[0] is not None
+        if unwinding is None:
+            unwinding = sys.exc_info()[0] is not None
         self._protected += 1
         try:
             yield
@@ -206,7 +207,8 @@ def _deadline(seconds: float) -> Iterator[_Timer]:
     failed = False
     try:
         signal.setitimer(signal.ITIMER_REAL, seconds)
-        yield timer
+        with S.cleanup_scope(timer.guard):
+            yield timer
     except BaseException:
         failed = True
         raise
