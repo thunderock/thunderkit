@@ -239,9 +239,9 @@ class CheckpointGlobalScheduleTests(unittest.TestCase):
                                              python=self.python, global_config=self.config)
         return api.preview_global(schedule, self.driver, **qualifications)
 
-    def install(self, api, request=None):
+    def install(self, api, request=None, first=None):
         request = request or self.snapshot_request()
-        first = self.s.create_snapshot(request)
+        first = first or self.s.create_snapshot(request)
         self.assertEqual(first.status, "complete")
         before = tree(self.base)
         preview = self.preview(api, request, service_qualified=True, exclusive_writer=True)
@@ -307,7 +307,7 @@ class CheckpointGlobalScheduleTests(unittest.TestCase):
                 "core_context_age_seconds": captured.context_age_seconds,
                 "host_blockers": host.blockers, "backing_identity": asdict(request.storage) | {"root": str(self.backup)}})
         api = self.api()  # Independent real control above survives missing entrypoint.
-        installed = self.install(api, request)
+        installed = self.install(api, request, first)
         owned = {p for p in self.state.rglob("*") if p.is_file()}
         later_note = NOTE + b"New note captured by installed periodic tick.\n"
         self.notes.write_bytes(later_note)
