@@ -7,6 +7,7 @@ import importlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -328,6 +329,99 @@ class CheckpointInstallTests(unittest.TestCase):
         latest = self.s.verify_snapshot(Path(local["latest_context"]["path"]),
                                         self.identity, self.settings.limits)
         self.assertEqual(latest.completion, "complete")
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
+
+    def prepare_interrupted_final_slot(self) -> tuple[Path, Path]:
+        source = self.project / "saved-documents"
+        source.mkdir()
+        (source / "safe.md").write_text("safe\n")
+        notes = source / "notes.md"
+        notes.write_bytes(b"API_TOKEN=" + b"ghp_" + b"Q" * 36 + b"\n")
+        self.request = replace(self.request, approved_sources=(source,),
+                               context_entrypoints=("saved-documents/notes.md",))
+        first = self.api.apply_setup(self.api.preview_setup(self.request), approval=True)
+        self.assertEqual(first.status, "blocked")
+        self.assertIn("first_snapshot_incomplete", first.blockers)
+        scope = self.backup / "projects/install-fixture"
+        claim = self.api._load_claim(self.request)
+        self.assertEqual(len(claim.captures), 1)
+        original_snapshot = claim.captures[0].path
+        raw = json.loads((original_snapshot / "manifest.json").read_bytes())
+        records = list(claim.captures)
+        # Build valid earlier-attempt state from real captured bytes, not 127 runs.
+        for number in range(1, 127):
+            name = f"{number:032x}"
+            target = scope / "snapshots" / name
+            shutil.copytree(original_snapshot, target)
+            encoded = json.dumps(dict(raw, snapshot_id=name), sort_keys=True,
+                                 separators=(",", ":")).encode()
+            (target / "manifest.json").write_bytes(encoded)
+            manifest = self.s.verify_snapshot(target, self.identity, self.settings.limits)
+            self.assertEqual(manifest.completion, "partial")
+            info = target.stat()
+            records.append(self.api._CaptureRecord(target, info.st_dev, info.st_ino,
+                                                    hashlib.sha256(encoded).hexdigest()))
+        self.api._publish_claim(self.request, claim.scope, tuple(records), None, claim)
+        notes.write_text("# Repaired final-slot context\n")
+        original_capture = self.s.create_snapshot
+
+        def interrupted_capture(request: object) -> object:
+            captured = original_capture(request)
+            self.assertEqual(captured.status, "complete")
+            raise KeyboardInterrupt
+
+        with patch.object(self.s, "create_snapshot", side_effect=interrupted_capture):
+            interrupted = self.api.resume_setup(self.request, approval=True)
+        self.assertEqual(interrupted.status, "blocked")
+        self.assertFalse(self.private.exists())
+        claim = self.api._load_claim(self.request)
+        self.assertEqual(len(claim.captures), 127)
+        self.assertIsNotNone(claim.pending)
+        locator = self.c.decode_locator(self.c.read_json(scope / "latest.json"), pointer=True)
+        manifest_path = Path(locator.path)
+        self.assertEqual(self.s.verify_snapshot(manifest_path, self.identity,
+                                                self.settings.limits).completion, "complete")
+        self.assertEqual(len(tuple((scope / "snapshots").iterdir())), 128)
+        return scope, manifest_path
+
+    def test_final_slot_complete_snapshot_resumes_without_allocating_another(self) -> None:
+        scope, manifest_path = self.prepare_interrupted_final_slot()
+        preserved = {str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                     for path in (scope / "snapshots").rglob("*") if path.is_file()}
+        locator_before = (scope / "latest.json").read_bytes()
+        result = self.api.resume_setup(self.request, approval=True)
+        self.assertEqual(result.status, "configured",
+                         "H9-final-slot: completed final capture must finish setup without a new snapshot")
+        self.assertIsNotNone(result.receipt)
+        self.assertEqual(result.receipt.manifest_path, manifest_path)
+        self.assertEqual(len(tuple((scope / "snapshots").iterdir())), 128)
+        self.assertEqual((scope / "latest.json").read_bytes(), locator_before)
+        self.assertEqual({str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                          for path in (scope / "snapshots").rglob("*") if path.is_file()}, preserved)
+        local = json.loads(self.private.read_text())
+        self.assertEqual(local["latest_context"]["path"], str(manifest_path))
+        manifest = self.s.verify_snapshot(manifest_path, self.identity, self.settings.limits)
+        self.assertEqual(manifest.completion, "complete")
+        self.assertEqual(manifest.context_entrypoints, ("saved-documents/notes.md",))
+        self.assertFalse((scope / ".setup-claim-pending").exists())
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
+
+    def test_final_slot_changed_source_cannot_claim_stale_setup_success(self) -> None:
+        scope, _ = self.prepare_interrupted_final_slot()
+        preserved = {str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                     for path in scope.rglob("*") if path.is_file()}
+        notes = self.project / "saved-documents/notes.md"
+        notes.write_text("# New context that requires a new snapshot\n")
+        result = self.api.resume_setup(self.request, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("inspection_budget_exceeded", result.blockers)
+        self.assertFalse(self.private.exists())
+        self.assertFalse((self.integration / "config.json").exists())
+        self.assertEqual(len(tuple((scope / "snapshots").iterdir())), 128)
+        self.assertEqual({str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                          for path in scope.rglob("*") if path.is_file()}, preserved)
+        self.assertEqual(notes.read_text(), "# New context that requires a new snapshot\n")
+        self.assertFalse((scope / ".setup-claim-pending").exists())
         self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
 
     def test_whole_committed_project_setup_saves_selected_context_and_history(self) -> None:
