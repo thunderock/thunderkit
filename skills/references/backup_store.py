@@ -486,13 +486,15 @@ def _verified(snapshot: Path, identity: C.ScopeIdentity, limits: C.Limits,
         if seen != set(expected):
             _fail("integrity_mismatch")
         if manifest.history.status == "bundled":
-            with history_work():
-                bundle, _ = _read(root, "history.bundle", manifest.history.size)
-                if len(bundle) != manifest.history.size or _hash(bundle) != manifest.history.sha256:
-                    _fail("integrity_mismatch")
-                _verify_history(bundle, manifest.history, limits)
-                if history_requested:
-                    selected = bundle
+            # Verification is mandatory under the caller's work deadline.
+            # Only prior/capture/staging callers spend the optional allowance;
+            # a final read must not abandon already verified current bytes.
+            bundle, _ = _read(root, "history.bundle", manifest.history.size)
+            if len(bundle) != manifest.history.size or _hash(bundle) != manifest.history.sha256:
+                _fail("integrity_mismatch")
+            _verify_history(bundle, manifest.history, limits)
+            if history_requested:
+                selected = bundle
         elif history_requested:
             _fail("history_invalid")
         # Pin the exact manifest and snapshot directory during this read.
@@ -1425,7 +1427,8 @@ def create_snapshot(request: C.SnapshotRequest, *, fault: Fault | None = None) -
                             with history_work():
                                 writer.write(stage, "history.bundle", bundle)
                         writer.write(stage, "manifest.json", encoded)
-                    verify_snapshot(scope / ".staging" / stage_name, identity, request.settings.limits)
+                    with history_work() if bundle is not None else nullcontext():
+                        verify_snapshot(scope / ".staging" / stage_name, identity, request.settings.limits)
                 except HistoryExpired:
                     if bundle is None or attempt:
                         raise
