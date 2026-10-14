@@ -998,6 +998,44 @@ def _fresh(preview: SetupPreview, captured: _CapturedScope | None = None) -> Non
         _fail("stale_preview")
 
 
+def _reuse_final_snapshot(preview: SetupPreview, request: C.SnapshotRequest,
+                         captured: _CapturedScope, records: tuple[_CaptureRecord, ...]
+                         ) -> C.SnapshotResult:
+    """Read-only S-policy comparison; never let its writer allocate slot 129."""
+    _fresh(preview, captured)
+    S._preflight(request)
+    scope = captured.claim.scope.path
+    previous, manifest, digest = S._prior(scope, request.settings.identity)
+    owned = {record.path: record for record in records}
+    pending = set(owned) - {record.path for record in captured.claim.captures}
+    if (previous is None or manifest is None or digest is None or previous not in owned
+            or digest != owned[previous].manifest_sha256
+            or (pending and pending != {previous})):
+        _fail("inspection_budget_exceeded")
+    # Recapture only into bounded memory/scratch with S's existing safety policy.
+    # Matching preview payloads alone misses omissions, Git inventory/deletions
+    # and history; comparing only retained files also misses newly added files.
+    with S._git_session() as git:
+        ref, head = S._git_state(request, git)
+        payload, files, omissions, deleted = S._capture_files(request, None, git, head)
+        history, _ = S._capture_history(request, git, ref, head, sum(item.size for item in files))
+        context = tuple(path for path in request.context_entrypoints if path in payload)
+        if (omissions or not files or history.status == "unprotected"
+                or context != request.context_entrypoints
+                or (manifest.repository, manifest.ref, manifest.head, manifest.base,
+                    manifest.files, manifest.deleted_paths, manifest.context_entrypoints, manifest.history)
+                != (str(request.settings.project_root) if head else None, ref, head, head,
+                    files, deleted, context, history)):
+            _fail("inspection_budget_exceeded")
+        if S._git_state(request, git) != (ref, head):
+            _fail("stale_preview")
+    # Recheck inputs and the entire claimed namespace/locator after comparison.
+    # The caller holds the setup lock and shares the normal sealing/write path.
+    _fresh(preview, captured)
+    return C.SnapshotResult(request.settings.identity, previous, "unchanged", manifest.omissions,
+                            manifest.history.status, digest, scope / "latest.json", previous)
+
+
 def _retained(paths: tuple[Path, ...]) -> tuple[Path, ...]:
     # Existence, not matching ownership: changed/replaced data must be disclosed
     # too. Never follow a replacement parent or remove anything during reporting.
@@ -1090,24 +1128,27 @@ def _apply_setup(preview: SetupPreview, captured: _CapturedScope | None = None) 
                 fingerprints, previous_records = _scope_state(preview.request, claim)
                 if captured is not None and fingerprints != captured.fingerprints:
                     _fail("scope_changed")
-                # Leave every retained version intact; refuse before creating a
-                # new pending record/capture when the inspection set is full.
-                if len(previous_records) >= _MAX_CAPTURES:
-                    _fail("inspection_budget_exceeded")
-                pending_files = _pending_entries(preview.fingerprints, preview.request.settings.limits)
-                latest = claim.latest
-                with _directory(scope_owned.path) as fd:
-                    try:
-                        locator_data, _ = _read_file(fd, "latest.json", C.CONFIG_MAX_BYTES)
-                    except FileNotFoundError:
-                        pass
-                    else:
-                        latest = Path(C.decode_locator(C.decode_json(locator_data), pointer=True).path)
-                claim = _publish_claim(preview.request, scope_owned, previous_records, pending_files, claim,
-                                       latest=latest)
-                captured = _CapturedScope(claim, _scope_fingerprints(preview.request, claim))
-                _fresh(preview, captured)
-                snapshot = S.create_snapshot(request)
+                # At capacity the writer is never called, even if it might
+                # deduplicate: a changed source could otherwise allocate 129.
+                reuse = len(previous_records) >= _MAX_CAPTURES
+                if reuse:
+                    assert captured is not None
+                    snapshot = _reuse_final_snapshot(preview, request, captured, previous_records)
+                else:
+                    pending_files = _pending_entries(preview.fingerprints, preview.request.settings.limits)
+                    latest = claim.latest
+                    with _directory(scope_owned.path) as fd:
+                        try:
+                            locator_data, _ = _read_file(fd, "latest.json", C.CONFIG_MAX_BYTES)
+                        except FileNotFoundError:
+                            pass
+                        else:
+                            latest = Path(C.decode_locator(C.decode_json(locator_data), pointer=True).path)
+                    claim = _publish_claim(preview.request, scope_owned, previous_records, pending_files, claim,
+                                           latest=latest)
+                    captured = _CapturedScope(claim, _scope_fingerprints(preview.request, claim))
+                    _fresh(preview, captured)
+                    snapshot = S.create_snapshot(request)
                 known_backup_paths += tuple(path for path in (snapshot.snapshot_path, snapshot.last_locator)
                                             if path is not None)
                 if (snapshot.status not in ("complete", "unchanged") or snapshot.snapshot_path is None
@@ -1141,6 +1182,8 @@ def _apply_setup(preview: SetupPreview, captured: _CapturedScope | None = None) 
                 locator = C.decode_locator(C.decode_json(locator_data), pointer=True)
                 if locator.identity != request.settings.identity or locator.path != str(manifest_path):
                     _fail("scope_changed")
+                if reuse:
+                    _fresh(preview, captured)
                 claim = _publish_claim(preview.request, scope_owned, records, None, claim,
                                        latest=manifest_path)
                 captured = _CapturedScope(claim, _scope_fingerprints(preview.request, claim))
