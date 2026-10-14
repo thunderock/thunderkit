@@ -117,7 +117,8 @@ class RestoreCLITests(unittest.TestCase):
     def test_load_limit_override_preserves_unmentioned_policy_limits(self) -> None:
         policy = self.fixture.home / "recovery-policy.json"
         policy.write_text(json.dumps({"schema": 1, "kind": "global-settings", "policy": {
-            "backup": {"limits": {"max_file_bytes": 1, "max_files": 1}}}}))
+            "schema": 1, "backup": {"limits": {"max_file_bytes": 1, "max_files": 1}}}}))
+        fixtures.C.validate_continuity_document(fixtures.C.read_json(policy), kind="global-settings")
         common = ("--context", str(self.source), "--identity", self.identity,
                   "--global-config", str(policy))
         before = self.fixture.tree()
