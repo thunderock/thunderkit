@@ -32,7 +32,9 @@ import checkpoint_push as G
 import continuity_config as C
 
 Status: TypeAlias = Literal["captured", "not-due", "duplicate", "busy", "partial", "failed"]
+_Tip: TypeAlias = tuple[str, str | None]
 STATE_MAX_BYTES = 64 * 1024
+HISTORY_LIST_MAX_BYTES = 8 * 1024 * 1024
 MAX_DEADLINE_SECONDS = 60.0
 _DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 _FILE = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
@@ -74,6 +76,10 @@ class CheckpointResult:
 
 class _Refused(Exception):
     """Contains only an internal stable code, never raw caller or OS text."""
+
+
+class _HistoryCapacity(Exception):
+    """Only an exhausted graph count/byte budget permits file-only narrowing."""
 
 
 class _Deadline(BaseException):
@@ -250,6 +256,7 @@ class _Scope:
         self.project = _Directory(project, stack) if project else None
         self.git_directory: _Directory | None = None
         self.git: S._Git | None = None
+        self.capture_tip: _Tip | None = None
         if self.project is not None:
             try:
                 info = os.stat(".git", dir_fd=self.project.fd, follow_symlinks=False)
@@ -315,6 +322,8 @@ class _Scope:
 
     def capture_guard(self, event: str, path: Path | None) -> None:
         self.check()
+        if self.capture_tip is not None and event in ("after_scope_lock", "before_manifest_publish", "before_locator_publish"):
+            _require(self.git_tip() == self.capture_tip, "repository_changed")
 
     def git_line(self, args: list[str], budget: int = 4096) -> str:
         self.check()
@@ -323,7 +332,7 @@ class _Scope:
         _require(data.endswith(b"\n") and data.count(b"\n") == 1, "invalid_git_output")
         return data[:-1].decode("utf-8", errors="strict")
 
-    def git_tip(self) -> tuple[str, str]:
+    def git_tip(self) -> _Tip:
         """Establish the exact attached repository, refusing synthetic graphs."""
         assert self.git_directory is not None and self.project is not None and self.git is not None
         root = self.project.path
@@ -349,27 +358,47 @@ class _Scope:
                      and not key.endswith((b".promisor", b".partialclonefilter")), "synthetic_history_refused")
         replacements = self.git.run(root, ["for-each-ref", "--format=%(refname)", "refs/replace/"], budget)
         _require(not replacements, "synthetic_history_refused")
-        ref = C.validate_ref(self.git_line(["symbolic-ref", "--quiet", "HEAD"]))
-        head = C.validate_oid(self.git_line(["rev-parse", "--verify", "HEAD"]))
-        _require(self.git_line(["cat-file", "-t", head]) == "commit", "invalid_git_head")
+        ref = C.validate_ref(self.git_line(["symbolic-ref", "--quiet", "--no-recurse", "HEAD"]))
+        raw_head, _ = S._read(self.git_directory.fd, "HEAD", 2048)
+        _require(raw_head == ("ref: " + ref + "\n").encode("utf-8"), "invalid_git_head")
         expected = self.request.snapshot.history_ref
         _require(expected is None or ref == expected, "history_ref_mismatch")
+        # A successful bounded ref query plus a missing loose branch proves
+        # unborn status. A failed rev-parse alone cannot distinguish corruption.
+        branch = self.git_directory.path / ref
+        C.safe_path(branch)
+        refs = self.git.run(root, ["for-each-ref", "--format=%(refname) %(objectname)", ref], 4096)
+        try:
+            branch.lstat()
+        except FileNotFoundError:
+            if not refs:
+                return ref, None
+        head = C.validate_oid(self.git_line(["rev-parse", "--verify", "HEAD"]))
+        _require(refs == (ref + " " + head + "\n").encode("utf-8"), "invalid_git_head")
+        _require(self.git_line(["cat-file", "-t", head]) == "commit", "invalid_git_head")
         return ref, head
 
     def reachable(self, tip: tuple[str, str]) -> tuple[str, ...]:
         """Bound both the object listing and total uncompressed object bytes."""
         assert self.git is not None and self.project is not None
         limits = self.request.snapshot.settings.limits
-        budget = min(limits.max_files * 65, limits.max_snapshot_bytes, STATE_MAX_BYTES)
+        budget = min(limits.max_files * (len(tip[1]) + 1), HISTORY_LIST_MAX_BYTES)
         git, root = self.git, self.project.path
 
         def listing(args: list[str]) -> tuple[str, ...]:
             self.check()
-            data = git.run(root, args, budget)
+            try:
+                data = git.run(root, args, budget)
+            except C.ContinuityError as error:
+                if error.code == "read_budget_exceeded":
+                    raise _HistoryCapacity() from None
+                raise
             _require(data.endswith(b"\n"), "invalid_git_output")
             oids = tuple(C.validate_oid(item.decode("ascii")) for item in data[:-1].split(b"\n"))
-            _require(len(oids) <= limits.max_files and len(set(oids)) == len(oids)
-                     and all(len(oid) == len(tip[1]) for oid in oids), "history_budget_exceeded")
+            _require(len(set(oids)) == len(oids)
+                     and all(len(oid) == len(tip[1]) for oid in oids), "invalid_git_output")
+            if len(oids) > limits.max_files:
+                raise _HistoryCapacity()
             return oids
 
         objects = listing(["rev-list", "--objects", "--no-object-names", tip[1], "--"])
@@ -378,7 +407,8 @@ class _Scope:
             size = self.git_line(["cat-file", "-s", oid], 32)
             _require(size.isascii() and size.isdecimal(), "invalid_git_output")
             total += int(size)
-            _require(total <= limits.max_snapshot_bytes, "history_budget_exceeded")
+            if total > limits.max_snapshot_bytes:
+                raise _HistoryCapacity()
         commits = listing(["rev-list", "--reverse", "--topo-order", tip[1], "--"])
         _require(tip[1] in commits and set(commits) <= set(objects), "invalid_git_output")
         _require(self.git_tip() == tip, "repository_changed")
@@ -424,15 +454,17 @@ class _Scope:
             _number(raw["last_success_monotonic"], nonnegative=True)
             if self.git is not None:
                 ref = C.validate_ref(raw["ref"])
-                head = C.validate_oid(raw["head"])
+                head = C.validate_oid(raw["head"]) if raw["head"] is not None else None
                 _require(self.request.snapshot.history_ref in (None, ref), "state_foreign")
                 seen = raw["observed_oids"]
                 _require(isinstance(seen, list), "state_corrupt")
                 assert isinstance(seen, list)
                 oids = [C.validate_oid(oid) for oid in seen]
                 _require(len(oids) <= self.request.snapshot.settings.limits.max_files
-                         and len(set(oids)) == len(oids) and head in oids
-                         and all(len(oid) == len(head) for oid in oids), "state_corrupt")
+                         and len(set(oids)) == len(oids)
+                         and ((head is None and not oids and raw["publication_status"] == "disabled")
+                              or (head is not None and head in oids
+                                  and all(len(oid) == len(head) for oid in oids))), "state_corrupt")
                 _require(raw["publication_status"] in ("disabled", "denied", "pushed", "already-present", "failed", "unknown"),
                          "state_corrupt")
             if raw["boot_id"] is not None:
@@ -460,7 +492,7 @@ class _Scope:
                   and _signature(current) == _signature(self.state_info)), "state_changed")
 
     def write_state(self, snapshot: C.SnapshotResult, observation: _Observation, *,
-                    tip: tuple[str, str] | None = None, observed: tuple[str, ...] = (),
+                    tip: _Tip | None = None, observed: tuple[str, ...] = (),
                     publication_status: str = "disabled") -> None:
         raw = dict(self.template)
         raw.update(boot_id=observation.boot, last_success_monotonic=observation.monotonic,
@@ -571,8 +603,6 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                 warnings.append("boot_identity_unknown")
             with ExitStack() as stack:
                 scope = _Scope(request, stack, end)
-                if scope.git is not None:
-                    gaps += ("reachable_history_only",)
                 # Any existing entry is foreign/busy, irrespective of age/type.
                 scope.check()
                 try:
@@ -583,14 +613,31 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                 try:
                     scope.check()
                     tip = scope.git_tip() if scope.git is not None else None
-                    reachable = scope.reachable(tip) if tip is not None else ()
+                    scope.capture_tip = tip
+                    capture_request = request.snapshot
+                    reachable: tuple[str, ...] = ()
+                    if tip is not None and tip[1] is not None:
+                        if not capture_request.include_history:
+                            gaps += ("history_unprotected", "history_reconciliation_skipped")
+                            warnings.append("history_not_requested")
+                        else:
+                            try:
+                                reachable = scope.reachable((tip[0], tip[1]))
+                            except _HistoryCapacity:
+                                # Do not repeat an already exhausted graph scan
+                                # inside S, or turn a resource limit into a grant.
+                                capture_request = replace(capture_request, include_history=False)
+                                gaps += ("history_unprotected", "history_reconciliation_incomplete")
+                                warnings.append("history_budget_exceeded")
+                            else:
+                                gaps += ("reachable_history_only",)
 
                     state, warning = scope.read_state()
                     if warning:
                         warnings.append(warning)
                     age = _context_age(scope, observation.wall)
                     known: tuple[str, ...] = ()
-                    if tip is not None and state is not None and state["ref"] == tip[0]:
+                    if tip is not None and tip[1] is not None and state is not None and state["ref"] == tip[0]:
                         saved = state["observed_oids"]
                         assert isinstance(saved, list)
                         known = tuple(C.validate_oid(oid) for oid in saved)
@@ -600,7 +647,7 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                     _require(len(all_observed) <= request.snapshot.settings.limits.max_files, "state_budget_exceeded")
                     graph_same = tip is None or (state is not None and state["ref"] == tip[0]
                                                 and state["head"] == tip[1] and not observed)
-                    publication_settled = (tip is None or not request.snapshot.settings.git.push_after_commit
+                    publication_settled = (tip is None or tip[1] is None or not request.snapshot.settings.git.push_after_commit
                                            or (state is not None and state["publication_status"] in ("pushed", "already-present")))
                     if (request.trigger == "due" and state is not None and observation.boot is not None
                             and graph_same and publication_settled):
@@ -611,7 +658,7 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                     scope.check()
                     if tip is not None:
                         _require(scope.git_tip() == tip, "repository_changed")
-                    snapshot = S.create_snapshot(request.snapshot, fault=scope.capture_guard)
+                    snapshot = S.create_snapshot(capture_request, fault=scope.capture_guard)
                     scope.check()
                     if tip is not None:
                         _require(scope.git_tip() == tip, "repository_changed")
@@ -619,7 +666,7 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                         return result("partial", "Resolve snapshot omissions; last-success cadence was not advanced.")
                     _require(snapshot.status in ("complete", "unchanged") and snapshot.snapshot_path is not None
                              and snapshot.identity == request.snapshot.settings.identity, "invalid_snapshot_result")
-                    if tip is not None:
+                    if tip is not None and tip[1] is not None:
                         assert snapshot.snapshot_path is not None
                         manifest = S.verify_snapshot(snapshot.snapshot_path, snapshot.identity, request.snapshot.settings.limits)
                         _require((manifest.ref, manifest.head) == tip and manifest.completion == "complete"
@@ -628,12 +675,13 @@ def checkpoint(request: CheckpointRequest, *, clock: Clock | None = None,
                     # A crash or deadline during G leaves a complete snapshot and
                     # an explicitly unsettled observation, never remote success.
                     scope.write_state(snapshot, completed, tip=tip, observed=all_observed,
-                                      publication_status="unknown" if request.snapshot.settings.git.push_after_commit else "disabled")
+                                      publication_status="unknown" if tip is not None and tip[1] is not None
+                                      and request.snapshot.settings.git.push_after_commit else "disabled")
                     duplicate = (snapshot.status == "unchanged" and request.trigger == "event"
                                  and request.event_id is not None and state is not None
                                  and state["last_event_id"] == request.event_id
                                  and state["last_snapshot"] == str(snapshot.snapshot_path))
-                    if tip is not None:
+                    if tip is not None and tip[1] is not None:
                         assert scope.project is not None
                         publish = C.PushRequest(request.snapshot.settings.identity, scope.project.path,
                                                 "origin", tip[0], tip[1], request.snapshot.settings.git)
