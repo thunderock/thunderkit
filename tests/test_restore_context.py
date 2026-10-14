@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import FrozenInstanceError
 import importlib
 import inspect
+import json
 import os
 from pathlib import Path
 import shutil
@@ -271,6 +272,101 @@ class RestoreContextTests(unittest.TestCase):
                       expected_manifest_sha256=preview.manifest_sha256)
         self.assertEqual(caught.exception.code, "integrity_mismatch")
         self.assertFalse(destination.exists(), "Invalid snapshot cannot create recovery output")
+    def scoped_history_without_checkout(self) -> tuple[Path, C.BackupManifest, str]:
+        template = self.scratch / "scoped-template"
+        hooks = self.scratch / "scoped-hooks"
+        template.mkdir()
+        hooks.mkdir()
+        environment = dict(os.environ)
+        environment.update(GIT_AUTHOR_NAME="Fixture", GIT_COMMITTER_NAME="Fixture",
+                           GIT_AUTHOR_EMAIL="fixture@example.invalid", GIT_COMMITTER_EMAIL="fixture@example.invalid")
+
+        def git(*args: str) -> str:
+            process = subprocess.run(["/usr/bin/git", *args], cwd=self.project,
+                                     env=environment, capture_output=True, text=True, timeout=15)
+            self.assertEqual(process.returncode, 0, "Isolated scoped-history fixture failed")
+            return process.stdout.strip()
+
+        git("init", "--initial-branch=work", f"--template={template}")
+        git("config", "core.hooksPath", str(hooks))
+        git("config", "gc.auto", "0")
+        git("config", "maintenance.auto", "false")
+        source = self.project / "src"
+        source.mkdir()
+        (self.project / "README.md").write_text("Tracked but outside approved source\n")
+        (source / "context.md").write_text("Committed context\n")
+        (source / "deleted.txt").write_text("Remove this working file\n")
+        git("add", "--all")
+        git("commit", "-m", "scoped fixture")
+        head = git("rev-parse", "HEAD")
+        (source / "context.md").write_text(CONTEXT, encoding="utf-8")
+        (source / "deleted.txt").unlink()
+        (source / "work.md").write_text("Uncommitted approved work\n")
+        settings = C.ResolvedSettings(self.identity, self.project, self.backups, None, "unconfigured",
+                                      backup=C.BackupPolicy(enabled=True), limits=self.limits)
+        storage = S.qualify_storage(S.inspect_storage(self.backups), approval=True).identity
+        captured = S.create_snapshot(C.SnapshotRequest(
+            settings, storage, (source,), context_entrypoints=("src/context.md",),
+            include_history=True, history_ref="refs/heads/work"))
+        self.assertEqual((captured.status, captured.history_status), ("complete", "bundled"))
+        assert captured.snapshot_path is not None
+        snapshot = captured.snapshot_path
+        manifest = S.verify_snapshot(snapshot, self.identity, self.limits)
+        self.assertEqual(tuple(entry.relpath for entry in manifest.files), ("src/context.md", "src/work.md"))
+        self.assertEqual(manifest.deleted_paths, ("src/deleted.txt",))
+        self.assertEqual(manifest.head, head)
+        shutil.rmtree(self.project)  # Only the disposable original checkout.
+        self.assertFalse(self.project.exists())
+        return snapshot, manifest, head
+
+    def test_scoped_history_preview_distinguishes_missing_worktree_from_deletions(self) -> None:
+        source, manifest, _ = self.scoped_history_without_checkout()
+        self.load_api()
+        api = importlib.import_module("restore_context")
+        destination = self.work / "scoped-preview"
+        original = {str(path.relative_to(source)): path.read_bytes()
+                    for path in source.rglob("*") if path.is_file()}
+        preview = api.export_preview(source, destination, self.identity, self.limits)
+        self.assertEqual(preview.deleted_paths, ("src/deleted.txt",))
+        self.assertEqual(preview.exported_paths, ("src/context.md", "src/work.md"))
+        self.assertEqual(getattr(preview, "working_tree_omissions", None), ("README.md",),
+                         "R7-F2-preview: uncaptured tracked files must not look like recorded deletions")
+        self.assertFalse(destination.exists())
+        self.assertFalse(self.project.exists())
+        self.assertEqual({str(path.relative_to(source)): path.read_bytes()
+                          for path in source.rglob("*") if path.is_file()}, original)
+        self.assertEqual(S.verify_snapshot(source, self.identity, self.limits), manifest)
+
+    def test_scoped_history_cli_export_is_partial_without_unapproved_worktree_files(self) -> None:
+        source, manifest, head = self.scoped_history_without_checkout()
+        self.load_api()
+        api = importlib.import_module("restore_context")
+        destination = self.work / "scoped-export"
+        preview = api.export_preview(source, destination, self.identity, self.limits)
+        process = subprocess.run([
+            sys.executable, str(RESTORE), "export", "--context", str(source),
+            "--destination", str(destination), "--identity", self.identity.id, "--approve",
+            "--expect-manifest-sha256", preview.manifest_sha256,
+        ], cwd=self.work, env=dict(os.environ), capture_output=True, text=True, timeout=30)
+        self.assertEqual(process.returncode, 0, process.stderr)
+        result = json.loads(process.stdout)
+        self.assertEqual((destination / "src/context.md").read_text(encoding="utf-8"), CONTEXT)
+        self.assertEqual((destination / "src/work.md").read_text(), "Uncommitted approved work\n")
+        self.assertFalse((destination / "README.md").exists(), "History approval cannot broaden worktree sources")
+        self.assertFalse((destination / "src/deleted.txt").exists())
+        actual_head = subprocess.run(["/usr/bin/git", "rev-parse", "HEAD"], cwd=destination,
+                                     env=dict(os.environ), capture_output=True, text=True, timeout=15)
+        self.assertEqual(actual_head.returncode, 0)
+        self.assertEqual(actual_head.stdout.strip(), head)
+        self.assertEqual(result["history_status"], "bundled")
+        self.assertEqual(result["exported_paths"], ["src/context.md", "src/work.md"])
+        self.assertEqual(result["status"], "partial",
+                         "R7-F2-export: a missing tracked working tree is not a complete recovery")
+        self.assertIn("README.md", result["omissions"])
+        self.assertNotIn("src/deleted.txt", result["omissions"], "A recorded deletion is not omitted work")
+        self.assertFalse(self.project.exists())
+        self.assertEqual(S.verify_snapshot(source, self.identity, self.limits), manifest)
+
     def test_export_recovers_exact_branch_and_dirty_files_after_checkout_loss(self) -> None:
         template = self.scratch / "empty-template"
         hooks = self.scratch / "empty-hooks"
