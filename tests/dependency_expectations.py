@@ -31,6 +31,7 @@ OPERATIONS: Final = {
     "tk-audit": ("audit", ("audit",)),
     "tk-memory": ("view", ("view", "save")),
     "tk-handoff": ("save", ("save", "restore", "lookup")),
+    "tk-restore": ("load", ("load", "preview", "export")),
     "tk-fast": ("edit", ("edit",)),
     "tk-quick": ("quick", ("quick",)),
 }

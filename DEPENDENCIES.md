@@ -196,6 +196,68 @@ same existing task-owned local-disk `HERMES_HOME` inside the project, with the m
 Thunderkit does not mutate a shared Hermes home or copy credentials into the project to make
 that route ready. See the [delegation contract](skills/references/delegation.md) for full gates.
 
+## Recovery and checkpoint connections
+
+Recovery and preservation helpers are Thunderkit-owned, model-free software, not native-peer
+workflows. `tk-restore` load/preview/export uses Python ≥3.11 and supported Linux/POSIX no-follow
+filesystem operations; bundled-history verification/export additionally needs local Git and
+bounded writable scratch. Recovery can read an explicit snapshot without the original checkout
+or model config. Export and checkpoint writes each require their own explicit approval.
+See the [recovery and preservation guide](README.md#recovery-and-preservation) for actual commands.
+
+`checkpoint_cli.py preview`, `setup` and `resume-setup` are project-only. Setup writes inert
+private settings and a first verified snapshot, not host connections or publication authority.
+`resume-setup` needs fresh approval for the exact failed local claim with unchanged scope and
+ownership evidence; it is not an adoption or cleanup command. Retain the actual successful
+setup stdout using `umask 077` in a new user-owned mode-0600 file outside capture sources.
+`--setup-result` requires that exact successful `SetupResult` JSON, not a fabricated example,
+serialized executable grant or saved approval. See the
+[setup and receipt commands](README.md#preview-project-setup-and-capture-a-checkpoint).
+
+`capture --scope global --global-config` supports independently approved global files with an
+exact identity, matching backup root and a selected subset of `global.approved_sources`.
+Global capture has no project root, branch history or push. Its versioned nested policy must
+validate too; see the [global settings example](README.md#capture-an-independently-approved-global-scope).
+`global-setup` records actual storage qualification and a verified snapshot. Preserve its
+successful private JSON stdout for `global-preview` and separately approved `global-install`.
+The global wrapper pins the selected interpreter/helpers, source subset, policy and backing
+identity; it installs no Git hook and launches no subprocess during a tick. `global-remove`
+requires fresh approval and confirms removal of the owned schedule before deleting its
+unchanged private integration files. Snapshots and preexisting cadence state survive.
+Both scheduler qualification flags below are required. Changed or disabled global policy
+refuses capture; reconfiguration requires reviewed reinstall. See the
+[global schedule commands](README.md#configure-an-independent-global-schedule).
+
+`host-preview` and separately approved `host-install` bind the exact unchanged setup scope
+and recorded storage identity, verified snapshot and explicit trusted `--python`. A replaced
+store is refused without requalifying the replacement. Installation activates only the
+repository-local `reference-transaction` hook; foreign hooks and external hook managers are
+refused, not replaced. `schedule-preview`, `schedule-install` and `schedule-remove` use an
+explicit trusted `--crontab` and require both `--service-qualified` and `--exclusive-writer`,
+backed by actual operator evidence of a qualified running service and exclusive-writer
+authority. Binary presence and those flags alone do not establish these conditions.
+The driver preserves unrelated crontab bytes with read/compare-and-swap replacement.
+
+Remove the schedule before `host-remove`; both removals require fresh approval and reload
+private ownership records. Retain blocked/uncertain ownership state for inspected recovery;
+do not delete it to force success. Changed files and snapshots are not cleanup targets.
+Portable `backup.enabled: false` is checked at the installed project host boundary and stops
+capture without removing the connection. Other installed settings remain frozen and need
+reviewed reinstall. See the [host commands](README.md#host-connections-require-separate-qualification)
+and [schedule/removal commands](README.md#preview-install-and-remove-the-project-schedule).
+
+A generated periodic command is not scheduler activation or observed idle coverage. Loading a
+skill creates no authority or daemon activation; full host activation requires separate
+approval and real qualification. No new daemon, replacement global hook manager, automatic
+model selection or credential copying is part of this setup.
+
+The [approved checkpoint controller exception](skills/references/delegation.md#approved-preservation-checkpoints)
+does not relax native `delivery:disabled` or preparation-only `tk-ship`. A default-on push
+preference cannot replace a fresh exact-repository/remote/ref `PushGrant` from current in-process
+authority after the captured commit's review/test and ownership gates. Never save or restore
+that grant. Ref-event capture and reachable-history reconciliation do not prove preservation of
+transient unreachable commits; real storage durability and host cadence need separate evidence.
+
 ## Context cost and standalone skills
 
 The OMH full profile installs **123 skills**; core installs **10**, according to the

@@ -1,0 +1,463 @@
+"""Explicit private installation and owned uninstall, isolated from host state."""
+from __future__ import annotations
+
+from dataclasses import replace
+import hashlib
+import importlib
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+REFERENCES = ROOT / "skills/references"
+
+
+class CheckpointInstallTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory(prefix="tk-install-", dir=os.environ["TMPDIR"])
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
+        self.project = self.base / "project"
+        self.backup = self.base / "approved-store"
+        self.home = self.base / "empty-home"
+        self.template = self.base / "template"
+        for directory in (self.project, self.backup, self.home, self.template):
+            directory.mkdir()
+        self.env = {
+            "PATH": "/usr/bin:/bin", "HOME": str(self.home), "XDG_CONFIG_HOME": str(self.home),
+            "TMPDIR": str(self.base), "LC_ALL": "C", "PYTHONDONTWRITEBYTECODE": "1",
+            "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull, "GIT_CONFIG_COUNT": "0",
+            "GIT_TERMINAL_PROMPT": "0", "GIT_ALLOW_PROTOCOL": "file", "GIT_OPTIONAL_LOCKS": "0",
+        }
+        self.enterContext(patch.dict(os.environ, self.env, clear=True))
+        self.enterContext(patch.object(sys, "path", [str(REFERENCES), *sys.path]))
+        self.enterContext(patch.dict(sys.modules))
+        self.c = importlib.import_module("continuity_config")
+        self.s = importlib.import_module("backup_store")
+        self.api = importlib.import_module("checkpoint_setup")
+        self.git("init", "--initial-branch=work", f"--template={self.template}")
+        (self.project / ".thunderkit").mkdir()
+        (self.project / ".gitignore").write_text(".thunderkit/*\n")
+        (self.project / "notes.md").write_text("# Work to preserve\n")
+        self.identity = self.c.ScopeIdentity("project", "install-fixture")
+        settings = self.c.resolve_continuity(self.project, expected_identity=self.identity, environment=self.env)
+        self.settings = replace(settings, backup_root=self.backup, backup=self.c.BackupPolicy(enabled=True))
+        self.integration = self.project / ".thunderkit/checkpoint"
+        self.private = self.project / ".thunderkit/continuity.local.json"
+        self.request = self.api.SetupRequest(self.settings, (self.project / "notes.md",), self.integration)
+
+    def git(self, *args: str) -> str:
+        process = subprocess.run(["/usr/bin/git", *args], cwd=self.project, env=self.env,
+                                 capture_output=True, text=True, timeout=10)
+        self.assertEqual(process.returncode, 0, "Isolated Git fixture failed")
+        return process.stdout.strip()
+
+    def test_approved_setup_records_first_snapshot_and_uninstall_preserves_backup(self) -> None:
+        preview = self.api.preview_setup(self.request)
+        self.assertEqual(preview.status, "approval_required")
+        config_before = (self.project / ".git/config").read_bytes()
+        result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "configured", result.blockers)
+        self.assertEqual(set(result.changed_paths), {self.private, self.integration / "config.json"})
+        self.assertIsNotNone(result.receipt)
+        local = json.loads(self.private.read_text())
+        self.c.validate_continuity_document(local, kind="project-settings")
+        self.assertEqual(local["identity"], {"kind": "project", "id": "install-fixture"})
+        self.assertEqual(local["backup_root"], str(self.backup))
+        manifest_path = Path(local["latest_context"]["path"])
+        manifest = self.s.verify_snapshot(manifest_path, self.identity, self.settings.limits)
+        self.assertEqual(manifest.completion, "complete")
+        self.assertEqual({item.relpath for item in manifest.files}, {"notes.md"})
+        self.assertEqual(self.private.stat().st_mode & 0o777, 0o600)
+        self.assertEqual((self.integration / "config.json").stat().st_mode & 0o777, 0o600)
+        self.assertFalse((self.project / ".thunderkit/config.json").exists())
+        self.assertEqual((self.project / ".git/config").read_bytes(), config_before)
+        self.assertEqual(tuple(self.home.iterdir()), ())
+        uninstall = getattr(self.api, "uninstall_setup", None)
+        self.assertTrue(callable(uninstall), "Missing owned uninstall")
+        assert callable(uninstall)
+        denied = uninstall(result.receipt)
+        self.assertEqual(denied.status, "approval_required")
+        self.assertTrue(self.private.is_file())
+        removed = uninstall(result.receipt, approval=True)
+        self.assertEqual(removed.status, "removed", removed.blockers)
+        self.assertFalse(self.private.exists())
+        self.assertFalse((self.integration / "config.json").exists())
+        self.assertEqual(self.s.verify_snapshot(manifest_path, self.identity, self.settings.limits), manifest)
+        self.assertEqual((self.project / ".git/config").read_bytes(), config_before)
+
+    def test_stale_preview_cannot_write_private_state_or_probe_replacement_root(self) -> None:
+        preview = self.api.preview_setup(self.request)
+        self.assertEqual(preview.status, "approval_required")
+        self.backup.rename(self.base / "original-store")
+        self.backup.mkdir()
+        result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("stale_preview", result.blockers)
+        self.assertFalse(self.private.exists())
+        self.assertFalse(self.integration.exists())
+        self.assertEqual(tuple(self.backup.iterdir()), ())
+
+    def test_uninstall_does_not_remove_changed_owned_or_unrelated_files(self) -> None:
+        result = self.api.apply_setup(self.api.preview_setup(self.request), approval=True)
+        self.assertEqual(result.status, "configured", result.blockers)
+        uninstall = getattr(self.api, "uninstall_setup", None)
+        self.assertTrue(callable(uninstall), "Missing owned uninstall")
+        assert callable(uninstall)
+        extra = self.integration / "user-note.md"
+        extra.write_text("Unrelated user addition\n")
+        original = self.private.read_bytes()
+        self.private.write_bytes(original + b" ")
+        blocked = uninstall(result.receipt, approval=True)
+        self.assertEqual(blocked.status, "blocked")
+        self.assertIn("owned_file_changed", blocked.blockers)
+        self.assertEqual(self.private.read_bytes(), original + b" ")
+        self.assertTrue((self.integration / "config.json").is_file())
+        self.assertEqual(extra.read_text(), "Unrelated user addition\n")
+
+    def test_lock_release_failure_reports_installed_files_and_recovery_state(self) -> None:
+        preview = self.api.preview_setup(self.request)
+        original = os.rmdir
+
+        def fail_lock(path: object, *args: object, **kwargs: object) -> None:
+            if path == ".thunderkit-setup.lock":
+                raise PermissionError("injected owned lock release failure")
+            original(path, *args, **kwargs)
+
+        with patch.object(self.api.os, "rmdir", side_effect=fail_lock):
+            result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "blocked")
+        existing = {path for path in (self.private, self.integration / "config.json") if path.exists()}
+        self.assertTrue(existing <= set(result.changed_paths) | set(result.retained_paths),
+                        "A failed return must disclose installed files")
+        if existing:
+            self.assertIsNotNone(result.receipt, "Completed installation needs recoverable ownership data")
+
+    def test_user_global_ignore_cannot_approve_unignored_project_private_files(self) -> None:
+        (self.project / ".gitignore").write_text("# No private exclusions in this project\n")
+        ignore = self.home / "git/ignore"
+        ignore.parent.mkdir()
+        ignore.write_text(".thunderkit/\n")
+        preview = self.api.preview_setup(self.request)
+        self.assertEqual(preview.status, "blocked")
+        self.assertIn("private_storage_unignored", preview.blockers)
+        self.assertEqual(preview.mutations, ())
+        self.assertFalse(self.private.exists())
+
+    def test_existing_backup_identity_namespace_is_not_adopted_at_first_setup(self) -> None:
+        other = self.base / "other-project"
+        other.mkdir()
+        note = other / "notes.md"
+        note.write_text("Other project owns this backup namespace\n")
+        storage = self.s.qualify_storage(self.s.inspect_storage(self.backup), approval=True).identity
+        settings = replace(self.settings, project_root=other)
+        captured = self.s.create_snapshot(self.c.SnapshotRequest(settings, storage, (note,)))
+        self.assertEqual(captured.status, "complete")
+        latest = self.backup / "projects/install-fixture/latest.json"
+        previous = latest.read_bytes()
+        preview = self.api.preview_setup(self.request)
+        self.assertEqual(preview.status, "blocked")
+        self.assertIn("scope_exists", preview.blockers)
+        self.assertEqual(self.api.apply_setup(preview, approval=True).status, "blocked")
+        self.assertEqual(latest.read_bytes(), previous)
+        self.assertFalse(self.private.exists())
+
+    def test_transient_source_membership_change_cannot_install_unpreviewed_snapshot(self) -> None:
+        source = self.project / "notes"
+        source.mkdir()
+        (self.project / "notes.md").rename(source / "notes.md")
+        request = replace(self.request, approved_sources=(source,))
+        preview = self.api.preview_setup(request)
+        self.assertEqual(preview.status, "approval_required")
+        original = self.s.create_snapshot
+        source_info = source.stat()
+
+        def changed_capture(snapshot_request: object) -> object:
+            extra = source / "unpreviewed.md"
+            extra.write_text("Created only while capture was running\n")
+            captured = original(snapshot_request)
+            extra.unlink()
+            os.utime(source, ns=(source_info.st_atime_ns, source_info.st_mtime_ns + 10_000_000_000))
+            return captured
+
+        with patch.object(self.s, "create_snapshot", side_effect=changed_capture):
+            result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("stale_preview", result.blockers)
+        self.assertFalse(self.private.exists())
+        self.assertFalse((self.integration / "config.json").exists())
+
+    def test_committed_repository_without_history_approval_is_blocked_before_reservation(self) -> None:
+        self.git("config", "user.name", "Fixture")
+        self.git("config", "user.email", "fixture@example.invalid")
+        self.git("add", "--all")
+        self.git("commit", "-m", "committed fixture")
+        preview = self.api.preview_setup(self.request)
+        self.assertEqual(preview.status, "blocked")
+        self.assertIn("history_approval_required", preview.blockers)
+        result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertFalse((self.backup / "projects/install-fixture").exists())
+        self.assertFalse(self.private.exists())
+
+    def test_failed_first_snapshot_can_resume_with_fresh_approval_without_deleting_backup(self) -> None:
+        notes = self.project / "notes.md"
+        notes.write_bytes(b"API_TOKEN=" + b"ghp_" + b"Q" * 36 + b"\n")
+        first = self.api.apply_setup(self.api.preview_setup(self.request), approval=True)
+        self.assertEqual(first.status, "blocked")
+        self.assertIn("first_snapshot_incomplete", first.blockers)
+        scope = self.backup / "projects/install-fixture"
+        snapshots = scope / "snapshots"
+        preserved = {str(path.relative_to(scope)): path.read_bytes()
+                     for path in snapshots.rglob("*") if path.is_file()}
+        self.assertTrue(preserved, "Keep the partial snapshot, not a fabricated recovery path")
+        notes.write_text("# Repaired saved context\n")
+        resume = getattr(self.api, "resume_setup", None)
+        self.assertTrue(callable(resume), "Missing explicitly approved setup resumption")
+        assert callable(resume)
+        denied = resume(self.request)
+        self.assertEqual(denied.status, "approval_required")
+        self.assertFalse(self.private.exists())
+        result = resume(self.request, approval=True)
+        self.assertEqual(result.status, "configured", result.blockers)
+        self.assertIsNotNone(result.receipt)
+        for relative, data in preserved.items():
+            self.assertEqual((scope / relative).read_bytes(), data, "Resumption must preserve prior backup data")
+        local = json.loads(self.private.read_text())
+        manifest = self.s.verify_snapshot(Path(local["latest_context"]["path"]), self.identity, self.settings.limits)
+        self.assertEqual(manifest.completion, "complete")
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
+
+    def test_resume_refuses_a_foreign_namespace_without_installation_claim(self) -> None:
+        scope = self.backup / "projects/install-fixture"
+        scope.mkdir(parents=True)
+        marker = scope / "foreign-note.md"
+        marker.write_text("Owned by another operation\n")
+        resume = getattr(self.api, "resume_setup", None)
+        self.assertTrue(callable(resume), "Missing explicitly approved setup resumption")
+        assert callable(resume)
+        result = resume(self.request, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("resume_unavailable", result.blockers)
+        self.assertEqual(marker.read_text(), "Owned by another operation\n")
+        self.assertFalse(self.private.exists())
+        self.assertEqual(set(scope.iterdir()), {marker})
+
+    def test_failed_namespace_reservation_does_not_report_foreign_or_shared_paths_as_retained(self) -> None:
+        preview = self.api.preview_setup(self.request)
+        original = self.api._reserve_scope
+        scope = self.backup / "projects/install-fixture"
+
+        def compete(request: object) -> object:
+            scope.mkdir(parents=True)
+            (scope / "foreign-note.md").write_text("Concurrent owner\n")
+            return original(request)
+
+        with patch.object(self.api, "_reserve_scope", side_effect=compete):
+            result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertNotIn(scope, result.retained_paths)
+        self.assertNotIn(scope.parent, result.retained_paths)
+        self.assertEqual((scope / "foreign-note.md").read_text(), "Concurrent owner\n")
+
+    def test_default_policy_file_count_does_not_strand_setup_claim(self) -> None:
+        source = self.project / "saved-documents"
+        source.mkdir()
+        count = 8000
+        for number in range(count):
+            (source / f"context-document-{number:05d}.md").write_text("safe\n")
+        request = replace(self.request, approved_sources=(source,))
+        self.assertLess(count, self.settings.limits.max_files)
+        preview = self.api.preview_setup(request)
+        self.assertEqual(preview.status, "approval_required", preview.blockers)
+        result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "configured",
+                         "H6-B1: a legal file count must not strand a pending ownership record")
+        self.assertIsNotNone(result.receipt)
+        local = json.loads(self.private.read_text())
+        manifest = self.s.verify_snapshot(Path(local["latest_context"]["path"]),
+                                          self.identity, self.settings.limits)
+        self.assertEqual(manifest.completion, "complete")
+        self.assertEqual({entry.relpath for entry in manifest.files},
+                         {f"saved-documents/context-document-{number:05d}.md" for number in range(count)})
+        self.assertTrue(all(entry.size == 5 for entry in manifest.files))
+        self.assertFalse((self.backup / "projects/install-fixture/.setup-claim-pending").exists())
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
+
+    def test_individually_valid_retained_snapshots_do_not_exhaust_resume_budget(self) -> None:
+        source = self.project / "saved-documents"
+        source.mkdir()
+        data = b"x" * self.settings.limits.max_file_bytes
+        for number in range(6):
+            (source / f"payload-{number}.txt").write_bytes(data)
+        notes = source / "notes.md"
+        notes.write_bytes(b"API_TOKEN=" + b"ghp_" + b"Q" * 36 + b"\n")
+        request = replace(self.request, approved_sources=(source,),
+                          context_entrypoints=("saved-documents/notes.md",))
+        preview = self.api.preview_setup(request)
+        self.assertEqual(preview.status, "approval_required", preview.blockers)
+        first = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(first.status, "blocked")
+        self.assertIn("first_snapshot_incomplete", first.blockers)
+        scope = self.backup / "projects/install-fixture"
+        prior = {str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                 for path in (scope / "snapshots").rglob("*") if path.is_file()}
+        self.assertTrue(prior)
+        notes.write_text("# Repaired saved context\n")
+        result = self.api.resume_setup(request, approval=True)
+        manifests = [self.s.verify_snapshot(path, self.identity, self.settings.limits)
+                     for path in (scope / "snapshots").iterdir()]
+        self.assertEqual(len(manifests), 2)
+        self.assertEqual({manifest.completion for manifest in manifests}, {"partial", "complete"})
+        sizes = [sum(entry.size for entry in manifest.files) + manifest.history.size
+                 for manifest in manifests]
+        self.assertTrue(all(size <= self.settings.limits.max_snapshot_bytes for size in sizes))
+        self.assertGreater(sum(sizes), self.settings.limits.max_snapshot_bytes)
+        for relative, digest in prior.items():
+            self.assertEqual(hashlib.sha256((scope / relative).read_bytes()).hexdigest(), digest,
+                             "Resume must preserve every previous snapshot byte")
+        self.assertEqual(result.status, "configured",
+                         "H6-B2: retained snapshots must not consume the next snapshot budget")
+        local = json.loads(self.private.read_text())
+        latest = self.s.verify_snapshot(Path(local["latest_context"]["path"]),
+                                        self.identity, self.settings.limits)
+        self.assertEqual(latest.completion, "complete")
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
+
+    def prepare_interrupted_final_slot(self) -> tuple[Path, Path]:
+        source = self.project / "saved-documents"
+        source.mkdir()
+        (source / "safe.md").write_text("safe\n")
+        notes = source / "notes.md"
+        notes.write_bytes(b"API_TOKEN=" + b"ghp_" + b"Q" * 36 + b"\n")
+        self.request = replace(self.request, approved_sources=(source,),
+                               context_entrypoints=("saved-documents/notes.md",))
+        first = self.api.apply_setup(self.api.preview_setup(self.request), approval=True)
+        self.assertEqual(first.status, "blocked")
+        self.assertIn("first_snapshot_incomplete", first.blockers)
+        scope = self.backup / "projects/install-fixture"
+        claim = self.api._load_claim(self.request)
+        self.assertEqual(len(claim.captures), 1)
+        original_snapshot = claim.captures[0].path
+        raw = json.loads((original_snapshot / "manifest.json").read_bytes())
+        records = list(claim.captures)
+        # Build valid earlier-attempt state from real captured bytes, not 127 runs.
+        for number in range(1, 127):
+            name = f"{number:032x}"
+            target = scope / "snapshots" / name
+            shutil.copytree(original_snapshot, target)
+            encoded = json.dumps(dict(raw, snapshot_id=name), sort_keys=True,
+                                 separators=(",", ":")).encode()
+            (target / "manifest.json").write_bytes(encoded)
+            manifest = self.s.verify_snapshot(target, self.identity, self.settings.limits)
+            self.assertEqual(manifest.completion, "partial")
+            info = target.stat()
+            records.append(self.api._CaptureRecord(target, info.st_dev, info.st_ino,
+                                                    hashlib.sha256(encoded).hexdigest()))
+        self.api._publish_claim(self.request, claim.scope, tuple(records), None, claim)
+        notes.write_text("# Repaired final-slot context\n")
+        original_capture = self.s.create_snapshot
+
+        def interrupted_capture(request: object) -> object:
+            captured = original_capture(request)
+            self.assertEqual(captured.status, "complete")
+            raise KeyboardInterrupt
+
+        with patch.object(self.s, "create_snapshot", side_effect=interrupted_capture):
+            interrupted = self.api.resume_setup(self.request, approval=True)
+        self.assertEqual(interrupted.status, "blocked")
+        self.assertFalse(self.private.exists())
+        claim = self.api._load_claim(self.request)
+        self.assertEqual(len(claim.captures), 127)
+        self.assertIsNotNone(claim.pending)
+        locator = self.c.decode_locator(self.c.read_json(scope / "latest.json"), pointer=True)
+        manifest_path = Path(locator.path)
+        self.assertEqual(self.s.verify_snapshot(manifest_path, self.identity,
+                                                self.settings.limits).completion, "complete")
+        self.assertEqual(len(tuple((scope / "snapshots").iterdir())), 128)
+        return scope, manifest_path
+
+    def test_final_slot_complete_snapshot_resumes_without_allocating_another(self) -> None:
+        scope, manifest_path = self.prepare_interrupted_final_slot()
+        preserved = {str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                     for path in (scope / "snapshots").rglob("*") if path.is_file()}
+        locator_before = (scope / "latest.json").read_bytes()
+        result = self.api.resume_setup(self.request, approval=True)
+        self.assertEqual(result.status, "configured",
+                         "H9-final-slot: completed final capture must finish setup without a new snapshot")
+        self.assertIsNotNone(result.receipt)
+        self.assertEqual(result.receipt.manifest_path, manifest_path)
+        self.assertEqual(len(tuple((scope / "snapshots").iterdir())), 128)
+        self.assertEqual((scope / "latest.json").read_bytes(), locator_before)
+        self.assertEqual({str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                          for path in (scope / "snapshots").rglob("*") if path.is_file()}, preserved)
+        local = json.loads(self.private.read_text())
+        self.assertEqual(local["latest_context"]["path"], str(manifest_path))
+        manifest = self.s.verify_snapshot(manifest_path, self.identity, self.settings.limits)
+        self.assertEqual(manifest.completion, "complete")
+        self.assertEqual(manifest.context_entrypoints, ("saved-documents/notes.md",))
+        self.assertFalse((scope / ".setup-claim-pending").exists())
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
+
+    def test_final_slot_changed_source_cannot_claim_stale_setup_success(self) -> None:
+        scope, _ = self.prepare_interrupted_final_slot()
+        preserved = {str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                     for path in scope.rglob("*") if path.is_file()}
+        notes = self.project / "saved-documents/notes.md"
+        notes.write_text("# New context that requires a new snapshot\n")
+        result = self.api.resume_setup(self.request, approval=True)
+        self.assertEqual(result.status, "blocked")
+        self.assertIn("inspection_budget_exceeded", result.blockers)
+        self.assertFalse(self.private.exists())
+        self.assertFalse((self.integration / "config.json").exists())
+        self.assertEqual(len(tuple((scope / "snapshots").iterdir())), 128)
+        self.assertEqual({str(path.relative_to(scope)): hashlib.sha256(path.read_bytes()).hexdigest()
+                          for path in scope.rglob("*") if path.is_file()}, preserved)
+        self.assertEqual(notes.read_text(), "# New context that requires a new snapshot\n")
+        self.assertFalse((scope / ".setup-claim-pending").exists())
+        self.assertFalse((self.project / ".thunderkit-setup.lock").exists())
+
+    def test_whole_committed_project_setup_saves_selected_context_and_history(self) -> None:
+        self.git("config", "user.name", "Fixture")
+        self.git("config", "user.email", "fixture@example.invalid")
+        self.git("add", "--all")
+        self.git("commit", "-m", "committed fixture")
+        head = self.git("rev-parse", "HEAD")
+        (self.project / "notes.md").write_text("# Dirty saved context\n")
+        try:
+            request = self.api.SetupRequest(
+                settings=self.settings, approved_sources=(self.project,),
+                integration_root=self.integration, context_entrypoints=("notes.md",),
+                include_history=True, history_ref="refs/heads/work",
+            )
+        except TypeError:
+            self.fail("Setup lacks explicit context-entrypoint and branch-history options")
+        preview = self.api.preview_setup(request)
+        self.assertEqual(preview.status, "approval_required", preview.blockers)
+        result = self.api.apply_setup(preview, approval=True)
+        self.assertEqual(result.status, "configured", result.blockers)
+        local = json.loads(self.private.read_text())
+        selected = Path(local["latest_context"]["path"])
+        manifest = self.s.verify_snapshot(selected, self.identity, self.settings.limits)
+        self.assertEqual(manifest.history.status, "bundled")
+        self.assertEqual(manifest.head, head)
+        self.assertEqual(manifest.context_entrypoints, ("notes.md",))
+        self.assertEqual(self.s.read_payload(selected, "notes.md", self.identity, self.settings.limits),
+                         b"# Dirty saved context\n")
+        self.assertFalse(any(item.relpath.startswith(".git/") or
+                             item.relpath.startswith(".thunderkit/checkpoint/") or
+                             item.relpath == ".thunderkit/continuity.local.json"
+                             for item in manifest.files))
+        self.assertEqual((self.project / "notes.md").read_text(), "# Dirty saved context\n")
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -58,7 +58,12 @@ the fallback. The resolver result is a routing decision, not evidence that an ed
 3. Run the targeted test or check.
 4. Make one atomic Conventional Commit containing only this change.
 
-No push, PR, tag or publish. Never skip the test to make the path faster.
+The edit stage permits no push, PR, tag or publish. Never skip the test to make the path faster.
+Save current context and unfinished changes before escalation or pause, then have the approved
+checkpoint controller run `checkpoint_cli.py capture` under the
+[shared preservation rule](references/delegation.md#approved-preservation-checkpoints).
+Only that separate controller has the scoped checkpoint exception; native workers remain
+delivery-disabled. Preservation does not require a plan, model selection or a partial commit.
 
 ## Output contract
 

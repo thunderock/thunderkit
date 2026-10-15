@@ -204,6 +204,12 @@ does not authorize overwriting the old file; declined approval leaves all files 
    succeeded and which did not; a partial failure is not a completed save. Retain the
    approved delta for reconciliation without deleting or rewriting prior decisions.
 
+Save current owned artifacts and context before asking the approved checkpoint controller
+to run `checkpoint_cli.py capture` under the
+[shared preservation rule](references/delegation.md#approved-preservation-checkpoints).
+Native workers remain delivery-disabled. Capture consent is separate from config-write
+approval; never put machine-local roots, credentials or publication grants in model selections.
+
 ## Decision-log entry format
 
 Append-only: add new entries at the end; never reorder, delete or rewrite old entries.

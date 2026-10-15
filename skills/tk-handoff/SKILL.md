@@ -20,6 +20,10 @@ Operations: **save** (default, checkpoint now), **restore** (validate the saved 
 any resume), and optional **lookup** (locate one specifically requested missing session).
 Context is portable; a harness-private session ID is not transferable to another harness.
 
+For context reading alone, `tk-restore load` is model-free and treats backup data as inert;
+it does not resume work. `tk-handoff restore` remains the separately gated continuation path
+with valid project selections, current identity evidence and permission for the named stage.
+
 ## Delegation
 
 Read this skill's [delegation contract](references/delegation.md),
@@ -96,6 +100,12 @@ their original paths and hash their bytes; do not rename, copy or rewrite native
 Record requested, effective and observed model identities separately, with the catalog key,
 provider, wire model ID, role and supported effort when known. Unknown facts remain null.
 Missing session IDs mean not resumable; uncertain outcomes remain unknown, never a new lane.
+
+Save the current artifact references and context first, then have the approved checkpoint
+controller run `checkpoint_cli.py capture` under the
+[shared preservation rule](references/delegation.md#approved-preservation-checkpoints).
+Native workers remain delivery-disabled. Preserve the saved handoff and prior verified
+snapshot if capture fails; report that failure separately from the context save.
 
 ## Output — `.thunderkit/HANDOFF.md` (fixed schema)
 

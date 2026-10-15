@@ -4,7 +4,7 @@
 
 **Ship big changes in big repos — by splitting the work into parallel lanes and routing each to the best model across a heterogeneous agent fleet.**
 
-[![skills](https://img.shields.io/badge/Agent_Skills-21-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
+[![skills](https://img.shields.io/badge/Agent_Skills-22-f0b429?style=for-the-badge&logo=markdown&logoColor=white)](https://skills.sshlg.me/)
 [![npm](https://img.shields.io/npm/v/thunderkit?style=for-the-badge&logo=npm&logoColor=white&color=CB3837)](https://www.npmjs.com/package/thunderkit)
 [![CI](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/ci.yml?branch=master&style=for-the-badge&logo=github&label=CI)](https://github.com/thunderock/thunderkit/actions/workflows/ci.yml)
 [![Pages](https://img.shields.io/github/actions/workflow/status/thunderock/thunderkit/pages.yml?branch=master&style=for-the-badge&logo=githubpages&label=Docs)](https://thunderock.github.io/thunderkit/)
@@ -119,12 +119,13 @@ A supplied `decided_at` is preserved; readers never invent one. See the
 A backend never replaces a selected model or lowers the family minimum. Unsupported host/model
 mappings are reported explicitly; changing a choice requires the user, not an automatic fallback.
 
-## The skills (21)
+## The skills (22)
 
 | Stage | Skill | What it owns |
 |---|---|---|
 | **entry** | `tk-router` | Sizes the work, gets the three model classes chosen, routes the lifecycle. |
-| **restore** | `tk-handoff` | Save/restore a session in a portable format — resume across context resets or a different harness. |
+| **restore** | `tk-restore` | Model-free context load and verified backup export to a new/empty destination; never resumes work. |
+| **handoff** | `tk-handoff` | Save portable context; validate model, artifact, repository and original-harness identity before an approved resume. |
 | **preflight** | `tk-test` | Pings every configured model through its real harness CLI — proves the fleet is reachable and ≥2 review families answer before work starts. |
 | **intake** | `tk-ask` | Answer discipline — yes/no, one word, a number, a path, or `unknown`. No prose. Routes each `unknown` to map/learn/user. |
 | **intake** | `tk-grill` | Interrogates you *and* the harness with closed questions until the brief has no unknowns (`--learn` mode frames what to learn). |
@@ -211,6 +212,8 @@ re-litigating settled choices:
   NORTH_STAR.md   # this project's goals, constraints, non-negotiables
   DECISIONS.md    # append-only: what was decided, why, what was rejected
   config.json     # the three model classes + review families + layers + frozen paths
+  continuity.json # optional portable preservation policy, separate from model choices
+  HANDOFF.md      # saved stage, artifacts, decisions and original-harness session identities
   BRIEF.md        # tk-grill intake (closed answers, no unknowns)
   SPEC.md         # what the change delivers (tk-spec)
   MAP.md          # code map (tk-map)
@@ -218,6 +221,419 @@ re-litigating settled choices:
   REVIEW.md       # latest cross-family review (tk-review)
   UAT.md · AUDIT.md · debug/*.md · runs/*.json
 ```
+
+## Recovery and preservation
+
+`tk-restore` reads context without model configuration, a native peer or the original checkout.
+Load is inert: saved commands, approvals, model choices and next actions never authorize
+execution. `tk-handoff restore` still requires current repository/branch/HEAD, artifact hashes,
+model bindings, the original harness/session and permission before any continuation.
+
+The bundled helpers require Python ≥3.11 and supported Linux/POSIX no-follow filesystem
+operations; history verification/export also needs local Git and bounded writable scratch.
+Set `SKILL_ROOT` to the directory of the actually loaded skill. All path variables below are
+explicitly selected literal absolute paths without symlink components, not shell text from
+recovered data. `SCOPE_ID` is the exact approved identity, not a name inferred from cwd.
+
+### Load context, even without the checkout
+
+`CONTEXT_PATH` may name a snapshot directory, its `manifest.json`, or a bounded legacy Markdown
+file. `GLOBAL_CONFIG` names the selected continuity settings file; it may be absent if no saved
+settings are needed, but an existing invalid file is refused.
+
+```sh
+python3 "$SKILL_ROOT/scripts/restore_context.py" load \
+  --scope project --identity "$SCOPE_ID" --context "$CONTEXT_PATH" \
+  --global-config "$GLOBAL_CONFIG"
+
+# Use the remembered locator for this exact project identity instead.
+python3 "$SKILL_ROOT/scripts/restore_context.py" load \
+  --scope project --identity "$SCOPE_ID" --global-config "$GLOBAL_CONFIG"
+```
+
+No checkout is required: omit `--project-root` as above. When the actual project exists, add
+`--project-root "$PROJECT_ROOT"` to use its bound private identity and local locator. Selection
+order is explicit context, project-local locator, exact-project global locator, then an already
+available matching pointer supplied with `--memory-pointer`. Invalid explicit paths and stale,
+corrupt or mismatched selected locators fail rather than silently falling through. No broad
+home, memory, transcript or session-history search occurs, and loading never remembers a path.
+
+Without `--global-config`, continuity settings are selected from
+`$THUNDERKIT_HOME/continuity.json`, then `$XDG_CONFIG_HOME/thunderkit/continuity.json`, then
+`$HOME/.config/thunderkit/continuity.json`. These are settings locations, not default backup
+roots. Approved global context uses `--scope global` and its own exact identity and source
+authority; project approval never covers another project or profile.
+
+Inspect JSON stdout's source, integrity status, metadata and warnings. Legacy Markdown is
+unverified historical text. Snapshot hashes prove byte consistency, not trustworthy origin,
+current approval, complete protection or resumability. See [tk-restore](skills/tk-restore/SKILL.md)
+for limits, exclusions and refusal behavior.
+
+### Preview and approve a recovery export
+
+Export is separate from load. Select an explicit snapshot and a new or empty destination whose
+parent already exists, outside the snapshot and any live checkout. Legacy Markdown is load-only.
+
+```sh
+python3 "$SKILL_ROOT/scripts/restore_context.py" preview \
+  --context "$SNAPSHOT_PATH" --identity "$SCOPE_ID" --scope project \
+  --destination "$DESTINATION"
+```
+
+Review the exported paths, deletion records, omissions, history status and `manifest_sha256`.
+After fresh approval for that exact preview and destination, use its unchanged digest:
+
+```sh
+python3 "$SKILL_ROOT/scripts/restore_context.py" export \
+  --context "$SNAPSHOT_PATH" --identity "$SCOPE_ID" --scope project \
+  --destination "$DESTINATION" --approve \
+  --expect-manifest-sha256 "$PREVIEW_MANIFEST_SHA256"
+```
+
+Changed inputs require a new preview and approval. Export reconstructs approved bytes and modes
+without overwriting files; deletion records never authorize deletion from a live tree. Verified
+bundled history may be imported into a new isolated repository, without inherited remotes,
+hooks, credentials or grants. It never fetches remote-only history, executes recovered files,
+installs dependencies, changes models or resumes a session.
+
+### Preview project setup and capture a checkpoint
+
+Save current artifacts and context at regular intervals, before risky transitions and before
+pausing. Then use the [approved preservation procedure](skills/references/delegation.md#approved-preservation-checkpoints).
+For project setup, select an existing `PROJECT_ROOT` and `BACKUP_ROOT`, the exact `SCOPE_ID`,
+and explicit source allowlists. `APPROVED_SOURCE` below is one source file/directory; repeat
+`--source` for others. The saved handoff is explicitly included even if ignored by Git.
+`WORKING_REF` is the approved attached working branch, such as `refs/heads/feature-name`, not
+a tag or default/protected branch. History capture is bounded and subject to secret exclusions.
+
+Choose `INTEGRATION_ROOT` beneath the project's `.thunderkit/`. Setup's private settings and
+integration files must be untracked and Git-ignored; arrange this with normal project-write
+approval, not by silently changing ignore rules. Backup storage must be outside the project.
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" preview \
+  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+  --context-entrypoint .thunderkit/HANDOFF.md \
+  --include-history --history-ref "$WORKING_REF" --integration-root "$INTEGRATION_ROOT"
+```
+
+Preview is read-only. Inspect its mutations, blockers and capability report before approving
+those exact inputs. Setup rechecks them, qualifies storage readback, creates a first verified
+snapshot and writes private configuration; it does **not** activate a hook or scheduler:
+
+Retain the **actual successful JSON stdout** as `SETUP_RESULT`: a new file in a private,
+user-owned directory outside the project and every capture source. The subshell's `umask 077`
+and no-clobber setting protect a newly created mode-0600 file without replacing an existing
+receipt. Check the command's exit status and result before using the file; a failed setup's
+output is not a successful receipt. Never fabricate, edit or reconstruct this JSON.
+
+```sh
+(
+  umask 077
+  set -C
+  python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" setup \
+    --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+    --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+    --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+    --context-entrypoint .thunderkit/HANDOFF.md \
+    --include-history --history-ref "$WORKING_REF" \
+    --integration-root "$INTEGRATION_ROOT" --approve > "$SETUP_RESULT"
+)
+```
+
+If setup was interrupted and retained a valid local claim, resume **that exact failed claim**
+with unchanged project, identity, store, sources, context entrypoints, policy, history ref and
+integration root. Do not delete locks, adopt foreign paths or treat retry as approval for a
+new scope. Missing or changed ownership evidence blocks resumption. After fresh approval,
+retain stdout in a different new private file, `RESUMED_SETUP_RESULT`:
+
+```sh
+(
+  umask 077
+  set -C
+  python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" resume-setup \
+    --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+    --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+    --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+    --context-entrypoint .thunderkit/HANDOFF.md \
+    --include-history --history-ref "$WORKING_REF" \
+    --integration-root "$INTEGRATION_ROOT" --approve > "$RESUMED_SETUP_RESULT"
+)
+```
+
+Only after exit zero and `status: "configured"`, select this successful result's path as
+`SETUP_RESULT` for the host commands below. `--setup-result` accepts the exact successful
+`SetupResult` JSON, owned by the current user and mode 0600. It is an ownership/integrity
+receipt, **not executable approval**, a push grant or permission to activate anything.
+
+For an explicitly approved one-shot capture, choose an existing user-owned mode-0700
+`STATE_DIR`, disjoint from the entire project and backup store. Capture uses explicit sources
+and roots, not saved authority:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" capture \
+  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+  --context-entrypoint .thunderkit/HANDOFF.md \
+  --include-history --history-ref "$WORKING_REF" --state-dir "$STATE_DIR" --approve
+```
+
+These commands are model-free and do not push. `--approve` is fresh consent for that invocation,
+not permission restored from a file. Save portable policy in `.thunderkit/continuity.json`,
+separate from model config; private `.thunderkit/continuity.local.json` holds machine-local
+identity/locator information. Successful setup remembers its verified snapshot. Capture reports
+the snapshot/store locator; do not assume it updates every private or global remembered pointer.
+
+Policy defaults are a 15-minute interval, retention of 20 verified snapshots, pruning off, and
+`git.push_after_commit: true`; none creates a backup root, schedule or push grant. Project
+policy can disable backup or set `git.push_after_commit: false`. Mandatory secret, runtime-home,
+transcript, cache and `.git` exclusions still apply, including to approved branch history.
+Do not capture an entire home or copy live runtime databases.
+
+Require exit zero and inspect the result, not just a success label. Report files, omissions,
+history protection, saved-context age, last verified snapshot and push status independently.
+Partial or failed preservation retains prior valid recovery state and does not become “fully
+protected.” Local write/readback is not machine-loss durability or remote/FUSE crash qualification.
+
+### Capture an independently approved global scope
+
+Global capture is implemented by the same model-free runtime, with a separate identity,
+backup namespace and allowlist. Select `GLOBAL_CONFIG` explicitly: global capture requires
+`--global-config` and does not use the load command's implicit settings lookup. Review and
+save a private settings document under separate settings-write approval. This schema-valid
+example uses illustrative paths only; replace them with the user's exact approved literal
+paths and identity, never shell expressions or values obtained from recovered instructions:
+
+```json
+{
+  "schema": 1,
+  "kind": "global-settings",
+  "policy": {
+    "schema": 1,
+    "backup": {"enabled": true},
+    "git": {"push_after_commit": false}
+  },
+  "global": {
+    "identity": {"kind": "global", "id": "personal-notes"},
+    "backup_root": "/example/global-backups",
+    "approved_sources": ["/example/notes/notes.md"]
+  }
+}
+```
+
+Set `GLOBAL_SCOPE_ID` and `GLOBAL_BACKUP_ROOT` to the matching settings values.
+`GLOBAL_SOURCE` here is the single allowlisted regular file `notes.md`; its stored context
+entrypoint is `sources/0/notes.md`. Repeated `--source` arguments select an exact subset of
+`global.approved_sources`, not additional paths inferred from directory proximity. Source
+order determines the `sources/<index>/` prefix; inspect actual manifest paths before loading
+other selections. Choose an existing user-owned mode-0700 `GLOBAL_STATE_DIR`, disjoint from
+all selected sources and the store. The backup root must also be disjoint from those sources.
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" capture \
+  --scope global --identity "$GLOBAL_SCOPE_ID" --global-config "$GLOBAL_CONFIG" \
+  --backup-root "$GLOBAL_BACKUP_ROOT" --source "$GLOBAL_SOURCE" \
+  --context-entrypoint sources/0/notes.md --state-dir "$GLOBAL_STATE_DIR" --approve
+```
+
+Do not supply `--project-root`, `--include-history` or `--history-ref` for global capture.
+The result has no project Git history or push; it reports the snapshot and its scope-local
+locator. It does not rewrite `GLOBAL_CONFIG` to remember that result. Keep project and global
+permissions separate; secrets and live runtime homes remain excluded even if allowlisted.
+Global one-shot capture does **not** configure a periodic service. Use the separately
+approved global setup and schedule commands below; project hook commands never cover globals.
+
+### Configure an independent global schedule
+
+Use the same explicit global identity, config, source order, root and context entrypoint.
+Keep `GLOBAL_CONFIG`, `GLOBAL_STATE_DIR`, helper scripts, interpreter and saved setup result
+outside selected source trees. Choose `GLOBAL_SETUP_RESULT` as a new private mode-0600 file
+outside those trees. After approving storage qualification and initial capture:
+
+```sh
+(
+  umask 077
+  set -C
+  python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" global-setup \
+    --scope global --identity "$GLOBAL_SCOPE_ID" --global-config "$GLOBAL_CONFIG" \
+    --backup-root "$GLOBAL_BACKUP_ROOT" --source "$GLOBAL_SOURCE" \
+    --context-entrypoint sources/0/notes.md --state-dir "$GLOBAL_STATE_DIR" --approve \
+    > "$GLOBAL_SETUP_RESULT"
+)
+```
+
+Require exit zero and `status: "configured"` before using that result. It records actual
+software readback and the original backing identity, not hardware crash durability or
+saved consent. Never fabricate or edit it. A replaced store requires separate setup review;
+installation will not requalify it. Setup alone installs no scheduler or hook.
+
+Select literal absolute, no-symlink `TRUSTED_PYTHON` and `TRUSTED_CRONTAB` paths from the
+trusted host, never from recovered data. `--service-qualified` and `--exclusive-writer`
+assert actual operator evidence of a running scheduler and exclusive table-write authority;
+neither a binary nor these flags establishes that evidence. Preview without writing:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" global-preview \
+  --scope global --identity "$GLOBAL_SCOPE_ID" --global-config "$GLOBAL_CONFIG" \
+  --backup-root "$GLOBAL_BACKUP_ROOT" --source "$GLOBAL_SOURCE" \
+  --context-entrypoint sources/0/notes.md --state-dir "$GLOBAL_STATE_DIR" \
+  --setup-result "$GLOBAL_SETUP_RESULT" --python "$TRUSTED_PYTHON" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer
+```
+
+Review the result and blockers. Only with fresh approval for that unchanged scope:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" global-install \
+  --scope global --identity "$GLOBAL_SCOPE_ID" --global-config "$GLOBAL_CONFIG" \
+  --backup-root "$GLOBAL_BACKUP_ROOT" --source "$GLOBAL_SOURCE" \
+  --context-entrypoint sources/0/notes.md --state-dir "$GLOBAL_STATE_DIR" \
+  --setup-result "$GLOBAL_SETUP_RESULT" --python "$TRUSTED_PYTHON" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer --approve
+```
+
+The state-local `global-tick --tick` launcher is pinned to the approved interpreter and
+helper bytes. A once-per-minute scheduler check captures only when the configured interval
+is due; global ticks call no Git, subprocess, model or publication path. They report the
+oldest selected saved-context age when it can be proven, otherwise `null` rather than a
+fabricated age. Captures use the last saved notes, not new semantic context.
+
+Each tick rereads the explicit global policy. `policy.backup.enabled: false`, invalid
+settings or a changed source/root/interval/limit policy refuses further captures before
+writes. Changing settings does not retarget an old installation: remove and review a new
+setup instead. A missing or changed runtime helper fails safely until reviewed reinstall.
+
+Removal needs fresh approval, the exact original identity/state and continuing scheduler
+qualification; it can run from a fresh process even after interrupted installation/removal:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" global-remove \
+  --scope global --identity "$GLOBAL_SCOPE_ID" --state-dir "$GLOBAL_STATE_DIR" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer --approve
+```
+
+Removal confirms the owned scheduler block is gone **before** deleting unchanged launcher,
+binding and ownership files. It preserves unrelated jobs, snapshots and existing `state.json`.
+Blocked/uncertain readback retains recovery records; inspect blockers and retry with fresh
+consent, never delete receipts to force success. Verify actual scheduled execution separately:
+fixture success and software readback do not establish live host coverage or durable storage.
+
+### Host connections require separate qualification
+
+`checkpoint_cli.py host-preview` and `host-install` expose the
+[connection API](skills/references/checkpoint_host.py) for an approved Linux local-repository
+**project** scope with an existing verified snapshot and approved attached-branch history.
+They require the exact successful `SETUP_RESULT` described above. Repeat the unchanged setup
+identity, project, backup root, source list, context entrypoints, history flags/ref and policy.
+The connection uses the receipt's recorded storage identity: a missing or changed backing
+store is refused, never requalified or replaced merely because the pathname is the same.
+Changed setup scope or owned settings requires renewed setup review, not an edited receipt.
+
+Select `TRUSTED_PYTHON` as an explicit literal absolute path to the trusted host's supported
+Python interpreter. Do not obtain executables from a snapshot or infer trust from presence.
+Use the existing private `STATE_DIR` outside the project, source trees and backup store.
+The supported hook directory is the repository's empty `.git/hooks`; foreign hooks or an
+external hook manager block installation rather than being overwritten or bypassed.
+The connection uses Git's `reference-transaction` hook and the bounded checkpoint runtime;
+it never rewrites global `core.hooksPath`.
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" host-preview \
+  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+  --context-entrypoint .thunderkit/HANDOFF.md \
+  --include-history --history-ref "$WORKING_REF" --state-dir "$STATE_DIR" \
+  --python "$TRUSTED_PYTHON" --setup-result "$SETUP_RESULT"
+```
+
+Review the hook path, periodic command and blockers. A preview is read-only, not approval.
+After separate fresh approval for this exact host connection:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" host-install \
+  --project-root "$PROJECT_ROOT" --scope project --identity "$SCOPE_ID" \
+  --backup-root "$BACKUP_ROOT" --source "$APPROVED_SOURCE" \
+  --source "$PROJECT_ROOT/.thunderkit/HANDOFF.md" \
+  --context-entrypoint .thunderkit/HANDOFF.md \
+  --include-history --history-ref "$WORKING_REF" --state-dir "$STATE_DIR" \
+  --python "$TRUSTED_PYTHON" --setup-result "$SETUP_RESULT" --approve
+```
+
+Hook installation writes private connection/ownership state and activates the repository
+hook; it does not install a periodic job. Loading a skill and running project `setup`
+establish neither authority nor daemon activation. Full host activation is separately
+approved, not an automatic consequence of these examples.
+
+### Preview, install and remove the project schedule
+
+After a successful host install, select `TRUSTED_CRONTAB` as the explicit literal absolute
+path to the trusted host's crontab executable. `--service-qualified` **and**
+`--exclusive-writer` require actual operator evidence of a qualified running scheduler
+service and exclusive table-write authority. They are assertions of prerequisites, not
+probes or switches that create those conditions. An installed binary alone proves neither.
+The driver uses read/compare-and-swap replacement and preserves unrelated crontab bytes.
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" schedule-preview \
+  --project-root "$PROJECT_ROOT" --state-dir "$STATE_DIR" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer
+```
+
+Inspect the proposed owned block and blockers. With fresh approval for this schedule:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" schedule-install \
+  --project-root "$PROJECT_ROOT" --state-dir "$STATE_DIR" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer --approve
+```
+
+The once-per-minute command checks whether the configured interval is due; it does not
+capture every minute unconditionally. A generated launcher or fixture test does not prove
+idle-time backups on the actual host. Verify the scheduler's real execution and returned
+capture result separately before claiming coverage.
+
+To disable capture without granting new authority, set portable project policy
+`backup.enabled` to `false` in `.thunderkit/continuity.json` through an approved project edit.
+The installed host boundary checks that current policy and refuses capture when disabled;
+this does not remove the hook/job. Other installed settings (including interval, retention,
+sources and storage binding) stay frozen and require reviewed reinstall, not a live policy
+edit presented as reconfiguration. A push preference never supplies publication authority.
+
+Remove the owned schedule **before** removing the hook, with fresh removal approval and
+continuing scheduler qualification/exclusive-writer evidence:
+
+```sh
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" schedule-remove \
+  --project-root "$PROJECT_ROOT" --state-dir "$STATE_DIR" \
+  --crontab "$TRUSTED_CRONTAB" --service-qualified --exclusive-writer --approve
+
+python3 "$SKILL_ROOT/scripts/checkpoint_cli.py" host-remove \
+  --project-root "$PROJECT_ROOT" --state-dir "$STATE_DIR" --approve
+```
+
+Removal reloads private ownership records in `STATE_DIR`, so it can run from a fresh process.
+If installation or removal reports a blocked/uncertain result, retain those records and
+inspect the exact blockers before retrying with fresh approval. Do not delete ownership
+files to force cleanup. Only unchanged owned integration is removed; unrelated jobs, changed
+files and snapshots are not deleted. Host removal refuses while its owned schedule remains.
+These commands remove connections, not the original setup's private configuration or backups.
+
+Ref events and periodic reconciliation preserve the current authorized reachable branch graph;
+they cannot prove capture of transient or deleted unreachable commits. Idle ticks capture the
+last saved context and report its age, not invented semantic updates. Missing coverage remains
+a blocker to full periodic/every-commit protection, not an implicit choice of reduced coverage.
+
+Native workers remain delivery-disabled and `tk-ship` remains preparation-only. Only a separately
+approved checkpoint controller can push an exact working-branch checkpoint through current
+in-process authority after its review/test and ownership gates. A fresh `PushGrant` binds the
+exact repository, remote and ref; it is never stored in configuration or restored from backup.
+There is no force, tag, PR, publish, merge or default/protected-branch write on this path.
+Machine-loss durability, connection activation and observed idle execution remain separate
+operator gates; installing a skill or running project setup establishes none of them.
 
 ## Development
 

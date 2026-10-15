@@ -145,7 +145,7 @@ function tools(w) {
   }
 }
 function handoff(w) {
-  assert.deepEqual(w.jobs.gate.steps.map((s) => s.id), ['environment', 'checkout', 'node', 'python', 'npm', 'tools', 'plan', 'tests', 'verify', 'upload']);
+  assert.deepEqual(w.jobs.gate.steps.map((s) => s.id), ['environment', 'checkout', 'node', 'python', 'npm', 'tools', 'private-python', 'plan', 'tests', 'verify', 'upload']);
   assert.deepEqual(w.jobs.publish.steps.map((s) => s.id), ['environment', 'checkout', 'node', 'python', 'npm', 'tools', 'handoff', 'download', 'publish']);
   assert.deepEqual(w.jobs.gate.outputs, { action: '${{ steps.plan.outputs.action }}', record_sha256: '${{ steps.plan.outputs.record_sha256 }}', artifact_id: '${{ steps.upload.outputs.artifact-id }}' });
   assert.equal(step(w, 'gate', 'plan').run, 'node tools/release/plan.mjs --workspace "$RUNNER_TEMP/release"');

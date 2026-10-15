@@ -106,10 +106,10 @@ class PackageContentsTests(PayloadFixture):
         before = snapshot(ROOT / "skills")
         # When npm creates and the checker inspects a real tarball.
         package = self.unpack(self.pack())
-        # Then only nineteen complete owned payloads ship; source caches are untouched.
+        # Then only the declared complete payloads ship; source caches are untouched.
         self.assertEqual({path.parent.name for path in (package / "skills").glob("*/SKILL.md")},
                          set(registered_skills()))
-        self.assertEqual(len(registered_skills()), 21)
+        self.assertEqual(len(registered_skills()), 22)
         self.assertEqual(snapshot(ROOT / "skills"), before)
 
     def test_package_when_git_free_source_has_caches_and_private_files_excludes_them(self) -> None:

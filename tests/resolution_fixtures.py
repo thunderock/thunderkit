@@ -20,7 +20,8 @@ SCRATCH: Final = Path(os.environ.get("THUNDERKIT_TEST_TMPDIR", str(
 KEYS: Final = {"schema_version", "skill", "operation", "decision", "reason_code", "detail",
                "target", "bindings", "runtime_home", "evidence_paths"}
 CONFIGLESS_ROWS: Final = (("tk-ask", "validate"), ("tk-memory", "view"),
-                         ("tk-router", "bootstrap"), ("tk-handoff", "save"))
+                         ("tk-router", "bootstrap"), ("tk-handoff", "save"),
+                         ("tk-restore", "load"), ("tk-restore", "preview"), ("tk-restore", "export"))
 EXPECTED_HOST_IDENTITIES: Final = (
     ("opencode", "opus5", "amazon-bedrock", "us.anthropic.claude-opus-5"),
     ("opencode", "fable51", "amazon-bedrock", "us.anthropic.claude-fable-5-1"),

@@ -1,0 +1,100 @@
+{
+  "skill": "tk-restore",
+  "cases": {
+    "happy": [
+      {
+        "name": "default context load stays model free",
+        "operation": null,
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        },
+        "sections": ["Local resources and routing", "Load explicit or remembered context", "Preview, then separately approve export"],
+        "frontmatter": {
+          "thunderkit-role": "continuity",
+          "thunderkit-tier": "context",
+          "thunderkit-delegates": "none",
+          "thunderkit-contract": "1"
+        }
+      },
+      {
+        "name": "explicit load ignores native model setup",
+        "operation": "load",
+        "config": "hermes",
+        "capabilities": "hermes_omh_full",
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "export preview has no native owner",
+        "operation": "preview",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "export routing remains distinct from execution approval",
+        "operation": "export",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "owned",
+          "reason_code": "owned_policy",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 0,
+          "requested_bindings": {}
+        }
+      }
+    ],
+    "failure": [
+      {
+        "name": "context restore does not authorize agent resume",
+        "operation": "resume",
+        "config": null,
+        "capabilities": null,
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      },
+      {
+        "name": "setup is not a recovery operation",
+        "operation": "setup",
+        "config": "opencode",
+        "capabilities": "opencode_omo_full",
+        "expect": {
+          "decision": "blocked",
+          "reason_code": "invalid_config",
+          "target_ecosystem": null,
+          "target_selector": null,
+          "exit": 2,
+          "requested_bindings": {}
+        }
+      }
+    ]
+  }
+}
